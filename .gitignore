@@ -70,3 +70,8 @@ runtime/
 Thumbs.db
 .vscode/
 .idea/
+
+# Explicitly allow original PWA install icons (other PNG files stay excluded)
+!app/static/icons/
+!app/static/icons/contracts-192.png
+!app/static/icons/contracts-512.png
