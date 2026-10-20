@@ -1,19 +1,16 @@
-# PWA development checks
+# Pulse Contracts OS – PWA smoke-test results
 
-**Source package:** independent V13 source-only PWA feature bundle. No customer database is committed.
+Scope: development-source feature, not central HTTPS deployment or managed Windows installation acceptance.
 
-Verified using a disposable copy of V12 pilot data, not any live service:
-- JavaScript syntax: service worker + install helper passed Node syntax checks.
-- Python source: `compileall` passed.
-- Manifest contains stable scope, start URL, standalone display and valid 192/512 PNG icon paths.
-- `/manifest.webmanifest` and `/sw.js` respond with proper MIME types even before pilot sign-in.
-- `/sw.js` has root service-worker scope.
-- Unauthenticated root redirects to pilot sign-in; unauthenticated contracts API returns HTTP 401.
-- Signed-in Viewer can open root and permitted read-only contracts API.
-- Authenticated HTML is `Cache-Control: no-store`.
-- Service worker only stores offline-help HTML and static icon, never business documents or API responses.
+PASS: JavaScript syntax checks (`node --check` worker and install helper).
+PASS: Python compilation (`python -m compileall -q app tests/v13_pwa.py`).
+PASS: PWA manifest names/scope/icons and required files present.
+PASS: Public manifest + service worker while pilot authentication enabled; expected content types and root worker scope.
+PASS: Unauthenticated root redirects to `/pilot/login`; unauthenticated contract API returns HTTP 401.
+PASS: Signed-in Viewer can load root and permitted contract API.
+PASS: Signed-in root sets `Cache-Control: no-store`.
+PASS: Service worker caches generic offline help only, never authenticated HTML, API or downloads.
 
-Still required before rollout:
-- Import and verify the full application source in GitHub.
-- Deploy full application with independent shared data behind IT-managed HTTPS reverse proxy.
-- Windows Edge/Chrome install and update testing, browser policy check, multi-user pilot and security review.
+Fixture: disposable copy of the original V12 pilot database and approved Excel workbook, isolated in a temporary directory during test. No modifications to real contract data.
+
+NOT YET TESTED: Browser installation on an actual Windows PC, HTTPS reverse proxy, organisation browser policies, multi-user shared-server pilot, production security assessment.

@@ -14,6 +14,8 @@ self.addEventListener('activate', event => {
   })());
 });
 // Never cache authenticated pages, API responses, exports or customer documents.
+// All operational requests go straight to the server; if the network fails,
+// only a generic offline page may be served for document navigation.
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET' || req.mode !== 'navigate') return;

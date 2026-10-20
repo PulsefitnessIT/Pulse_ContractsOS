@@ -1,23 +1,34 @@
-# Desktop PWA for Pulse Contracts OS
+# Pulse Contracts OS – installable desktop PWA (development preview)
 
-## State
-The PWA implementation and full integration source are included in the downloadable source-only feature bundle. This GitHub branch contains independently reviewable installation assets. **The full application source is not yet in GitHub**, so this branch cannot run by itself.
+## Staff experience
+- Open the independent Contracts OS HTTPS site using Edge or Chrome on Windows.
+- Click **Install desktop app**, or browser menu -> **Apps** -> **Install this site as an app**.
+- Windows creates an app entry/desktop shortcut; staff can pin it to Start or the taskbar.
+- The application opens in its own window, without requiring Python on the staff computer.
+- Signing in still uses the existing independent pilot users; the app does not integrate with Microsoft sign-in or PulseFitness.ai.
 
-## Windows installation
-Deploy the independent FastAPI app at an IT-managed HTTPS URL. Sign in via Chrome or Edge and click **Install desktop app**, or use the browser menu > Apps > Install this site as an app. Python remains server-side; not required on staff devices.
+## IT / deployment prerequisites
+1. Deploy the **full application** and confidential runtime database separately from GitHub on an IT-managed shared server (V12/V13 source ZIP is *not* itself a deployment).
+2. Serve via HTTPS with a trusted certificate (secure context is mandatory for PWA installation/service workers on network URLs).
+3. Use a managed reverse proxy, VPN/restricted network, central backups, access control, security review and correct `PULSE_SESSION_SECRET`, `PULSE_PILOT_MODE=1`, `PULSE_COOKIE_SECURE=1`.
+4. **Do not expose** the local pilot's backend port directly to staff or the internet.
+5. Install from the organisation's HTTPS hostname (each hostname installs separately). Updates to UI are delivered when staff relaunch/connect and the browser refreshes assets.
+6. Browser-managed installation depends on Chromium/Edge install support and IT browser policy; no Microsoft Store/EXE distribution is required.
 
-## PWA security
-- Caches only generic offline-help HTML and an original icon.
-- Does **not** cache contracts, customer data, invoices, exports, dashboards or API responses.
-- Requires online access/VPN for operational use.
-- Still uses existing server-side authorisation; no Microsoft login, PulseFitness.ai integration or public release.
-- Requires the full app, approved data migration, centrally hosted HTTPS, user acceptance and security review before staff rollout.
+## Security and offline policy
+- The service worker precaches **only a generic offline help page and original icon**.
+- No customer data, login sessions, HTML dashboards, contract API responses, invoices, exported workbooks or database content is cached for offline use by our service worker.
+- Every real application request goes to the central server. Network failure shows a generic **Connection required** page.
+- PWA is not an offline-capable contracts editor. Staff must reconnect to view/change records.
+- Admins should not assume browser HTTP caches or endpoint/device-level storage can substitute for endpoint controls. A formal security review is still required before wider release.
 
-## Integration notes
-The source bundle applies these app changes:
-1. In `app/main.py`, serve `/manifest.webmanifest` with `application/manifest+json` and `/sw.js` with `application/javascript` and `Service-Worker-Allowed: /`.
-2. In `app/pilot_access.py`, exempt only the public installation manifest and service-worker route from the pilot login redirect.
-3. Add manifest/favicon/script links and `installPulseApp` button to `app/static/index.html`; add manifest and script to `pilot-login.html`.
-4. Add button CSS to `app/static/styles.css`.
-5. Include 192×192 and 512×512 original icon PNGs and run `tests/v13_pwa.py` with disposable pilot fixture data.
-Do not publish the app source ZIP or databases as public GitHub release assets.
+## Implementation
+- `app/static/manifest.webmanifest`: installed app identity, icons, colours and standalone display.
+- `app/static/sw.js`: narrow navigation-only offline behaviour, no data caching.
+- `app/static/pwa-install.js`: Edge/Chrome install prompt/button.
+- `app/static/icons`: original 192/512 PNG and SVG artwork.
+- `app/main.py`: serves worker at root scope and manifest with correct MIME.
+- `app/pilot_access.py`: installation metadata accessible before authentication; root and API still protected.
+
+## Release state
+This is the desktop PWA feature code and testable source package, not confirmation of live HTTPS deployment. A staff desktop app becomes installable when the system is deployed at a suitable HTTPS address.

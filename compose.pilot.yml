@@ -1,0 +1,24 @@
+# Independent from Emergent/PulseFitness.ai. NOT directly accessible to other computers.
+# IT must place an approved HTTPS proxy/VPN in front of this localhost endpoint.
+services:
+  contracts:
+    build:
+      context: .
+      dockerfile: Dockerfile.pilot
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:18080:8000"
+    environment:
+      PULSE_PILOT_MODE: "1"
+      PULSE_COOKIE_SECURE: "1"
+      PULSE_AUTO_BACKUP: "0"
+      PULSE_DATA_DIR: /app/pilot_data
+      PULSE_SESSION_SECRET: ${PULSE_SESSION_SECRET:?Set PULSE_SESSION_SECRET in the server secret store}
+    volumes:
+      - ./pilot_data:/app/pilot_data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 150
