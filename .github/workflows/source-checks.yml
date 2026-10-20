@@ -1,0 +1,35 @@
+name: Contracts OS source checks
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+jobs:
+  source-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python source
+        run: |
+          if [ -d app ]; then python -m compileall -q app tests; else echo "Source migration pending"; fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check browser JavaScript
+        run: |
+          if [ -f app/static/app.js ]; then node --check app/static/app.js; else echo "Source migration pending"; fi
+      - name: Block confidential runtime data
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          forbidden={'.db','.sqlite','.sqlite3','.xlsx','.xls','.xlsm','.pdf','.zip','.pem','.pfx'}
+          leaks=[str(p) for p in Path('.').rglob('*') if p.is_file()
+                 and '.git' not in p.parts
+                 and ('data' in p.parts or p.suffix.lower() in forbidden)]
+          if leaks:
+              raise SystemExit('Disallowed files in repository: '+', '.join(leaks[:20]))
+          print('No prohibited runtime documents present')
+          PY
