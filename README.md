@@ -1,38 +1,32 @@
-# Pulse Contracts OS
+# Pulse Contracts OS — independent contracts management
 
-Independent contracts-management application for Pulse Fitness.
+**Source-only development checkout.** The existing V12 pilot's operational database, approved eight-tab Excel template, equipment catalogue and confidential documents are intentionally **not** in GitHub. This repository does not provide a pre-populated installation.
 
-> **Repository status: bootstrap only.** The application source has **not yet** been imported into this repository. The most recent locally packaged pilot is V12; V13 development is pending migration and tests. Do not deploy this repository as an application yet.
+## What is here?
 
-## Project objectives
+- `app/`: FastAPI backend, coordinator-facing web interface and Windows PWA installation assets.
+- `scripts/`: local pilot account setup, backup/recovery, import and release verification utilities.
+- `tests/`: historic regression tests and V13 PPM/PWA tests. Some require an independent **disposable** copy of pilot data and therefore are not run as ordinary unit tests in GitHub Actions.
+- `docs/releases/`: relevant V10–V13 release documentation.
+- `docs/archive/`: historical V3–V9 documents, not required to run the platform.
+- `Dockerfile.pilot`, `compose.pilot.yml`: IT-managed **staging** configuration, not a production security certification.
 
-- Keep the platform **independent** from PulseFitness.ai during the pilot. Do not connect to its production database or change its existing CRM contracts module.
-- Manage active and expired maintenance contracts, renewals, customer and site records, equipment cover, invoices, weekly values, and reports.
-- Preserve exact-format exports of the approved eight-worksheet Excel Maintenance Master, including styling, filters, formulas, table growth, and matching active/expired column layouts.
-- Extract invoice data with evidence, duplicate checks, and a human review stage for uncertain references or handwritten information.
-- Support coordinator workflows with clear audit history and protection against conflicting edits.
-- Keep Microsoft sign-in out of scope for now.
+## PWA for staff
 
-## Development conventions
+The recommended staff experience is **Install desktop app** from Microsoft Edge or Chrome after IT deploys the independent app behind HTTPS. No Python is required on staff computers. Python runs only on the central protected server. The offline page caches no customer records. See [`docs/PWA_DESKTOP_RELEASE.md`](docs/PWA_DESKTOP_RELEASE.md).
 
-- `main`: verified release baseline only.
-- `develop`: development integration branch.
-- `feature/*`: individual changes, merged to `develop` through reviewed pull requests.
-- Tag verified releases as `v12.0.0`, `v13.0.0`, etc. **Do not tag V12 until its source and regression suite are actually present and validated.**
+## Branches
 
-## Data safety
+- `main`: release baseline, do not merge partially tested features into it.
+- `develop`: reviewed integrated development work.
+- `feature/pwa-desktop`: source migration + installable-PWA development in progress.
 
-**Never commit** production or pilot databases, customer spreadsheets, invoices, scanned documents, usernames/passwords, API keys, authentication cookies, or runtime backups. Use anonymised fixtures and environment variables. See `.gitignore` and `docs/SECURITY_AND_DATA.md`.
+## Important safeguards
 
-## Migration checkpoint
+- **No customer data in GitHub.** The source-only bundle was inspected and demonstration customer identifiers were replaced with fictional placeholders for this branch.
+- Never add `data/`, `pilot_data/`, databases, PDFs, invoices, business workbooks, secrets, or backups.
+- Keep the independent PulseFitness.ai system completely unchanged. Microsoft login remains out of scope.
+- No shared office deployment has been performed; HTTPS hosting, server storage, user acceptance and desktop Excel verification are still outstanding.
+- Private company runtime assets (approved Excel template and catalogue) must be provisioned securely **outside** GitHub before starting a new instance.
 
-- [x] Private GitHub repository access verified.
-- [x] Repository bootstrap and project guardrails created.
-- [ ] Import the full V12 application source from the existing ZIP.
-- [ ] Review the archive for secrets, real customer data, and binaries before committing.
-- [ ] Rebuild dependencies and run the existing automated test suite.
-- [ ] Verify the original Excel-template compatibility in a safe test environment.
-- [ ] Create a validated V12 baseline release.
-- [ ] Begin V13 customer contact/PPM work on `develop`.
-
-See [migration checklist](docs/MIGRATION_CHECKLIST.md) and [V13 roadmap](docs/V13_ROADMAP.md).
+See the migration checklist and current release notes for detailed acceptance gates.

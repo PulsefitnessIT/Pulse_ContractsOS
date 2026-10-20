@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.git/
+.env
+pilot_data/
+pilot_settings.cmd
+*.log
+*.zip
+*.db-journal
+*.sqlite3-wal
+*.sqlite3-shm
