@@ -1,0 +1,23 @@
+name: Source validation
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+jobs:
+  source-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject confidential and binary runtime files
+        shell: bash
+        run: |
+          if git ls-files | grep -Ei '(^|/)(data|pilot_data|uploads|backups|invoices|documents|exports)/|\.(sqlite3?|db|xlsx?|xlsm|pdf|zip|pem|key|p12|pfx)$'; then
+            echo 'Runtime/customer data cannot be committed to the source repository'
+            exit 1
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python sources
+        run: python -m compileall -q app scripts tests
