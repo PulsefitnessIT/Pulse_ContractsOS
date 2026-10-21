@@ -8,7 +8,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.data_readiness import WORKSHEETS, assess_database, workbook_check
+from app.data_readiness import (WORKSHEETS, assess_database, workbook_check,
+                                missing_amount_review_rows, safe_excel_csv_cell)
 from scripts.stage_private_runtime import stage
 
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -71,6 +72,15 @@ class PrivatePilotDataTests(unittest.TestCase):
         self.assertNotIn("Demo Centre", json.dumps(result))
         self.assertNotIn("1250.50", json.dumps(result))
         self.assertFalse(result["financial_completeness"]["is_verified_revenue"])
+
+    def test_missing_values_can_be_exported_without_inventing_prices(self):
+        rows = missing_amount_review_rows(self.source / "contracts.sqlite3")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["Review reason"] for r in rows},
+                         {"Missing amount", "Unclear amount"})
+        self.assertEqual(safe_excel_csv_cell("=1+1"), "'=1+1")
+        self.assertEqual(safe_excel_csv_cell("  @SUM(A1)"), "'  @SUM(A1)")
+        self.assertEqual(safe_excel_csv_cell("Sample site"), "Sample site")
 
     def test_missing_and_broken_files(self):
         absent = assess_database(self.root / "not-a-db.sqlite3", self.root / "not-a-master.xlsx")
