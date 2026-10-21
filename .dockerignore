@@ -9,3 +9,16 @@ pilot_settings.cmd
 *.db-journal
 *.sqlite3-wal
 *.sqlite3-shm
+data/
+uploads/
+backups/
+exports/
+*.db
+*.sqlite
+*.sqlite3
+*.xlsx
+*.xls
+*.pdf
+*.pem
+*.key
+.env*

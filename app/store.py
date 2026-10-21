@@ -64,7 +64,7 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_equipment_contract ON equipment(contract_id);
     ''')
     # Seed a compact, read-only product catalogue, separate from contractual records.
-    catalogue_path=Path(BASE)/'data'/'equipment_catalogue.json'
+    catalogue_path=Path(DATA)/'equipment_catalogue.json'
     if catalogue_path.exists() and con.execute('SELECT COUNT(*) FROM catalogue').fetchone()[0]==0:
         catalogue=json.loads(catalogue_path.read_text(encoding='utf-8'))
         con.executemany('''INSERT OR IGNORE INTO catalogue

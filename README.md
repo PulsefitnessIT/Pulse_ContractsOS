@@ -30,3 +30,7 @@ The recommended staff experience is **Install desktop app** from Microsoft Edge 
 - Private company runtime assets (approved Excel template and catalogue) must be provisioned securely **outside** GitHub before starting a new instance.
 
 See the migration checklist and current release notes for detailed acceptance gates.
+
+## Real-data protected pilot (development)
+
+`feature/real-data-pilot-readiness` adds secure staging of a private snapshot and read-only financial completeness indicators. **It does not include a customer database and has not been deployed.** Follow [Private data pilot setup](docs/PRIVATE_DATA_PILOT_SETUP.md) for IT instructions. The stage tool preserves WAL-consistent SQLite data and refuses overwrites; GitHub CI tests use fictional synthetic fixtures. Missing amounts are reported separately, not counted as £0 or verified revenue.

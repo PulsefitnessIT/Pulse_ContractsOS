@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY scripts ./scripts
-COPY data ./data
+# Private contract files are mounted at runtime, never baked into the container image.
 COPY README.md ./README.md
 # Mounted persistent pilot storage is created/configured outside this container.
 RUN mkdir -p /app/pilot_data && useradd --system --uid 10001 --home /app pilot

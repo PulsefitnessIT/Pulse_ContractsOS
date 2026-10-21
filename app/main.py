@@ -28,8 +28,13 @@ from .matching import candidate_matches
 from .local_ocr import available as local_ocr_available, read_local_scanned_pdf, LocalOCRError
 from .v12_features import router as v12_router
 from .v13_history import router as v13_router
+from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
 
 APP_ROOT=Path(__file__).parent
+# Fail before creating an empty database if the protected shared pilot has not
+# been supplied with its approved private snapshot and Master workbook.
+if PILOT_MODE and (not os.path.isfile(DB) or not os.path.isfile(TEMPLATE)):
+    raise RuntimeError('Private pilot data missing: stage contracts.sqlite3 and approved_master.xlsx before starting the server')
 os.makedirs(DATA,exist_ok=True)
 init_db()
 if PILOT_MODE:
@@ -91,7 +96,27 @@ app.include_router(v12_router)
 app.include_router(v13_router)
 
 @app.get('/api/meta')
-def meta():return {'stats':stats(),'headers':HEADERS,'version':'1.0.0-pilot','release':'V13 Development','environment':'Independent protected pilot' if PILOT_MODE else 'Local demonstration','document_ai_configured':document_ai_configured(),'local_ocr_available':local_ocr_available(),'ocr_mode':os.environ.get('PULSE_OCR_MODE','auto').lower()}
+def meta():return {'stats':stats(),'headers':HEADERS,'version':'1.0.0-pilot','release':'V13 Development','environment':'Independent protected pilot' if PILOT_MODE else 'Local demonstration','document_ai_configured':document_ai_configured(),'local_ocr_available':local_ocr_available(),'ocr_mode':os.environ.get('PULSE_OCR_MODE','auto').lower(),'data_readiness':assess_database(DB,TEMPLATE)}
+
+@app.get('/api/pilot/data-readiness')
+def pilot_data_readiness():
+    # Aggregated status only; no contract names, prices or source documents returned.
+    return assess_database(DB,TEMPLATE)
+
+@app.get('/api/pilot/data-quality/missing-amounts.csv')
+def missing_amounts_csv():
+    # Source-linked review queue; never infer amounts from invoices or warranties.
+    fieldnames = ('Contract ID','Customer / site','Contract number',
+                  'Contract / warranty type','Sales manager','Recorded amount','Review reason')
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(fieldnames)
+    for row in missing_amount_review_rows(DB):
+        writer.writerow([safe_excel_csv_cell(row.get(name,'')) for name in fieldnames])
+    return Response(content=chr(0xfeff)+output.getvalue(),media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition':'attachment; filename="Pulse_Contracts_Missing_Amounts_Review.csv"',
+                 'Cache-Control':'no-store'})
+
 
 @app.get('/api/contracts')
 def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:str='',sort:str='Customer / site',direction:str='asc',page:int=1,limit:int=40):
