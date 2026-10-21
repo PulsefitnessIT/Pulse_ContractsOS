@@ -170,3 +170,49 @@ def assess_database(db_path, workbook_path):
         and result["contracts"]["malformed_records"] == 0
     )
     return result
+
+
+def missing_amount_review_rows(db_path):
+    """Coordinator review queue for missing/invalid active contract amounts.
+
+    Never invent amounts or silently fill missing values with zero.
+    Call only from an authenticated route when private customer data is present.
+    """
+    rows = []
+    if not Path(db_path).is_file():
+        return rows
+    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+    with sqlite3.connect(uri, uri=True, timeout=15) as con:
+        for contract_id, raw in con.execute(
+            "SELECT id,fields FROM contracts WHERE status='Active'"
+        ):
+            try:
+                item = json.loads(raw)
+                if not isinstance(item, dict):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            raw_amount = item.get("Contract amount (£)")
+            state = _amount_kind(raw_amount)
+            if state not in ("missing", "invalid"):
+                continue
+            rows.append({
+                "Contract ID": contract_id,
+                "Customer / site": str(item.get("Customer / site") or ""),
+                "Contract number": str(item.get("Contract number") or ""),
+                "Contract / warranty type": str(item.get("Contract / warranty type") or ""),
+                "Sales manager": str(item.get("Sales manager") or "Unassigned"),
+                "Recorded amount": str(raw_amount or ""),
+                "Review reason": "Missing amount" if state == "missing" else "Unclear amount",
+            })
+    return sorted(rows, key=lambda item: (
+        item["Sales manager"].casefold(), item["Customer / site"].casefold(), item["Contract ID"]
+    ))
+
+
+def safe_excel_csv_cell(value):
+    """Protect exported CSV against formula execution in spreadsheet software."""
+    text = str(value if value is not None else "")
+    if text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
