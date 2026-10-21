@@ -1,15 +1,25 @@
 """One-time independent pilot configuration. Never modifies PulseFitness.ai."""
 from __future__ import annotations
-import getpass,os,secrets,shutil,sys
+import getpass,os,secrets,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 PILOT=ROOT/'pilot_data'
-PILOT.mkdir(exist_ok=True)
-for name in ('contracts.sqlite3','approved_master.xlsx','equipment_catalogue.json'):
-    source=ROOT/'data'/name;target=PILOT/name
-    if not target.exists():shutil.copy2(source,target)
-os.environ['PULSE_DATA_DIR']=str(PILOT)
 sys.path.insert(0,str(ROOT))
+if not PILOT.exists():
+    approved=os.environ.get('PULSE_APPROVED_SNAPSHOT_DIR','').strip()
+    if not approved:
+        raise SystemExit(
+            'No approved local contract snapshot is configured. Set '
+            'PULSE_APPROVED_SNAPSHOT_DIR to a separately stored, extracted '
+            'snapshot and rerun setup; never put customer data in GitHub.'
+        )
+    from scripts.stage_private_runtime import stage
+    stage(approved,PILOT)
+from app.data_readiness import assess_database
+check=assess_database(PILOT/'contracts.sqlite3',PILOT/'approved_master.xlsx')
+if not check['ready_for_data_review']:
+    raise SystemExit('Existing pilot files need review: '+'; '.join(check['issues']))
+os.environ['PULSE_DATA_DIR']=str(PILOT)
 from app.pilot_access import provision_user
 settings=ROOT/'pilot_settings.cmd'
 if settings.exists():
