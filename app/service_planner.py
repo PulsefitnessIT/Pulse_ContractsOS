@@ -7,8 +7,9 @@ import json,re,unicodedata,datetime as dt
 from pathlib import Path
 from difflib import SequenceMatcher
 from collections import defaultdict,Counter
+from .store import DATA
 
-SOURCE=Path(__file__).parent.parent/'data'/'service_planner_source.json'
+SOURCE=Path(DATA)/'service_planner_source.json'
 
 def tidy(v):
     t=unicodedata.normalize('NFKD',str(v or '')).casefold()
@@ -61,6 +62,8 @@ def match_planner(rows,contracts):
     return result
 
 def proposals(con):
+    if not SOURCE.is_file():
+        return []  # Optional private planner not staged; no fabricated history or dates.
     source=json.loads(SOURCE.read_text(encoding='utf-8'))
     contracts=[{'id':r['id'],'fields':json.loads(r['fields'])} for r in con.execute("SELECT id,fields FROM contracts WHERE status='Active'")]
     return match_planner(source,contracts)
