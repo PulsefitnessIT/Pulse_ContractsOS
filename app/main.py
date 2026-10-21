@@ -113,7 +113,7 @@ def missing_amounts_csv():
     writer.writerow(fieldnames)
     for row in missing_amount_review_rows(DB):
         writer.writerow([safe_excel_csv_cell(row.get(name,'')) for name in fieldnames])
-    return Response(content='\\ufeff'+output.getvalue(),media_type='text/csv; charset=utf-8',
+    return Response(content=chr(0xfeff)+output.getvalue(),media_type='text/csv; charset=utf-8',
         headers={'Content-Disposition':'attachment; filename="Pulse_Contracts_Missing_Amounts_Review.csv"',
                  'Cache-Control':'no-store'})
 
