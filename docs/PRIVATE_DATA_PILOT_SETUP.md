@@ -10,7 +10,7 @@ Source code, installation assets, tests and documentation only. The private GitH
 
 - Use a separate, access-controlled Linux/Windows Server host or VM with company-approved HTTPS reverse proxy/VPN. The Compose service only listens on `127.0.0.1:18080` on that server.
 - Choose **one** approved current snapshot. The previous V12 example contained 642 active and 8,381 expired contracts, but it may no longer reflect the current Excel Master.
-- Store an approved, extracted private snapshot in a restricted directory **outside the GitHub checkout**. It must contain `contracts.sqlite3` and `approved_master.xlsx`; optionally `equipment_catalogue.json`.
+- Store an approved, extracted private snapshot in a restricted directory **outside the GitHub checkout**. It must contain `contracts.sqlite3` and `approved_master.xlsx`; optionally `equipment_catalogue.json` and `service_planner_source.json`.
 - Confirm with the contract team whether updates since the snapshot need importing and reconcile active/expired counts and audit history before pilots begin.
 - Back up all source records *before* migrating. Do not use the static director-demo HTML as the source database.
 - Do **not** push any `pilot_data` directory, workbook, database, PDF, ZIP or authentication secret to GitHub.
@@ -30,7 +30,7 @@ python3 scripts/pilot_data_status.py --data-dir ./pilot_data
 The destination must not already exist. The script:
 - Validates that the source DB is readable and the approved eight worksheet names are present;
 - Takes a transactionally consistent SQLite backup, including committed WAL changes;
-- Copies the Excel Master and optional catalogue without modifying the source;
+- Copies the Excel Master and optional private catalogue/planner JSON without modifying the source;
 - Creates private file permissions; checks record counts again; does **not** overwrite an existing destination;
 - Prints aggregate counts and warnings only, never customer names, individual prices or personal details.
 
