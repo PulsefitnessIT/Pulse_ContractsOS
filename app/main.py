@@ -28,7 +28,7 @@ from .matching import candidate_matches
 from .local_ocr import available as local_ocr_available, read_local_scanned_pdf, LocalOCRError
 from .v12_features import router as v12_router
 from .v13_history import router as v13_router
-from .data_readiness import assess_database
+from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
 
 APP_ROOT=Path(__file__).parent
 # Fail before creating an empty database if the protected shared pilot has not
@@ -102,6 +102,21 @@ def meta():return {'stats':stats(),'headers':HEADERS,'version':'1.0.0-pilot','re
 def pilot_data_readiness():
     # Aggregated status only; no contract names, prices or source documents returned.
     return assess_database(DB,TEMPLATE)
+
+@app.get('/api/pilot/data-quality/missing-amounts.csv')
+def missing_amounts_csv():
+    # Source-linked review queue; never infer amounts from invoices or warranties.
+    fieldnames = ('Contract ID','Customer / site','Contract number',
+                  'Contract / warranty type','Sales manager','Recorded amount','Review reason')
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(fieldnames)
+    for row in missing_amount_review_rows(DB):
+        writer.writerow([safe_excel_csv_cell(row.get(name,'')) for name in fieldnames])
+    return Response(content='\\ufeff'+output.getvalue(),media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition':'attachment; filename="Pulse_Contracts_Missing_Amounts_Review.csv"',
+                 'Cache-Control':'no-store'})
+
 
 @app.get('/api/contracts')
 def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:str='',sort:str='Customer / site',direction:str='asc',page:int=1,limit:int=40):
