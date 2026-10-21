@@ -16,7 +16,6 @@ import sqlite3
 import sys
 import tempfile
 from pathlib import Path
-from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -45,7 +44,7 @@ def stage(source, destination):
     with tempfile.TemporaryDirectory(prefix=".pulse-contracts-stage-", dir=destination.parent) as tmp:
         stage_dir = Path(tmp) / "private_runtime"
         stage_dir.mkdir(mode=0o700)
-        src_uri = "file:" + quote(str(source / "contracts.sqlite3"), safe="/") + "?mode=ro"
+        src_uri = (source / "contracts.sqlite3").as_uri() + "?mode=ro"
         with sqlite3.connect(src_uri, uri=True, timeout=20) as src:
             with sqlite3.connect(stage_dir / "contracts.sqlite3") as target:
                 src.backup(target)
