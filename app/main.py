@@ -31,6 +31,10 @@ from .v13_history import router as v13_router
 from .data_readiness import assess_database
 
 APP_ROOT=Path(__file__).parent
+# Fail before creating an empty database if the protected shared pilot has not
+# been supplied with its approved private snapshot and Master workbook.
+if PILOT_MODE and (not os.path.isfile(DB) or not os.path.isfile(TEMPLATE)):
+    raise RuntimeError('Private pilot data missing: stage contracts.sqlite3 and approved_master.xlsx before starting the server')
 os.makedirs(DATA,exist_ok=True)
 init_db()
 if PILOT_MODE:
