@@ -28,6 +28,7 @@ from .matching import candidate_matches
 from .local_ocr import available as local_ocr_available, read_local_scanned_pdf, LocalOCRError
 from .v12_features import router as v12_router
 from .v13_history import router as v13_router
+from .data_readiness import assess_database
 
 APP_ROOT=Path(__file__).parent
 os.makedirs(DATA,exist_ok=True)
@@ -91,7 +92,12 @@ app.include_router(v12_router)
 app.include_router(v13_router)
 
 @app.get('/api/meta')
-def meta():return {'stats':stats(),'headers':HEADERS,'version':'1.0.0-pilot','release':'V13 Development','environment':'Independent protected pilot' if PILOT_MODE else 'Local demonstration','document_ai_configured':document_ai_configured(),'local_ocr_available':local_ocr_available(),'ocr_mode':os.environ.get('PULSE_OCR_MODE','auto').lower()}
+def meta():return {'stats':stats(),'headers':HEADERS,'version':'1.0.0-pilot','release':'V13 Development','environment':'Independent protected pilot' if PILOT_MODE else 'Local demonstration','document_ai_configured':document_ai_configured(),'local_ocr_available':local_ocr_available(),'ocr_mode':os.environ.get('PULSE_OCR_MODE','auto').lower(),'data_readiness':assess_database(DB,TEMPLATE)}
+
+@app.get('/api/pilot/data-readiness')
+def pilot_data_readiness():
+    # Aggregated status only; no contract names, prices or source documents returned.
+    return assess_database(DB,TEMPLATE)
 
 @app.get('/api/contracts')
 def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:str='',sort:str='Customer / site',direction:str='asc',page:int=1,limit:int=40):
