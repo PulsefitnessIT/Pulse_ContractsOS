@@ -12,7 +12,6 @@ import zipfile
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from urllib.parse import quote
 
 WORKSHEETS = [
     "Home", "Maintenance Database", "Weekly Values", "Invoices",
@@ -31,6 +30,11 @@ def workbook_check(path):
         with zipfile.ZipFile(path) as archive:
             if archive.testzip() is not None:
                 raise ValueError("Workbook ZIP integrity check failed")
+            required_parts = ["xl/workbook.xml", "xl/styles.xml"] + [
+                f"xl/worksheets/sheet{n}.xml" for n in range(1, 9)
+            ]
+            if any(name not in archive.namelist() for name in required_parts):
+                raise ValueError("Required eight-sheet workbook XML parts are missing")
             root = ET.fromstring(archive.read("xl/workbook.xml"))
             sheets = root.find(SHEET_NS + "sheets")
             if sheets is None:
@@ -99,7 +103,7 @@ def assess_database(db_path, workbook_path):
         return result
     try:
         # Explicit read-only mode avoids accidentally creating an empty database.
-        uri = "file:" + quote(str(Path(db_path).resolve()), safe="/") + "?mode=ro"
+        uri = Path(db_path).resolve().as_uri() + "?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=15) as con:
             check = con.execute("PRAGMA quick_check").fetchone()
             if not check or check[0] != "ok":
