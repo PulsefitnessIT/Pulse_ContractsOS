@@ -4,7 +4,7 @@ Usage:
   python scripts/stage_private_runtime.py --source /secure/approved-snapshot --destination /srv/contracts/pilot_data
 
 The source directory must contain contracts.sqlite3 and approved_master.xlsx.
-The optional equipment_catalogue.json travels with the private runtime if present.
+Optional equipment_catalogue.json and service_planner_source.json also stay private.
 Never run this on an active destination: no existing files are overwritten.
 """
 from __future__ import annotations
@@ -49,9 +49,13 @@ def stage(source, destination):
             with sqlite3.connect(stage_dir / "contracts.sqlite3") as target:
                 src.backup(target)
         shutil.copyfile(source / "approved_master.xlsx", stage_dir / "approved_master.xlsx")
-        catalogue = source / "equipment_catalogue.json"
-        if catalogue.is_file():
-            shutil.copyfile(catalogue, stage_dir / catalogue.name)
+        for optional in ("equipment_catalogue.json", "service_planner_source.json"):
+            extra = source / optional
+            if extra.is_file():
+                # Check JSON syntax before copying optional reference data.
+                import json
+                json.loads(extra.read_text(encoding="utf-8"))
+                shutil.copyfile(extra, stage_dir / optional)
         for path in stage_dir.iterdir():
             os.chmod(path, 0o600)
         result = assess_database(stage_dir / "contracts.sqlite3", stage_dir / "approved_master.xlsx")
