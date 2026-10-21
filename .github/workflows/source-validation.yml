@@ -1,9 +1,9 @@
 name: Source validation
 on:
   push:
-    branches: [develop, main]
+    branches: [develop, main, 'feature/**']
   pull_request:
-    branches: [develop, main]
+    branches: [develop, main, 'feature/pwa-desktop']
 jobs:
   source-safety:
     runs-on: ubuntu-latest
