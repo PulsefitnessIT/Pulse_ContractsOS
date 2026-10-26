@@ -114,7 +114,11 @@ class ContractSetupTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             setup.confirm_contract_import(self.iid,{"sicon_contract_reference":"CON-1",
                                                    "evidence":"Accepted by test import"})
-        case=self.set_details(contract_reference="CON-DEMO-001")
+        case=self.set_details(contract_reference="CON-DEMO-001",
+              billing_stock_code="DEMO-MAINT",warehouse_name="DEMO-WAREHOUSE",
+              sicon_delivery_address="SITE-001",sicon_customer_ref="CUSTOMER-001",
+              sicon_location_description="Example Community Gym",
+              sla_name="DEMO-GOLD",equipment_make="Demo Manufacturer")
         setup.verify_serials(self.iid, {
             "revision":case["revision"],"source_line_id":"demo-B",
             "serial_numbers":["DEMO-002","DEMO-003"],
@@ -153,7 +157,11 @@ class ContractSetupTests(unittest.TestCase):
     def test_future_equipment_cannot_be_confirmed_early(self):
         import datetime as dt
         with patch.object(setup,"today",lambda:dt.date(2026,10,26)):
-            case=self.set_details(contract_reference="CON-DEMO-001")
+            case=self.set_details(contract_reference="CON-DEMO-001",
+              billing_stock_code="DEMO-MAINT",warehouse_name="DEMO-WAREHOUSE",
+              sicon_delivery_address="SITE-001",sicon_customer_ref="CUSTOMER-001",
+              sicon_location_description="Example Community Gym",
+              sla_name="DEMO-GOLD",equipment_make="Demo Manufacturer")
             setup.verify_serials(self.iid,{
                 "revision":case["revision"],"source_line_id":"demo-B",
                 "serial_numbers":["DEMO-002","DEMO-003"],

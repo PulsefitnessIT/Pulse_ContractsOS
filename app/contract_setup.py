@@ -156,17 +156,40 @@ def status(quote, verified, case, batches=()):
         missing.append("Verify machine commencement and end dates")
     signed = bool(case["signed_document_sha256"])
     agreement_ready = not missing
-    contract_import_ready = agreement_ready and signed
+    contract_mapping_missing=[]
+    for field,label in (
+        ("billing_stock_code","Sicon maintenance billing product"),
+        ("warehouse_name","Sicon warehouse"),
+        ("sicon_delivery_address","Sicon delivery address"),
+    ):
+        if not verified.get(field):
+            contract_mapping_missing.append(label)
+    if (verified.get("billing_frequency") or contract["payment_terms"]).casefold() not in (
+            "monthly","quarterly","annually","annual","yearly"):
+        contract_mapping_missing.append("Approved Sicon invoice frequency")
+    equipment_mapping_missing=[]
+    for field,label in (
+        ("sicon_customer_ref","Sicon customer account"),
+        ("sicon_location_description","Sicon location description"),
+        ("sla_name","Sicon SLA name"),
+    ):
+        if not verified.get(field):
+            equipment_mapping_missing.append(label)
+    if any(not a.get("make") for a in quote["equipment"]) and not verified.get("equipment_make"):
+        equipment_mapping_missing.append("Verify machine manufacturers for the equipment import")
+    contract_import_ready = agreement_ready and signed and not contract_mapping_missing
     contracted = bool(case["sicon_contract_imported_at"] and case["sicon_contract_reference"])
     start_groups = sorted({a["cover_start"] for a in quote["equipment"] if a["cover_start"]})
     already = {x["cover_start"] for x in batches}
     current_date = today().isoformat()
     due = [d for d in start_groups if d <= current_date and d not in already]
     future = [d for d in start_groups if d > current_date]
-    equipment_import_ready = contract_import_ready and contracted and bool(due)
+    equipment_import_ready = contract_import_ready and contracted and bool(due) and not equipment_mapping_missing
     equipment_imported = bool(start_groups) and all(d in already for d in start_groups)
     return {
         "missing": missing,
+        "contract_mapping_missing": contract_mapping_missing,
+        "equipment_mapping_missing": equipment_mapping_missing,
         "checked": len(required) - sum(not value for value, _ in required),
         "agreement_ready": agreement_ready,
         "agreement_signed": signed,
@@ -181,6 +204,7 @@ def status(quote, verified, case, batches=()):
                             else "Ready for equipment import" if equipment_import_ready
                             else "Future equipment scheduled" if contracted and future
                             else "Ready for contract import" if contract_import_ready
+                            else "Agreement signed — Sicon mapping needs verification" if signed and contract_mapping_missing
                             else "Agreement signed — needs setup details" if signed
                             else "Ready for customer signature" if agreement_ready
                             else "Needs details"),
@@ -500,8 +524,6 @@ def download_agreement_preview(intake_id: int):
             pdf=agreement_preview(template,quote,verified,verified.get("verified_serials"))
         except TemplateError as exc:
             raise HTTPException(409,str(exc)) from exc
-        _audit(con,case["id"],"AGREEMENT_DRAFT_PREVIEWED","Original legal terms preserved; draft not ready for signature")
-        con.commit()
         return Response(content=pdf,media_type="application/pdf",headers={
             "Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
             "Content-Disposition":f"attachment; filename=Agreement_{case['id']}_INTERNAL_DRAFT.pdf"})
@@ -523,9 +545,6 @@ def download_contract_draft(intake_id: int):
             document=workbook_from_template(source,"contract",rows)
         except TemplateError as exc:
             raise HTTPException(409,str(exc)) from exc
-        _audit(con,case["id"],"SICON_CONTRACT_DRAFT_PREPARED",
-               f"Review-only; {len(rows)} dated billing line(s), source PDF {quote['pricing']['source_quote_pdf_sha256'][:12]}")
-        con.commit()
         return Response(content=document,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
                         "Content-Disposition":f"attachment; filename=Sicon_Contract_{case['id']}_REVIEW_ONLY.xlsx"})
@@ -551,9 +570,6 @@ def download_equipment_draft(intake_id: int,start_date: str):
             document=workbook_from_template(source,"equipment",rows)
         except TemplateError as exc:
             raise HTTPException(409,str(exc)) from exc
-        _audit(con,case["id"],"SICON_EQUIPMENT_DRAFT_PREPARED",
-               f"Review-only; {len(rows)} serialised equipment record(s) for {start_date}")
-        con.commit()
         return Response(content=document,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
                         "Content-Disposition":f"attachment; filename=Sicon_Equipment_{case['id']}_{start_date}_REVIEW_ONLY.xlsx"})
