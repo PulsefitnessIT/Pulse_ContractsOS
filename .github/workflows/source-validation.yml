@@ -23,5 +23,7 @@ jobs:
         run: python -m pip install 'fastapi>=0.115,<1' 'lxml>=5,<7'
       - name: Compile Python sources
         run: python -m compileall -q app scripts tests
+      - name: Check coordinator JavaScript syntax
+        run: node --check app/static/app.js && node --check app/static/accepted-quotes.js
       - name: Synthetic pilot data safety tests (no customer records)
         run: python -m unittest discover -s tests -p 'test_pilot_data_*.py' -v
