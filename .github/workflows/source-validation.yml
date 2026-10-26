@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install lightweight API test dependency
-        run: python -m pip install 'fastapi>=0.115,<1'
+        run: python -m pip install 'fastapi>=0.115,<1' 'lxml>=5,<7'
       - name: Compile Python sources
         run: python -m compileall -q app scripts tests
       - name: Synthetic pilot data safety tests (no customer records)
