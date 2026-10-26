@@ -56,8 +56,21 @@ def stage(source, destination):
                 import json
                 json.loads(extra.read_text(encoding="utf-8"))
                 shutil.copyfile(extra, stage_dir / optional)
+        # Preserve signed-agreement evidence on approved recovery migration.
+        # Symlinked files are never followed from a staging source.
+        signed_source = source / "private_signed_agreements"
+        if signed_source.is_dir() and not signed_source.is_symlink():
+            signed_dest = stage_dir / "private_signed_agreements"
+            signed_dest.mkdir(mode=0o700)
+            for evidence in signed_source.iterdir():
+                if evidence.is_symlink() or not evidence.is_file() or evidence.suffix.lower() != ".pdf":
+                    continue
+                if not evidence.name.replace("_", "").replace("-", "").replace(".", "").isalnum():
+                    raise ValueError("Unexpected signed agreement file name")
+                shutil.copyfile(evidence, signed_dest / evidence.name)
+                os.chmod(signed_dest / evidence.name, 0o600)
         for path in stage_dir.iterdir():
-            os.chmod(path, 0o600)
+            os.chmod(path, 0o700 if path.is_dir() else 0o600)
         result = assess_database(stage_dir / "contracts.sqlite3", stage_dir / "approved_master.xlsx")
         if not result["ready_for_data_review"]:
             raise ValueError("Staged snapshot failed validation: " + "; ".join(result["issues"]))

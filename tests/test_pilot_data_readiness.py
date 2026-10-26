@@ -95,13 +95,18 @@ class PrivatePilotDataTests(unittest.TestCase):
 
     def test_private_snapshot_staged_and_not_overwritten(self):
         (self.source / "equipment_catalogue.json").write_text('[{"sku":"FAKE-001"}]')
+        private_signed = self.source / "private_signed_agreements"
+        private_signed.mkdir()
+        (private_signed / "1_demo.pdf").write_bytes(b"%PDF-1.4\nSynthetic data\n%%EOF\n")
         destination = self.root / "pilot_data"
         checked = stage(self.source, destination)
         self.assertEqual(checked["contracts"]["active"], 4)
         self.assertEqual({x.name for x in destination.iterdir()},
-                         {"contracts.sqlite3", "approved_master.xlsx", "equipment_catalogue.json"})
+                         {"contracts.sqlite3", "approved_master.xlsx", "equipment_catalogue.json", "private_signed_agreements"})
         with sqlite3.connect(destination / "contracts.sqlite3") as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM contracts").fetchone()[0], 5)
+        self.assertEqual((destination / "private_signed_agreements" / "1_demo.pdf").read_bytes(),
+                         b"%PDF-1.4\nSynthetic data\n%%EOF\n")
         # Existing environments are not silently replaced.
         with self.assertRaisesRegex(ValueError, "already exists"):
             stage(self.source, destination)

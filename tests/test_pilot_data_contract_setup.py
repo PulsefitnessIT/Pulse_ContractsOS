@@ -22,7 +22,7 @@ def sample():
             "sage_account_ref": "SAGE-DEMO-1", "sicon_site_ref": "SITE-DEMO-1",
         },
         "contract": {
-            "reference": "", "package": "Gold", "start_date": "2027-01-01",
+            "reference": "", "package": "Gold", "start_date": "2026-01-01",
             "end_date": "2027-12-31", "payment_terms": "Monthly", "visits": 1,
         },
         "pricing": {
@@ -32,7 +32,7 @@ def sample():
         "equipment": [
             {"source_line_id": "demo-A", "item_code": "100H-AAA",
              "quantity": 1, "serial_numbers": ["DEMO-001"],
-             "cover_start": "2027-01-01", "cover_end": "2027-12-31",
+             "cover_start": "2026-01-01", "cover_end": "2027-12-31",
              "annual_total": 600, "first_period_total": 600},
             {"source_line_id": "demo-B", "item_code": "200G-ABC",
              "quantity": 2, "serial_numbers": ["DEMO-002"],
@@ -142,10 +142,39 @@ class ContractSetupTests(unittest.TestCase):
             "sicon_equipment_batch_reference":"BATCH-DEMO-001",
             "evidence":"Individual equipment records checked in Sicon"
         })
-        self.assertTrue(after["readiness"]["equipment_import_confirmed"])
+        self.assertFalse(after["readiness"]["equipment_import_confirmed"])
+        self.assertEqual(after["readiness"]["future_equipment_groups"],["2027-07-01"])
+        self.assertEqual(after["readiness"]["imported_equipment_groups"],["2026-01-01"])
+        self.assertEqual(len(after["equipment_import_batches"]),1)
         self.assertEqual(len(after["events"]),5)
         self.assertTrue((self.root/"private_signed_agreements").is_dir())
         self.assertEqual(setup.get_import_plans(self.iid)["equipment_import"]["individual_machine_records"][2]["serial_number"],"DEMO-003")
+
+    def test_future_equipment_cannot_be_confirmed_early(self):
+        import datetime as dt
+        with patch.object(setup,"today",lambda:dt.date(2026,10,26)):
+            case=self.set_details(contract_reference="CON-DEMO-001")
+            setup.verify_serials(self.iid,{
+                "revision":case["revision"],"source_line_id":"demo-B",
+                "serial_numbers":["DEMO-002","DEMO-003"],
+                "evidence":"Witnessed serials from technician register"
+            })
+            pdf=base64.b64encode(b"%PDF-1.4\nSigned fiction\n%%EOF\n").decode()
+            setup.record_signed(self.iid,{"filename":"sample.pdf",
+                          "pdf_base64":pdf,"signatures_checked":True})
+            setup.confirm_contract_import(self.iid,{
+                "sicon_contract_reference":"SICON-DEMO-001",
+                "evidence":"Verified Sicon contract test import"})
+            with self.assertRaises(HTTPException) as future:
+                setup.confirm_equipment_import(self.iid,{
+                    "start_date":"2027-07-01",
+                    "sicon_equipment_batch_reference":"FUTURE-IMPORT",
+                    "evidence":"Future batch should never be confirmed early"})
+            self.assertEqual(future.exception.status_code,409)
+            response=setup.upcoming_start_dates(days=365)
+            self.assertEqual(len(response["items"]),1)
+            self.assertEqual(response["items"][0]["machine_units"],2)
+            self.assertEqual(response["items"][0]["start_date"],"2027-07-01")
 
     def test_invalid_double_serial_rejected_and_no_change(self):
         self.set_details(contract_reference="CON-DEMO-001")
@@ -155,6 +184,55 @@ class ContractSetupTests(unittest.TestCase):
                 "serial_numbers":["DUP","DUP"],"evidence":"Entered from technician's report"
             })
         self.assertEqual(self.get_case()["verified"]["contract_reference"],"CON-DEMO-001")
+
+    def test_signed_pdf_readback_is_hash_verified(self):
+        case=self.set_details(contract_reference="CON-DEMO-001")
+        setup.verify_serials(self.iid,{
+            "revision":case["revision"],"source_line_id":"demo-B",
+            "serial_numbers":["DEMO-002","DEMO-003"],
+            "evidence":"Signed inventory witnessed by coordinator",
+        })
+        pdf=b"%PDF-1.4\nFictional file evidence only\n%%EOF\n"
+        setup.record_signed(self.iid,{
+            "filename":"fictional.pdf","pdf_base64":base64.b64encode(pdf).decode(),
+            "signatures_checked":True,
+        })
+        attachment=setup.view_signed_agreement(self.iid)
+        self.assertEqual(Path(attachment.path).read_bytes(),pdf)
+        Path(attachment.path).write_bytes(b"%PDF-1.4\nChanged after upload\n%%EOF")
+        with self.assertRaises(HTTPException) as changed:
+            setup.view_signed_agreement(self.iid)
+        self.assertEqual(changed.exception.status_code,409)
+
+    def test_complete_recovery_bundle_contains_signed_evidence(self):
+        from scripts import pilot_backup_bundle as backup
+        from scripts.verify_recovery_bundle import verify
+        from test_pilot_data_readiness import fake_master
+        case=self.set_details(contract_reference="CON-DEMO-001")
+        setup.verify_serials(self.iid,{
+            "revision":case["revision"],"source_line_id":"demo-B",
+            "serial_numbers":["DEMO-002","DEMO-003"],
+            "evidence":"Verifiable fictional signed inventory",
+        })
+        pdf=b"%PDF-1.4\nFictional signed agreement\n%%EOF\n"
+        setup.record_signed(self.iid,{
+            "filename":"fictional.pdf","pdf_base64":base64.b64encode(pdf).decode(),
+            "signatures_checked":True,
+        })
+        with self.connect() as con:
+            for table in ("ledger","imports","changes","equipment"):
+                con.execute("CREATE TABLE IF NOT EXISTS "+table+" (id INTEGER PRIMARY KEY)")
+        fake_master(self.root/"approved_master.xlsx")
+        with patch.object(backup,"DATA",str(self.root)), \
+             patch.object(backup,"DB",str(self.path)), \
+             patch.object(backup,"TEMPLATE",str(self.root/"approved_master.xlsx")):
+            output=backup.create_bundle()
+        import zipfile
+        with zipfile.ZipFile(output) as z:
+            evidence=[f for f in z.namelist() if f.startswith("private_signed_agreements/")]
+            self.assertEqual(len(evidence),1)
+            self.assertEqual(z.read(evidence[0]),pdf)
+        verify(output)
 
     def test_unknown_extra_fields_rejected(self):
         with self.assertRaises(HTTPException):

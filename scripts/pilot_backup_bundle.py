@@ -33,6 +33,13 @@ def create_bundle():
         if upload_dir.is_dir():
             for file in sorted(upload_dir.iterdir()):
                 if file.is_file() and not file.is_symlink():inputs.append((file,'uploads/'+file.name))
+        # Signed agreements are external evidence, not just database metadata.
+        # Include them in the complete recovery bundle with SHA-256 manifest.
+        signed_dir=base/'private_signed_agreements'
+        if signed_dir.is_dir():
+            for signed in sorted(signed_dir.iterdir()):
+                if signed.is_file() and not signed.is_symlink() and signed.suffix.lower()=='.pdf':
+                    inputs.append((signed,'private_signed_agreements/'+signed.name))
         with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
             for file,name in inputs:
                 if not file.exists():raise RuntimeError('Required recovery file missing: '+str(file))

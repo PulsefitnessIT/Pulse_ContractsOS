@@ -96,3 +96,10 @@ body.pulse-pro{--bg:#f4f5f8;--navy:#101010;--teal:#65c9ff;--ink:#1e2025;--muted:
 .sq-detail{border-top:2px solid #d2e1ea;padding-top:16px;margin-top:16px}
 @media(max-width:900px){.sq-stage-flow{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:470px){.sq-stage-flow{grid-template-columns:1fr}}
+
+.sq-upcoming{border:1px solid #d6e5ef;border-radius:11px;background:#f5fafd;margin-bottom:16px;padding:13px 15px}
+.sq-upcoming h3{margin:0 0 6px;color:#184f6c;font-size:14px}
+.sq-upcoming-list{display:grid;grid-template-columns:1fr;gap:5px}
+.sq-upcoming-entry{display:flex;gap:10px;align-items:center;border-top:1px solid #e1edf3;padding:7px 0;font-size:12px}
+.sq-upcoming-entry span{flex:1}
+.sq-upcoming-entry .button{font-size:11px;padding:6px 9px}

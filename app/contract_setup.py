@@ -24,6 +24,10 @@ HASH = re.compile(r"^[0-9a-fA-F]{64}$")
 FREQ = {"Monthly", "Quarterly", "Annual", "Annually", "Yearly", "Six-monthly", "One-off", ""}
 MAX_PDF = 15 * 1024 * 1024
 
+def today():
+    return dt.date.today()
+
+
 
 def ensure_tables(con):
     # Use individual statements rather than executescript: the latter implicitly
@@ -47,6 +51,17 @@ def ensure_tables(con):
         )
     """)
     con.execute("""
+        CREATE TABLE IF NOT EXISTS smartquote_setup_equipment_batches(
+            case_id INTEGER NOT NULL,
+            cover_start TEXT NOT NULL,
+            batch_reference TEXT NOT NULL,
+            confirmed_at TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            PRIMARY KEY(case_id,cover_start),
+            FOREIGN KEY(case_id) REFERENCES smartquote_setup_cases(id)
+        )
+    """)
+    con.execute("""
         CREATE TABLE IF NOT EXISTS smartquote_setup_events(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             case_id INTEGER NOT NULL,
@@ -55,6 +70,12 @@ def ensure_tables(con):
             FOREIGN KEY(case_id) REFERENCES smartquote_setup_cases(id)
         )
     """)
+
+def _batches(con, case_id):
+    return [dict(x) for x in con.execute(
+        "SELECT cover_start,batch_reference,confirmed_at,actor FROM smartquote_setup_equipment_batches WHERE case_id=? ORDER BY cover_start",
+        (case_id,)).fetchall()]
+
 
 def _audit(con, case_id, action, detail=""):
     con.execute("INSERT INTO smartquote_setup_events(case_id,at,actor,action,detail) VALUES(?,?,?,?,?)",
@@ -105,7 +126,7 @@ def _unaccounted(q, verified):
                for a in q['equipment'])
 
 
-def status(quote, verified, case):
+def status(quote, verified, case, batches=()):
     """Derived single review queue; accepted quotation itself is never edited."""
     c, contract = quote["customer"], quote["contract"]
     ref = lambda key, source: verified.get(key) or source or ""
@@ -135,8 +156,13 @@ def status(quote, verified, case):
     agreement_ready = not missing
     contract_import_ready = agreement_ready and signed
     contracted = bool(case["sicon_contract_imported_at"] and case["sicon_contract_reference"])
-    equipment_import_ready = contract_import_ready and contracted
-    equipment_imported = bool(case["sicon_equipment_imported_at"])
+    start_groups = sorted({a["cover_start"] for a in quote["equipment"] if a["cover_start"]})
+    already = {x["cover_start"] for x in batches}
+    today = today().isoformat()
+    due = [d for d in start_groups if d <= today and d not in already]
+    future = [d for d in start_groups if d > today]
+    equipment_import_ready = contract_import_ready and contracted and bool(due)
+    equipment_imported = bool(start_groups) and all(d in already for d in start_groups)
     return {
         "missing": missing,
         "checked": len(required) - sum(not value for value, _ in required),
@@ -146,8 +172,12 @@ def status(quote, verified, case):
         "contract_import_confirmed": contracted,
         "equipment_import_ready": equipment_import_ready,
         "equipment_import_confirmed": equipment_imported,
+        "due_equipment_groups": due,
+        "future_equipment_groups": future,
+        "imported_equipment_groups": sorted(already),
         "workflow_status": ("Imported — awaiting operational reconciliation" if equipment_imported
                             else "Ready for equipment import" if equipment_import_ready
+                            else "Future equipment scheduled" if contracted and future
                             else "Ready for contract import" if contract_import_ready
                             else "Agreement signed — needs setup details" if signed
                             else "Ready for customer signature" if agreement_ready
@@ -159,6 +189,7 @@ def status(quote, verified, case):
 
 def _display(con, intake_id):
     item, case, quote, verified = _case(con, intake_id)
+    batches=_batches(con,case["id"])
     events = con.execute("""SELECT at,actor,action,detail FROM smartquote_setup_events
                              WHERE case_id=? ORDER BY id""", (case["id"],)).fetchall()
     return {
@@ -179,9 +210,54 @@ def _display(con, intake_id):
         "sicon_contract_imported_at": case["sicon_contract_imported_at"],
         "sicon_equipment_imported_at": case["sicon_equipment_imported_at"],
         "sicon_equipment_batch_reference": case["sicon_equipment_batch_reference"],
-        "readiness": status(quote, verified, case),
+        "readiness": status(quote, verified, case, batches),
+        "equipment_import_batches": batches,
         "events": [dict(x) for x in events],
     }
+
+
+@router.get("/upcoming")
+def upcoming_start_dates(days: int = 90):
+    """Future equipment requiring a commencement check; no automatic activation."""
+    days=max(1,min(365,days))
+    today=today()
+    last=today+dt.timedelta(days=days)
+    con=connect()
+    try:
+        ensure_tables(con)
+        rows=con.execute("""
+            SELECT s.id AS setup_id,s.intake_id,s.sicon_contract_imported_at,
+                   s.sicon_equipment_imported_at,i.quote_number,i.source_quote_id,
+                   i.payload_json
+            FROM smartquote_setup_cases s JOIN smartquote_intakes i ON i.id=s.intake_id
+            WHERE i.id=(SELECT MAX(j.id) FROM smartquote_intakes j
+                        WHERE j.source_quote_id=i.source_quote_id)
+            ORDER BY i.id DESC
+        """).fetchall()
+        pending=[]
+        for r in rows:
+            q=json.loads(r["payload_json"])
+            for start in sorted({a["cover_start"] for a in q["equipment"] if a["cover_start"]}):
+                date=dt.date.fromisoformat(start)
+                if date<today or date>last:
+                    continue
+                scheduled=[a for a in q["equipment"] if a["cover_start"]==start]
+                batch=con.execute("""SELECT 1 FROM smartquote_setup_equipment_batches
+                       WHERE case_id=? AND cover_start=?""",(r["setup_id"],start)).fetchone()
+                pending.append({
+                    "intake_id":r["intake_id"],"quote_number":r["quote_number"],
+                    "customer":q["customer"]["legal_name"],"site":q["customer"]["site_name"],
+                    "start_date":start,"days_until_start":(date-today).days,
+                    "machine_units":sum(a["quantity"] for a in scheduled),
+                    "import_recorded":bool(batch),
+                    "action":"Check scheduled cover and asset eligibility" if batch else
+                       "Arrange dated Sicon equipment import when coverage begins",
+                })
+        pending.sort(key=lambda x:(x["start_date"],x["quote_number"]))
+        return {"window_days":days,"items":pending[:200],"total":len(pending),
+                "note":"Date worklist only. It does not activate cover, schedule a service, or write to Sicon."}
+    finally:
+        con.close()
 
 
 @router.get("/{intake_id}")
@@ -336,7 +412,7 @@ def _plan(quote, verified, case, ready):
             "billing_frequency": ref("billing_frequency",contract["payment_terms"]),
             "purchase_order":verified.get("purchase_order",""),
             "billing_email":verified.get("billing_email",""),
-            "status":"Scheduled" if start and start>dt.date.today().isoformat() else "Commencement due/commenced",
+            "status":"Scheduled" if start and start>today().isoformat() else "Commencement due/commenced",
         })
     machine_rows = []
     for a in quote["equipment"]:
@@ -351,8 +427,10 @@ def _plan(quote, verified, case, ready):
                 "model":a["model"],"description":a["description"],
                 "serial_number":serial,"coverage_start":a["cover_start"],
                 "coverage_end":a["cover_end"],"equipment_status":
-                    "Scheduled" if a["cover_start"] and a["cover_start"]>dt.date.today().isoformat() else "Commencement due/commenced",
+                    "Scheduled" if a["cover_start"] and a["cover_start"]>today().isoformat() else "Commencement due/commenced",
                 "requires_review":not bool(serial),
+                "eligible_for_import_now": bool(a["cover_start"] and a["cover_start"]<=today().isoformat()),
+                "import_batch_recorded": a["cover_start"] in ready["imported_equipment_groups"],
             })
     return {
         "warning":"REVIEW_ONLY_MAPPING_PLAN_NOT_A_SICON_IMPORT",
@@ -376,7 +454,7 @@ def get_import_plans(intake_id: int):
     try:
         item, case, quote, verified = _case(con, intake_id)
         con.commit()
-        return _plan(quote,verified,case,status(quote,verified,case))
+        return _plan(quote,verified,case,status(quote,verified,case,_batches(con,case["id"])))
     finally:
         con.close()
 
@@ -409,23 +487,45 @@ def confirm_contract_import(intake_id: int,payload: dict = Body(...)):
 
 @router.post("/{intake_id}/confirm-sicon-equipment")
 def confirm_equipment_import(intake_id: int,payload: dict = Body(...)):
+    """Confirm a single coverage-date batch, never future cover before commencement."""
     reference = str(payload.get("sicon_equipment_batch_reference","")).strip()
     evidence = str(payload.get("evidence","")).strip()[:500]
     if not ACCOUNT.fullmatch(reference) or len(evidence)<8:
         raise HTTPException(422,"Enter equipment import batch reference and evidence")
-    con = connect()
+    con=connect()
     try:
-        item,case,quote,verified = _case(con,intake_id)
-        if case["sicon_equipment_imported_at"]:
-            if case["sicon_equipment_batch_reference"] == reference:
+        item,case,quote,verified=_case(con,intake_id)
+        batches=_batches(con,case["id"])
+        dates=sorted({a["cover_start"] for a in quote["equipment"] if a["cover_start"]})
+        requested=str(payload.get("start_date","")).strip()
+        if not requested:
+            due=[d for d in dates if d<=today().isoformat() and d not in {b["cover_start"] for b in batches}]
+            if len(due)!=1:
+                raise HTTPException(422,"Select the exact equipment commencement group to confirm")
+            requested=due[0]
+        if requested not in dates:
+            raise HTTPException(422,"Selected equipment date is not in this accepted agreement")
+        if requested>today().isoformat():
+            raise HTTPException(409,"Future-dated equipment cannot be recorded as imported before its cover starts")
+        previous=next((x for x in batches if x["cover_start"]==requested),None)
+        if previous:
+            if previous["batch_reference"]==reference:
                 return _display(con,intake_id)
-            raise HTTPException(409,"Equipment import has already been recorded")
-        if not status(quote,verified,case)["equipment_import_ready"]:
-            raise HTTPException(409,"Confirm the Sicon contract import before equipment")
-        con.execute("""UPDATE smartquote_setup_cases SET sicon_equipment_batch_reference=?,
-                 sicon_equipment_imported_at=?,revision=revision+1,updated_at=? WHERE id=?""",
-                    (reference,now(),now(),case["id"]))
-        _audit(con,case["id"],"SICON_EQUIPMENT_IMPORT_CONFIRMED",f"{reference}: {evidence}")
+            raise HTTPException(409,"Equipment commencement group already has a different Sicon batch reference")
+        if not status(quote,verified,case,batches)["equipment_import_ready"]:
+            raise HTTPException(409,"Confirm contract import and required details before equipment")
+        con.execute("""INSERT INTO smartquote_setup_equipment_batches(
+                 case_id,cover_start,batch_reference,confirmed_at,actor) VALUES (?,?,?,?,?)""",
+                 (case["id"],requested,reference,now(),actor()))
+        count=con.execute("SELECT COUNT(*) FROM smartquote_setup_equipment_batches WHERE case_id=?",
+                          (case["id"],)).fetchone()[0]
+        completed=count==len(dates)
+        con.execute("""UPDATE smartquote_setup_cases SET
+                       sicon_equipment_batch_reference=?,
+                       sicon_equipment_imported_at=?,revision=revision+1,updated_at=? WHERE id=?""",
+                    (reference,now() if completed else "",now(),case["id"]))
+        _audit(con,case["id"],"SICON_EQUIPMENT_DATE_BATCH_CONFIRMED",
+               f"Cover starts {requested}; batch {reference}; evidence: {evidence}")
         con.commit()
         return _display(con,intake_id)
     finally:
