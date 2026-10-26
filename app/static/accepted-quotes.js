@@ -133,7 +133,7 @@ async function sqShowSetup(id,quote){
  '<div class="sq-serial-row"><strong>'+esc(a.item_code)+'</strong><span>Qty '+a.quantity+'</span>'+
  '<input class="input" data-sq-serial="'+esc(a.source_line_id)+'" placeholder="Serial numbers, separated by commas" value="'+esc((v.verified_serials?.[a.source_line_id]||a.serial_numbers).join(', '))+'">'+
  '<button class="button button-outline" data-sq-serial-verify="'+esc(a.source_line_id)+'" type="button">Verify</button></div>').join('')+
- '<label class="sq-field"><span>Where the serial information was confirmed</span><input class="input" id="sqSerialEvidence" placeholder="e.g. Service visit or engineer's equipment list"></label></details>':'')+
+ '<label class="sq-field"><span>Where the serial information was confirmed</span><input class="input" id="sqSerialEvidence" placeholder="e.g. Service visit or verified asset register"></label></details>':'')+
  '<details class="sq-setup-section" '+(r.agreement_ready&&!r.agreement_signed?'open':'')+'><summary>Signed customer maintenance agreement</summary>'+
  '<p class="mini-note">Upload the signed PDF to the protected runtime once, not to GitHub. It is retained with its SHA-256 evidence record.</p>'+
  (setup.signed_document?'<p class="notice">Signed agreement recorded: '+esc(setup.signed_filename)+' · '+esc(setup.signed_sha256.slice(0,12))+'…</p>':
