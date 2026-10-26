@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
+from fastapi.responses import FileResponse
 from .store import DATA, connect, now
 from .pilot_access import actor
 
@@ -455,6 +456,29 @@ def get_import_plans(intake_id: int):
         item, case, quote, verified = _case(con, intake_id)
         con.commit()
         return _plan(quote,verified,case,status(quote,verified,case,_batches(con,case["id"])))
+    finally:
+        con.close()
+
+
+@router.get("/{intake_id}/signed-agreement")
+def view_signed_agreement(intake_id: int):
+    """Return original signed PDF only after verifying the saved file hash."""
+    con=connect()
+    try:
+        item,case,quote,verified=_case(con,intake_id)
+        digest=case["signed_document_sha256"]
+        if not digest or not HASH.fullmatch(digest):
+            raise HTTPException(404,"No signed maintenance agreement is recorded")
+        path=Path(DATA)/"private_signed_agreements"/f"{case['id']}_{digest}.pdf"
+        if path.is_symlink() or not path.is_file():
+            raise HTTPException(409,"Signed agreement unavailable. Restore the approved protected backup.")
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=digest:
+            raise HTTPException(409,"Signed agreement checksum mismatch. Contact IT.")
+        return FileResponse(path,media_type="application/pdf",headers={
+            "Cache-Control":"no-store",
+            "X-Content-Type-Options":"nosniff",
+            "Content-Disposition":f"attachment; filename=Pulse_Signed_Agreement_{case['id']}.pdf"
+        })
     finally:
         con.close()
 
