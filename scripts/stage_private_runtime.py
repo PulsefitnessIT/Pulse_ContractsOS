@@ -69,6 +69,16 @@ def stage(source, destination):
                     raise ValueError("Unexpected signed agreement file name")
                 shutil.copyfile(evidence, signed_dest / evidence.name)
                 os.chmod(signed_dest / evidence.name, 0o600)
+        templates_source=source/"approved_sicon_templates"
+        if templates_source.is_dir() and not templates_source.is_symlink():
+            templates_dest=stage_dir/"approved_sicon_templates"
+            templates_dest.mkdir(mode=0o700)
+            for name in ("maintenance_agreement_approved.pdf",
+                         "sicon_contract_import.xlsx","sicon_equipment_import.xlsx"):
+                item=templates_source/name
+                if item.is_file() and not item.is_symlink():
+                    shutil.copyfile(item,templates_dest/name)
+                    os.chmod(templates_dest/name,0o600)
         for path in stage_dir.iterdir():
             os.chmod(path, 0o700 if path.is_dir() else 0o600)
         result = assess_database(stage_dir / "contracts.sqlite3", stage_dir / "approved_master.xlsx")

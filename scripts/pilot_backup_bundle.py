@@ -40,6 +40,15 @@ def create_bundle():
             for signed in sorted(signed_dir.iterdir()):
                 if signed.is_file() and not signed.is_symlink() and signed.suffix.lower()=='.pdf':
                     inputs.append((signed,'private_signed_agreements/'+signed.name))
+        # Templates used to prepare agreements and Sicon exports must survive a
+        # restore alongside the contract/setup history, never travel via GitHub.
+        templates=base/'approved_sicon_templates'
+        if templates.is_dir() and not templates.is_symlink():
+            permitted={'maintenance_agreement_approved.pdf','sicon_contract_import.xlsx','sicon_equipment_import.xlsx'}
+            for name in sorted(permitted):
+                original=templates/name
+                if original.is_file() and not original.is_symlink():
+                    inputs.append((original,'approved_sicon_templates/'+name))
         with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
             for file,name in inputs:
                 if not file.exists():raise RuntimeError('Required recovery file missing: '+str(file))

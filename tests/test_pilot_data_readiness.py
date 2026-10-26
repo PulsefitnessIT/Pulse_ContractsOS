@@ -98,15 +98,22 @@ class PrivatePilotDataTests(unittest.TestCase):
         private_signed = self.source / "private_signed_agreements"
         private_signed.mkdir()
         (private_signed / "1_demo.pdf").write_bytes(b"%PDF-1.4\nSynthetic data\n%%EOF\n")
+        templates=self.source/"approved_sicon_templates"
+        templates.mkdir()
+        (templates/"maintenance_agreement_approved.pdf").write_bytes(b"%PDF-1.4\nFictional approved source\n%%EOF")
+        (templates/"sicon_contract_import.xlsx").write_bytes(b"Fake template in synthetic test")
+        (templates/"sicon_equipment_import.xlsx").write_bytes(b"Fake equipment template in synthetic test")
         destination = self.root / "pilot_data"
         checked = stage(self.source, destination)
         self.assertEqual(checked["contracts"]["active"], 4)
         self.assertEqual({x.name for x in destination.iterdir()},
-                         {"contracts.sqlite3", "approved_master.xlsx", "equipment_catalogue.json", "private_signed_agreements"})
+                         {"contracts.sqlite3", "approved_master.xlsx", "equipment_catalogue.json", "private_signed_agreements", "approved_sicon_templates"})
         with sqlite3.connect(destination / "contracts.sqlite3") as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM contracts").fetchone()[0], 5)
         self.assertEqual((destination / "private_signed_agreements" / "1_demo.pdf").read_bytes(),
                          b"%PDF-1.4\nSynthetic data\n%%EOF\n")
+        self.assertEqual((destination/"approved_sicon_templates"/"sicon_contract_import.xlsx").read_bytes(),
+                         b"Fake template in synthetic test")
         # Existing environments are not silently replaced.
         with self.assertRaisesRegex(ValueError, "already exists"):
             stage(self.source, destination)
