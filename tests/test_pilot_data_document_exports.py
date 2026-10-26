@@ -16,7 +16,13 @@ def fake_template(kind):
     if kind=="contract":
         names=["Contract Number"]+[f"Filler Column {n}" for n in range(2,239)]+["CL AnalysisCode 150"]
     else:
-        names=["Sicon Customer Ref"]+[f"Field {n}" for n in range(2,29)]+["MOD-Force"]
+        names=["Sicon Customer Ref", "Location Description", "Sublocation Description",
+          "Supplier Reference", "Supplier Name", "Contract Number", "Contract Line No",
+          "SLA Name", "Stock Item Code", "Description", "Make", "Model",
+          "Serial Number", "Install Date", "Manufacturer Warranty Expiry Date",
+          "Last Service Date", "Service Interval", "Service Period", "Next Service Date",
+          "ID Number", "Service Template", "Equipment Group", "service_provider",
+          "unit_price", "replacement_cost", "length", "width", "height", "MOD-Force"]+[""]*15
     root=ET.Element(NS+"worksheet")
     data=ET.SubElement(root,NS+"sheetData")
     for n,values in enumerate([names,["SAMPLE MUST BE DELETED"]+[""]*(len(names)-1)],1):
@@ -29,6 +35,18 @@ def fake_template(kind):
         z.writestr("xl/worksheets/sheet1.xml",ET.tostring(root))
         z.writestr("xl/workbook.xml","<sample/>")
     return x.getvalue(),names
+
+
+def fill_approved_fixture(template,kind,rows):
+    # Synthetic fixtures are not the private Sicon source templates; explicitly
+    # pin only their test-only header checksum for the duration of this call.
+    with zipfile.ZipFile(io.BytesIO(template)) as z:
+        root=ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
+        names=doc._headers(root.find(NS+"sheetData")[0])
+    import hashlib
+    digest=hashlib.sha256("\0".join(names).encode("utf-8")).hexdigest()
+    with patch.dict(doc.APPROVED_HEADER_SHA256,{kind:digest}):
+        return doc.workbook_from_template(template,kind,rows)
 
 
 def data():
@@ -58,7 +76,7 @@ class ExcelTemplatePreservation(unittest.TestCase):
         source,names=fake_template("contract")
         row=doc.contract_rows(data(),verified())[0]
         allowed={key:row[key] for key in row if key in names}
-        generated=doc.workbook_from_template(source,"contract",[allowed,allowed])
+        generated=fill_approved_fixture(source,"contract",[allowed,allowed])
         with zipfile.ZipFile(io.BytesIO(generated)) as z:
             root=ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
             rows=root.find(NS+"sheetData").findall(NS+"row")
@@ -76,7 +94,7 @@ class ExcelTemplatePreservation(unittest.TestCase):
         self.assertEqual([r["Serial Number"] for r in rows],["TEST-002","TEST-003"])
         self.assertEqual(rows[0]["Contract Line No"],2)
         tmpl,names=fake_template("equipment")
-        b=doc.workbook_from_template(tmpl,"equipment",rows)
+        b=fill_approved_fixture(tmpl,"equipment",rows)
         with zipfile.ZipFile(io.BytesIO(b)) as z:
             root=ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
             rec=root.find(NS+"sheetData").findall(NS+"row")

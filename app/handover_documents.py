@@ -59,15 +59,28 @@ def _iso_to_uk(iso):
         raise TemplateError("Invalid contract or equipment cover date") from exc
 
 
-def _headers(row):
+# SHA-256 of the exact ordered first-row headers supplied by Pulse, including
+# 15 blank formatted columns following the equipment template's 29 field names.
+APPROVED_HEADER_SHA256 = {
+    "contract": "89e9ab9f829ecd5db96870e813483fedead25633bd5ff4f16e042adf8ba367ba",
+    "equipment": "0ef5121179775645a082806363fffcc3a1de8bbd98b5e89615c16e174d1b6105",
+}
+
+def _headers(row, strings=None):
     columns=[]
+    strings=strings or []
     for c in row.findall(X+"c"):
-        is_element=c.find(X+"is")
-        if is_element is not None:
-            columns.append("".join(is_element.itertext()).strip())
+        inline=c.find(X+"is")
+        value=c.find(X+"v")
+        if c.get("t")=="s" and value is not None:
+            try:
+                columns.append(strings[int(value.text)].strip())
+            except (IndexError,ValueError,TypeError) as exc:
+                raise TemplateError("Shared-string Sicon header could not be resolved") from exc
+        elif inline is not None:
+            columns.append("".join(inline.itertext()).strip())
         else:
-            v=c.find(X+"v")
-            columns.append(v.text.strip() if v is not None and v.text else "")
+            columns.append(value.text.strip() if value is not None and value.text else "")
     return columns
 
 
@@ -92,15 +105,17 @@ def workbook_from_template(template: bytes, kind: str, rows: list[dict]):
     if data is None or not list(data):
         raise TemplateError("Sicon template does not contain its required header row")
     first=list(data)[0]
-    headers=_headers(first)
-    # Exact source template shape from Pulse-provided Contract Import.xlsx and
-    # Equipment Import - Template.xlsx. Do not substitute a generic workbook.
-    if kind=="contract":
-        expected=(239,"Contract Number","CL AnalysisCode 150")
-    else:
-        expected=(29,"Sicon Customer Ref","MOD-Force")
-    if len(headers)!=expected[0] or headers[0]!=expected[1] or headers[-1]!=expected[2]:
-        raise TemplateError("Sicon template headers have changed; reapprove the field mapping")
+    shared=[]
+    if "xl/sharedStrings.xml" in source.namelist():
+        shared_root=ET.fromstring(source.read("xl/sharedStrings.xml"))
+        shared=["".join(node.itertext()) for node in shared_root.findall(X+"si")]
+    headers=_headers(first,shared)
+    count=len(headers)
+    named=sum(bool(x) for x in headers)
+    expected=(239,239) if kind=="contract" else (44,29)
+    digest=hashlib.sha256("\0".join(headers).encode("utf-8")).hexdigest()
+    if (count,named)!=expected or digest!=APPROVED_HEADER_SHA256[kind]:
+        raise TemplateError("Sicon template headers differ from the approved import map; IT review required")
     if len(set(headers))!=len(headers):
         # Supplied contract template repeats 'CL AnalysisCode 40'; index-based
         # fallback would silently fill the wrong column, so only use unique keys.
@@ -142,7 +157,7 @@ def workbook_from_template(template: bytes, kind: str, rows: list[dict]):
         if verify.testzip():
             raise TemplateError("Generated Sicon workbook did not pass ZIP integrity check")
         new=ET.fromstring(verify.read("xl/worksheets/sheet1.xml"))
-        if _headers(new.find(X+"sheetData")[0])!=headers:
+        if _headers(new.find(X+"sheetData")[0],shared)!=headers:
             raise TemplateError("Generated workbook headers differ from the original Sicon template")
     return raw
 
