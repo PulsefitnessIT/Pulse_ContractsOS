@@ -158,9 +158,9 @@ def status(quote, verified, case, batches=()):
     contracted = bool(case["sicon_contract_imported_at"] and case["sicon_contract_reference"])
     start_groups = sorted({a["cover_start"] for a in quote["equipment"] if a["cover_start"]})
     already = {x["cover_start"] for x in batches}
-    today = today().isoformat()
-    due = [d for d in start_groups if d <= today and d not in already]
-    future = [d for d in start_groups if d > today]
+    current_date = today().isoformat()
+    due = [d for d in start_groups if d <= current_date and d not in already]
+    future = [d for d in start_groups if d > current_date]
     equipment_import_ready = contract_import_ready and contracted and bool(due)
     equipment_imported = bool(start_groups) and all(d in already for d in start_groups)
     return {
@@ -220,8 +220,8 @@ def _display(con, intake_id):
 def upcoming_start_dates(days: int = 90):
     """Future equipment requiring a commencement check; no automatic activation."""
     days=max(1,min(365,days))
-    today=today()
-    last=today+dt.timedelta(days=days)
+    current_date=today()
+    last=current_date+dt.timedelta(days=days)
     con=connect()
     try:
         ensure_tables(con)
@@ -239,7 +239,7 @@ def upcoming_start_dates(days: int = 90):
             q=json.loads(r["payload_json"])
             for start in sorted({a["cover_start"] for a in q["equipment"] if a["cover_start"]}):
                 date=dt.date.fromisoformat(start)
-                if date<today or date>last:
+                if date<current_date or date>last:
                     continue
                 scheduled=[a for a in q["equipment"] if a["cover_start"]==start]
                 batch=con.execute("""SELECT 1 FROM smartquote_setup_equipment_batches
@@ -247,7 +247,7 @@ def upcoming_start_dates(days: int = 90):
                 pending.append({
                     "intake_id":r["intake_id"],"quote_number":r["quote_number"],
                     "customer":q["customer"]["legal_name"],"site":q["customer"]["site_name"],
-                    "start_date":start,"days_until_start":(date-today).days,
+                    "start_date":start,"days_until_start":(date-current_date).days,
                     "machine_units":sum(a["quantity"] for a in scheduled),
                     "import_recorded":bool(batch),
                     "action":"Check scheduled cover and asset eligibility" if batch else
