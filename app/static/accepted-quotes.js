@@ -126,6 +126,13 @@ async function sqShowSetup(id,quote){
  field('billing_frequency','Billing frequency')+
  field('purchase_order','Purchase order (where required)')+
  field('billing_email','Billing email','email')+
+ field('billing_stock_code','Sicon maintenance billing stock code')+
+ field('warehouse_name','Sicon warehouse')+
+ field('sicon_delivery_address','Sicon delivery address reference')+
+ field('sicon_customer_ref','Sicon customer reference')+
+ field('sicon_location_description','Sicon location description')+
+ field('sla_name','Approved Sicon SLA name')+
+ field('equipment_make','Verified equipment manufacturer (if shared)')+
  '</div><button type="button" id="sqVerifyDetails" class="button button-primary" '+(r.contract_import_confirmed?'disabled':'')+'>Save verified details</button></details>'+
  (quote.equipment.some(a=>a.quantity>(v.verified_serials?.[a.source_line_id]||a.serial_numbers).filter(Boolean).length)?
  '<details class="sq-setup-section" open><summary>Verify missing machine serial numbers</summary>'+
@@ -136,13 +143,15 @@ async function sqShowSetup(id,quote){
  '<button class="button button-outline" data-sq-serial-verify="'+esc(a.source_line_id)+'" type="button">Verify</button></div>').join('')+
  '<label class="sq-field"><span>Where the serial information was confirmed</span><input class="input" id="sqSerialEvidence" placeholder="e.g. Service visit or verified asset register"></label></details>':'')+
  '<details class="sq-setup-section" '+(r.agreement_ready&&!r.agreement_signed?'open':'')+'><summary>Signed customer maintenance agreement</summary>'+
- '<p class="mini-note">Upload the signed PDF to the protected runtime once, not to GitHub. It is retained with its SHA-256 evidence record.</p>'+
+ '<p class="mini-note">Generate an internal agreement draft from the approved source template, check it with the customer, then record the signed copy. Never send the watermarked draft for signature.</p>'+
+ '<div class="actions-row"><button type="button" class="button button-outline" id="sqAgreementPreview" '+(!r.agreement_ready?'disabled':'')+'>Preview populated agreement</button></div>'+
  (setup.signed_document?'<p class="notice">Signed agreement recorded: '+esc(setup.signed_filename)+' · '+esc(setup.signed_sha256.slice(0,12))+'… <a href="/api/smartquote/setups/'+id+'/signed-agreement">Open verified signed PDF</a></p>':
  '<div class="actions-row"><input type="file" id="sqSignedPdf" class="input" accept=".pdf,application/pdf"><label><input type="checkbox" id="sqSignatureChecked"> I have checked the required signatures</label><button class="button button-primary" id="sqSaveSigned" type="button" '+(!r.agreement_ready?'disabled':'')+'>Record signed agreement</button></div>')+
  '</details>'+
  '<details class="sq-setup-section" '+(r.contract_import_ready?'open':'')+'><summary>Sicon contract import — first</summary>'+
  '<p class="mini-note">The structured preview is not a Sicon-ready Excel import. Generate the contract import using the approved mapping, complete the Sicon upload, then record its confirmed reference here.</p>'+
  '<p>'+plans.contract_import.staged_billing_groups.length+' contract commencement group(s) · '+plans.contract_import.staged_billing_groups.reduce((n,x)=>n+x.machine_units,0)+' equipment units</p>'+
+ '<div class="actions-row"><button type="button" class="button button-outline" id="sqContractExcel" '+(!r.contract_import_ready?'disabled':'')+'>Prepare contract Excel (review only)</button></div>'+
  (r.contract_import_confirmed?'<p class="notice">Sicon contract '+esc(setup.sicon_contract_reference)+' verified.</p>':
  '<div class="sq-setup-grid">'+
  '<label class="sq-field"><span>Confirmed Sicon contract number</span><input id="sqSiconContract" class="input" placeholder="Sicon contract reference"></label>'+
@@ -151,6 +160,7 @@ async function sqShowSetup(id,quote){
  '<details class="sq-setup-section" '+(r.equipment_import_ready?'open':'')+'><summary>Sicon equipment import — second</summary>'+
  '<p class="mini-note">Equipment should be linked to the confirmed Sicon contract. Future cover dates remain scheduled and must not be treated as already activated.</p>'+
  '<p>'+plans.equipment_import.individual_machine_records.length+' individual equipment record(s) prepared for mapping verification.</p>'+
+ '<div class="actions-row"><button type="button" class="button button-outline" id="sqEquipmentExcel" '+(!r.equipment_import_ready?'disabled':'')+'>Prepare due equipment Excel (review only)</button></div>'+
  '<p class="mini-note">'+r.imported_equipment_groups.length+' start-date group(s) recorded; '+r.future_equipment_groups.length+' future group(s) still to commence. Each group requires its own confirmed import.</p>'+
  (r.equipment_import_confirmed?'<p class="notice">Equipment batch '+esc(setup.sicon_equipment_batch_reference)+' confirmed.</p>':
  '<div class="sq-setup-grid"><label class="sq-field"><span>Machines starting</span><select id="sqEquipmentDate" class="input">'+r.due_equipment_groups.map(d=>'<option value="'+esc(d)+'">'+esc(d)+'</option>').join('')+'</select></label><label class="sq-field"><span>Equipment import batch reference</span><input id="sqSiconEquipment" class="input" placeholder="Batch reference"></label>'+
@@ -162,6 +172,27 @@ async function sqShowSetup(id,quote){
  const send=async(url,body)=>{
    const response=await api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
    toast('Contract setup updated');await sqShowSetup(id,quote);return response;
+ };
+ const documentLink=async(path)=>{
+  // Same-origin authenticated fetch keeps validation errors inside the workbench.
+  try{
+   const res=await fetch(path,{credentials:'same-origin',cache:'no-store'});
+   if(!res.ok){let message='Unable to prepare document';try{const body=await res.json();message=body.detail||message}catch(_){}throw new Error(message)}
+   const content=await res.blob(),header=res.headers.get('Content-Disposition')||'';
+   const match=/filename="?([^";]+)"?/i.exec(header);
+   const filename=match?match[1]:'contract_handover_review';
+   const link=document.createElement('a'),url=URL.createObjectURL(content);
+   link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),5000);
+   toast('Review-only document prepared. Check against the approved Sicon mapping.');
+  }catch(e){toast(e.message,true)}
+ };
+ if($('#sqAgreementPreview'))$('#sqAgreementPreview').onclick=()=>documentLink('/api/smartquote/setups/'+id+'/agreement-preview');
+ if($('#sqContractExcel'))$('#sqContractExcel').onclick=()=>documentLink('/api/smartquote/setups/'+id+'/sicon-contract-draft');
+ if($('#sqEquipmentExcel'))$('#sqEquipmentExcel').onclick=()=>{
+  const selected=$('#sqEquipmentDate')?.value||r.due_equipment_groups[0];
+  if(!selected){toast('No equipment start date is due for import',true);return}
+  documentLink('/api/smartquote/setups/'+id+'/sicon-equipment-draft?start_date='+encodeURIComponent(selected));
  };
  const save=$('#sqVerifyDetails');
  if(save)save.onclick=async()=>{

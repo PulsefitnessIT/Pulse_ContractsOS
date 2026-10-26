@@ -138,6 +138,7 @@ def validate(payload: dict) -> dict:
             "item_code": sku,
             "description": _text(line.get("description"), maximum=600),
             "model": _text(line.get("model"), maximum=160),
+            "make": _text(line.get("make"), maximum=160),
             "quantity": qty,
             "serial_numbers": serials,
             "cover_start": cover,

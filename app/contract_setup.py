@@ -15,7 +15,8 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from .handover_documents import agreement_preview,contract_rows,equipment_rows,workbook_from_template,approved_template_path,AGREEMENT,CONTRACT_XLSX,EQUIPMENT_XLSX,TemplateError
 from .store import DATA, connect, now
 from .pilot_access import actor
 
@@ -278,7 +279,10 @@ def save_details(intake_id: int, payload: dict = Body(...)):
     if not isinstance(payload, dict):
         raise HTTPException(422, "Provide the details to verify")
     keys = {"sage_account_ref", "sicon_site_ref", "contract_reference",
-            "billing_frequency", "billing_email", "purchase_order"}
+            "billing_frequency", "billing_email", "purchase_order",
+            "billing_stock_code", "warehouse_name", "sicon_delivery_address",
+            "sicon_customer_ref", "sicon_location_description", "sicon_sublocation_description",
+            "sla_name", "sicon_supplier_reference", "sicon_supplier_name", "equipment_make"}
     if not set(payload).issubset(keys | {"revision"}) or not (set(payload) & keys):
         raise HTTPException(422, "Unexpected contract setup field")
     con = connect()
@@ -479,6 +483,80 @@ def view_signed_agreement(intake_id: int):
             "X-Content-Type-Options":"nosniff",
             "Content-Disposition":f"attachment; filename=Pulse_Signed_Agreement_{case['id']}.pdf"
         })
+    finally:
+        con.close()
+
+
+@router.get("/{intake_id}/agreement-preview")
+def download_agreement_preview(intake_id: int):
+    """Unissued customer agreement preview from the approved source PDF."""
+    con=connect()
+    try:
+        item,case,quote,verified=_case(con,intake_id)
+        if not status(quote,verified,case,_batches(con,case["id"]))["agreement_ready"]:
+            raise HTTPException(409,"Resolve equipment and contract details before generating the draft agreement")
+        try:
+            template=approved_template_path(DATA,AGREEMENT).read_bytes()
+            pdf=agreement_preview(template,quote,verified,verified.get("verified_serials"))
+        except TemplateError as exc:
+            raise HTTPException(409,str(exc)) from exc
+        _audit(con,case["id"],"AGREEMENT_DRAFT_PREVIEWED","Original legal terms preserved; draft not ready for signature")
+        con.commit()
+        return Response(content=pdf,media_type="application/pdf",headers={
+            "Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
+            "Content-Disposition":f"attachment; filename=Agreement_{case['id']}_INTERNAL_DRAFT.pdf"})
+    finally:
+        con.close()
+
+
+@router.get("/{intake_id}/sicon-contract-draft")
+def download_contract_draft(intake_id: int):
+    """Exact 239-column source template, but NOT approved for live Sicon import."""
+    con=connect()
+    try:
+        item,case,quote,verified=_case(con,intake_id)
+        if not status(quote,verified,case,_batches(con,case["id"]))["contract_import_ready"]:
+            raise HTTPException(409,"Signed agreement and required commercial/setup details must be verified first")
+        try:
+            rows=contract_rows(quote,verified)
+            source=approved_template_path(DATA,CONTRACT_XLSX).read_bytes()
+            document=workbook_from_template(source,"contract",rows)
+        except TemplateError as exc:
+            raise HTTPException(409,str(exc)) from exc
+        _audit(con,case["id"],"SICON_CONTRACT_DRAFT_PREPARED",
+               f"Review-only; {len(rows)} dated billing line(s), source PDF {quote['pricing']['source_quote_pdf_sha256'][:12]}")
+        con.commit()
+        return Response(content=document,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+               headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
+                        "Content-Disposition":f"attachment; filename=Sicon_Contract_{case['id']}_REVIEW_ONLY.xlsx"})
+    finally:
+        con.close()
+
+
+@router.get("/{intake_id}/sicon-equipment-draft")
+def download_equipment_draft(intake_id: int,start_date: str):
+    """Only equipment whose scheduled cover has commenced, one date group at a time."""
+    con=connect()
+    try:
+        item,case,quote,verified=_case(con,intake_id)
+        readiness=status(quote,verified,case,_batches(con,case["id"]))
+        if not readiness["equipment_import_ready"]:
+            raise HTTPException(409,"Confirm the Sicon contract and resolve due-date equipment setup first")
+        if start_date not in readiness["due_equipment_groups"]:
+            raise HTTPException(409,"Select a due, unimported equipment commencement date")
+        try:
+            rows=equipment_rows(quote,verified,case["sicon_contract_reference"],
+                                start_date,verified.get("verified_serials"))
+            source=approved_template_path(DATA,EQUIPMENT_XLSX).read_bytes()
+            document=workbook_from_template(source,"equipment",rows)
+        except TemplateError as exc:
+            raise HTTPException(409,str(exc)) from exc
+        _audit(con,case["id"],"SICON_EQUIPMENT_DRAFT_PREPARED",
+               f"Review-only; {len(rows)} serialised equipment record(s) for {start_date}")
+        con.commit()
+        return Response(content=document,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+               headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
+                        "Content-Disposition":f"attachment; filename=Sicon_Equipment_{case['id']}_{start_date}_REVIEW_ONLY.xlsx"})
     finally:
         con.close()
 
