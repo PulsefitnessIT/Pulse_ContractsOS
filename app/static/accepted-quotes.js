@@ -79,7 +79,7 @@ async function sqOpenIntake(id){
   sqMissing(r)+'<h3>Evidence-based matches</h3>'+sqCandidates(entry.candidates,entry.linked_contract_id===null)+
   '<h3>Equipment schedule</h3><div class="scroll-table"><table class="data-table"><thead><tr><th>Machine</th><th>Description</th><th>Qty</th><th>Start</th><th>End</th></tr></thead><tbody>'+
   q.equipment.map(a=>'<tr><td>'+esc(a.item_code)+'</td><td>'+esc(a.description)+'</td><td>'+a.quantity+'</td><td>'+esc(a.cover_start)+'</td><td>'+esc(a.cover_end)+'</td></tr>').join('')+'</tbody></table></div>'+
-  '<p class="mini-note">Review-only: no Sage/Sicon contract, equipment record or invoice has been created.</p></section>';
+  '<p class="mini-note">Review-only: no Sage/Sicon contract, equipment record or invoice has been created.</p></section><div id="sqSetupWorkbench"></div>';
   box.querySelectorAll('[data-sq-link]').forEach(button=>button.onclick=async()=>{
    const c=Number(button.dataset.sqLink),reason=prompt('Evidence/reason for linking this quote to existing contract #'+c);
    if(!reason)return;
@@ -89,5 +89,102 @@ async function sqOpenIntake(id){
     await loadSQWorklist();
    }catch(err){toast(err.message)}
   });
+  await sqShowSetup(id,q);
  }catch(err){toast(err.message)}
+}
+
+
+/* An accepted quote automatically owns one setup case: no second case-creation click. */
+async function sqShowSetup(id,quote){
+ let setup,plans;
+ try{
+  [setup,plans]=await Promise.all([
+   api('/api/smartquote/setups/'+id),api('/api/smartquote/setups/'+id+'/plans')
+  ]);
+ }catch(err){toast(err.message);return}
+ const target=$('#sqSetupWorkbench');if(!target)return;
+ const r=setup.readiness,v=setup.verified,original=setup.source,contact=quote.customer;
+ const field=(key,label,type='text')=>{
+  const current=v[key]??original[key]??'';
+  return '<label class="sq-field"><span>'+esc(label)+'</span><input class="input" type="'+type+'" data-sq-setup-field="'+key+'" value="'+esc(current)+'" '+(r.contract_import_confirmed?'disabled':'')+'></label>';
+ };
+ const steps=[
+  ['Equipment & account details',!r.missing.length],
+  ['Agreement signed',r.agreement_signed],
+  ['Sicon contract imported',r.contract_import_confirmed],
+  ['Sicon equipment imported',r.equipment_import_confirmed],
+ ];
+ target.innerHTML='<section class="card panel sq-setup-panel"><div class="section-head"><h2>Contract Setup Workbench</h2><span class="pill">'+esc(r.workflow_status)+'</span></div>'+
+ '<p class="mini-note">Source quotation remains unchanged. Verified corrections, signatures and Sicon confirmation are recorded separately with an audit trail.</p>'+
+ '<div class="sq-stage-flow">'+steps.map(([name,done],i)=>'<div class="sq-stage-item '+(done?'is-done':'')+'"><span class="sq-stage-number">'+(done?'✓':i+1)+'</span><span>'+esc(name)+'</span></div>').join('')+'</div>'+
+ (r.missing.length?'<div class="sq-exceptions"><strong>'+r.missing.length+' item(s) requiring confirmation</strong><ul>'+r.missing.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'<p class="notice">Required setup details complete. Ready for customer signature.</p>')+
+ '<details class="sq-setup-section" '+(r.missing.length?'open':'')+'><summary>Customer, Sage and billing details</summary>'+
+ '<div class="sq-setup-grid">'+
+ field('sage_account_ref','Verified Sage account')+field('sicon_site_ref','Verified Sicon site')+
+ field('contract_reference','Contract reference')+
+ field('billing_frequency','Billing frequency')+
+ field('purchase_order','Purchase order (where required)')+
+ field('billing_email','Billing email','email')+
+ '</div><button type="button" id="sqVerifyDetails" class="button button-primary" '+(r.contract_import_confirmed?'disabled':'')+'>Save verified details</button></details>'+
+ (quote.equipment.some(a=>a.quantity>(v.verified_serials?.[a.source_line_id]||a.serial_numbers).filter(Boolean).length)?
+ '<details class="sq-setup-section" open><summary>Verify missing machine serial numbers</summary>'+
+ '<p class="mini-note">One serial per machine. Verified corrections remain separate from the accepted quotation.</p>'+
+ quote.equipment.filter(a=>a.quantity>(v.verified_serials?.[a.source_line_id]||a.serial_numbers).filter(Boolean).length).map(a=>
+ '<div class="sq-serial-row"><strong>'+esc(a.item_code)+'</strong><span>Qty '+a.quantity+'</span>'+
+ '<input class="input" data-sq-serial="'+esc(a.source_line_id)+'" placeholder="Serial numbers, separated by commas" value="'+esc((v.verified_serials?.[a.source_line_id]||a.serial_numbers).join(', '))+'">'+
+ '<button class="button button-outline" data-sq-serial-verify="'+esc(a.source_line_id)+'" type="button">Verify</button></div>').join('')+
+ '<label class="sq-field"><span>Where the serial information was confirmed</span><input class="input" id="sqSerialEvidence" placeholder="e.g. Service visit or engineer's equipment list"></label></details>':'')+
+ '<details class="sq-setup-section" '+(r.agreement_ready&&!r.agreement_signed?'open':'')+'><summary>Signed customer maintenance agreement</summary>'+
+ '<p class="mini-note">Upload the signed PDF to the protected runtime once, not to GitHub. It is retained with its SHA-256 evidence record.</p>'+
+ (setup.signed_document?'<p class="notice">Signed agreement recorded: '+esc(setup.signed_filename)+' · '+esc(setup.signed_sha256.slice(0,12))+'…</p>':
+ '<div class="actions-row"><input type="file" id="sqSignedPdf" class="input" accept=".pdf,application/pdf"><label><input type="checkbox" id="sqSignatureChecked"> I have checked the required signatures</label><button class="button button-primary" id="sqSaveSigned" type="button" '+(!r.agreement_ready?'disabled':'')+'>Record signed agreement</button></div>')+
+ '</details>'+
+ '<details class="sq-setup-section" '+(r.contract_import_ready?'open':'')+'><summary>Sicon contract import — first</summary>'+
+ '<p class="mini-note">The structured preview is not a Sicon-ready Excel import. Generate the contract import using the approved mapping, complete the Sicon upload, then record its confirmed reference here.</p>'+
+ '<p>'+plans.contract_import.staged_billing_groups.length+' contract commencement group(s) · '+plans.contract_import.staged_billing_groups.reduce((n,x)=>n+x.machine_units,0)+' equipment units</p>'+
+ (r.contract_import_confirmed?'<p class="notice">Sicon contract '+esc(setup.sicon_contract_reference)+' verified.</p>':
+ '<div class="sq-setup-grid">'+
+ '<label class="sq-field"><span>Confirmed Sicon contract number</span><input id="sqSiconContract" class="input" placeholder="Sicon contract reference"></label>'+
+ '<label class="sq-field"><span>Import confirmation or evidence</span><input id="sqSiconContractProof" class="input" placeholder="Import log / reviewed Sicon entry"></label></div>'+
+ '<button class="button button-primary" id="sqConfirmContract" type="button" '+(!r.contract_import_ready?'disabled':'')+'>Confirm contract imported</button>')+'</details>'+
+ '<details class="sq-setup-section" '+(r.equipment_import_ready?'open':'')+'><summary>Sicon equipment import — second</summary>'+
+ '<p class="mini-note">Equipment should be linked to the confirmed Sicon contract. Future cover dates remain scheduled and must not be treated as already activated.</p>'+
+ '<p>'+plans.equipment_import.individual_machine_records.length+' individual equipment record(s) prepared for mapping verification.</p>'+
+ (r.equipment_import_confirmed?'<p class="notice">Equipment batch '+esc(setup.sicon_equipment_batch_reference)+' confirmed.</p>':
+ '<div class="sq-setup-grid"><label class="sq-field"><span>Equipment import batch reference</span><input id="sqSiconEquipment" class="input" placeholder="Batch reference"></label>'+
+ '<label class="sq-field"><span>Import confirmation or evidence</span><input id="sqSiconEquipmentProof" class="input" placeholder="Sicon equipment import log"></label></div>'+
+ '<button class="button button-primary" id="sqConfirmEquipment" type="button" '+(!r.equipment_import_ready?'disabled':'')+'>Confirm equipment imported</button>')+'</details>'+
+ '<details class="sq-setup-section"><summary>Audit history</summary>'+
+ (setup.events.length?'<ul class="sq-events">'+setup.events.map(e=>'<li>'+esc(e.at.slice(0,16))+' · '+esc(e.action)+' · '+esc(e.actor)+'</li>').join('')+'</ul>':'<p class="mini-note">No setup changes recorded yet.</p>')+
+ '</details></section>';
+ const send=async(url,body)=>{
+   const response=await api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+   toast('Contract setup updated');await sqShowSetup(id,quote);return response;
+ };
+ const save=$('#sqVerifyDetails');
+ if(save)save.onclick=async()=>{
+  const payload={revision:setup.revision};
+  target.querySelectorAll('[data-sq-setup-field]').forEach(f=>payload[f.dataset.sqSetupField]=f.value.trim());
+  try{await send('/api/smartquote/setups/'+id+'/details',payload)}catch(e){toast(e.message)}
+ };
+ target.querySelectorAll('[data-sq-serial-verify]').forEach(button=>button.onclick=async()=>{
+  const source_line_id=button.dataset.sqSerialVerify,box=[...target.querySelectorAll('[data-sq-serial]')].find(x=>x.dataset.sqSerial===source_line_id);
+  const serial_numbers=box.value.split(',').map(x=>x.trim()).filter(Boolean);
+  try{await send('/api/smartquote/setups/'+id+'/verify-serials',{revision:setup.revision,source_line_id,serial_numbers,evidence:$('#sqSerialEvidence')?.value||''})}catch(e){toast(e.message)}
+ });
+ if($('#sqSaveSigned'))$('#sqSaveSigned').onclick=async()=>{
+  const file=$('#sqSignedPdf').files?.[0];if(!file){toast('Choose the signed agreement PDF');return}
+  if(file.size>15*1024*1024){toast('PDF must be under 15 MB');return}
+  try{
+   const bytes=new Uint8Array(await file.arrayBuffer());let binary='';
+   for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384));
+   await send('/api/smartquote/setups/'+id+'/signed-agreement',{filename:file.name,pdf_base64:btoa(binary),signatures_checked:$('#sqSignatureChecked').checked});
+  }catch(err){toast(err.message)}
+ };
+ if($('#sqConfirmContract'))$('#sqConfirmContract').onclick=async()=>{
+  try{await send('/api/smartquote/setups/'+id+'/confirm-sicon-contract',{sicon_contract_reference:$('#sqSiconContract').value,evidence:$('#sqSiconContractProof').value})}catch(err){toast(err.message)}
+ };
+ if($('#sqConfirmEquipment'))$('#sqConfirmEquipment').onclick=async()=>{
+  try{await send('/api/smartquote/setups/'+id+'/confirm-sicon-equipment',{sicon_equipment_batch_reference:$('#sqSiconEquipment').value,evidence:$('#sqSiconEquipmentProof').value})}catch(err){toast(err.message)}
+ };
 }

@@ -311,6 +311,10 @@ def register(con: sqlite3.Connection, payload: dict, username="Coordinator") -> 
     con.execute("INSERT INTO smartquote_intake_history(intake_id,action,actor,notes,at) VALUES(?,?,?,?,?)",
                 (cur.lastrowid, "IMPORTED_FOR_REVIEW", username,
                  "Source quote copied into separate review worklist, no contract or asset changes", now()))
+    # A Contract Setup Case is created with the accepted quote automatically:
+    # coordinators do not have to start the same case in a second screen.
+    from .contract_setup import ensure_case
+    ensure_case(con, cur.lastrowid)
     con.commit()
     return {"id": cur.lastrowid, "already_imported": False,
             "readiness": prepared["readiness"],

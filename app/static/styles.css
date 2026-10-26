@@ -74,3 +74,25 @@ body.pulse-pro{--bg:#f4f5f8;--navy:#101010;--teal:#65c9ff;--ink:#1e2025;--muted:
 .pwa-install:hover{background:#24475c}
 .pwa-install[hidden]{display:none!important}
 @media(max-width:680px){.pwa-install{padding:9px 10px;font-size:11px}}
+
+/* Accepted SmartQuote -> Contract Setup Workbench: progressive disclosure */
+.sq-setup-panel{margin-top:18px}
+.sq-stage-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 0}
+.sq-stage-item{display:flex;align-items:center;gap:8px;background:#f4f7f9;color:#65727c;border:1px solid #e4edf1;border-radius:9px;padding:11px;font-size:11px;font-weight:650}
+.sq-stage-item.is-done{background:#ecf8f3;color:#0d6c4b;border-color:#d2ece0}
+.sq-stage-number{min-width:23px;height:23px;border-radius:50%;background:#e0e8ec;display:grid;place-items:center}
+.sq-stage-item.is-done .sq-stage-number{background:#caefdf}
+.sq-setup-section{border-top:1px solid #e4ebef;padding:12px 0}
+.sq-setup-section>summary{font-size:13px;font-weight:750;cursor:pointer;color:#20485c;padding:4px}
+.sq-setup-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;padding:12px 0}
+.sq-field{display:flex;flex-direction:column;gap:6px;color:#516473;font-size:11px;font-weight:650}
+.sq-serial-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #edf1f3}
+.sq-serial-row input{flex:2 1 260px}
+.sq-exceptions{border-left:3px solid #e6a442;background:#fffaf2;color:#76501c;margin:12px 0;padding:10px 14px;font-size:12px;border-radius:4px}
+.sq-exceptions ul{margin:6px 0 0 15px;padding:0}
+.sq-events{font-size:11px;line-height:1.8;color:#607380}
+.sq-preview-card{margin:12px 0}
+.sq-candidate{padding:9px 0;border-bottom:1px solid #e1e7ed}
+.sq-detail{border-top:2px solid #d2e1ea;padding-top:16px;margin-top:16px}
+@media(max-width:900px){.sq-stage-flow{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:470px){.sq-stage-flow{grid-template-columns:1fr}}
