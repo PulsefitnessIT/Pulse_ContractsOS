@@ -30,6 +30,7 @@ from .v12_features import router as v12_router
 from .v13_history import router as v13_router
 from .quote_intake import router as smartquote_router
 from .contract_setup import router as contract_setup_router
+from .sicon_bridge import router as sicon_bridge_router
 from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
 
 APP_ROOT=Path(__file__).parent
@@ -98,6 +99,7 @@ app.include_router(v12_router)
 app.include_router(v13_router)
 app.include_router(smartquote_router)
 app.include_router(contract_setup_router)
+app.include_router(sicon_bridge_router)
 
 @app.get('/api/meta')
 def meta():return {'stats':stats(),'headers':HEADERS,'version':'1.0.0-pilot','release':'V13 Development','environment':'Independent protected pilot' if PILOT_MODE else 'Local demonstration','document_ai_configured':document_ai_configured(),'local_ocr_available':local_ocr_available(),'ocr_mode':os.environ.get('PULSE_OCR_MODE','auto').lower(),'data_readiness':assess_database(DB,TEMPLATE)}

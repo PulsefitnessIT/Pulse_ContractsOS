@@ -3,6 +3,7 @@
 let sqCandidateFile=null,sqCandidatePayload=null,sqDraftPreview=null;
 async function acceptedQuotesPage(){
  content.innerHTML='<div class="main-inner">'+heading('Accepted quotes','Bring accepted SmartQuote work into the contract setup queue. The original register and equipment records are never overwritten.')+
+ '<section class="sq-integration-banner" id="sqIntegrationState"><strong>Manual Sicon workflow</strong><span>No API credentials needed. Agreement, contract and equipment Excel review remain available.</span></section>'+
  '<section class="card panel"><div class="section-head"><h2>Prepare accepted quote</h2><span class="pill">Protected pilot</span></div>'+
  '<p class="mini-note">Select a SmartQuote handoff JSON exported from an accepted, saved quotation. The preview checks machine values, references and missing setup details before you add anything.</p>'+
  '<div class="actions-row"><input id="sqHandoffFile" class="input" type="file" accept=".json,application/json" aria-label="SmartQuote accepted quote handoff JSON"><button id="sqPreviewBtn" class="button button-outline" type="button">Check quotation</button></div>'+
@@ -21,6 +22,12 @@ async function acceptedQuotesPage(){
   }catch(err){sqCandidatePayload=null;sqDraftPreview=null;$('#sqPreview').innerHTML='<div class="notice warning">'+esc(err.message)+'</div>'}
  };
  $('#sqReload').onclick=loadSQWorklist;
+ try{
+  const status=await api('/api/smartquote/sicon/status');
+  const badge=$('#sqIntegrationState');
+  if(badge)badge.innerHTML='<strong>'+esc(status.mode==='manual_excel'?'Manual Sicon workflow':'Integration status')+
+    '</strong><span>'+esc(status.notes)+'</span>';
+ }catch(_){const badge=$('#sqIntegrationState');if(badge)badge.textContent='Manual agreement and Excel workflow available without a Sicon connection.'}
  await loadSQWorklist();
 }
 function sqMissing(readiness){
@@ -119,6 +126,8 @@ async function sqShowSetup(id,quote){
  '<p class="mini-note">Source quotation remains unchanged. Verified corrections, signatures and Sicon confirmation are recorded separately with an audit trail.</p>'+
  '<div class="sq-stage-flow">'+steps.map(([name,done],i)=>'<div class="sq-stage-item '+(done?'is-done':'')+'"><span class="sq-stage-number">'+(done?'✓':i+1)+'</span><span>'+esc(name)+'</span></div>').join('')+'</div>'+
  (r.missing.length?'<div class="sq-exceptions"><strong>'+r.missing.length+' item(s) requiring confirmation</strong><ul>'+r.missing.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'<p class="notice">Required setup details complete. Ready for customer signature.</p>')+
+ (r.contract_mapping_missing?.length?'<div class="sq-exceptions"><strong>Before the manual Sicon contract import</strong><ul>'+r.contract_mapping_missing.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'')+
+ (r.equipment_mapping_missing?.length?'<div class="sq-exceptions"><strong>Before the manual equipment import</strong><ul>'+r.equipment_mapping_missing.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'')+
  '<details class="sq-setup-section" '+(r.missing.length?'open':'')+'><summary>Customer, Sage and billing details</summary>'+
  '<div class="sq-setup-grid">'+
  field('sage_account_ref','Verified Sage account')+field('sicon_site_ref','Verified Sicon site')+
@@ -166,9 +175,24 @@ async function sqShowSetup(id,quote){
  '<div class="sq-setup-grid"><label class="sq-field"><span>Machines starting</span><select id="sqEquipmentDate" class="input">'+r.due_equipment_groups.map(d=>'<option value="'+esc(d)+'">'+esc(d)+'</option>').join('')+'</select></label><label class="sq-field"><span>Equipment import batch reference</span><input id="sqSiconEquipment" class="input" placeholder="Batch reference"></label>'+
  '<label class="sq-field"><span>Import confirmation or evidence</span><input id="sqSiconEquipmentProof" class="input" placeholder="Sicon equipment import log"></label></div>'+
  '<button class="button button-primary" id="sqConfirmEquipment" type="button" '+(!r.equipment_import_ready?'disabled':'')+'>Confirm equipment imported</button>')+'</details>'+
+ '<details class="sq-setup-section"><summary>Optional Sicon WebAPI roadmap (read-only)</summary>'+
+ '<p class="mini-note">No API keys are needed for the manual workflow above. This preview checks which future API fields still need approval; it cannot send or change records in Sicon.</p>'+
+ '<button type="button" class="button button-outline" id="sqPreviewApiMapping">Review future API mapping</button>'+
+ '<div id="sqApiMapping" class="sq-api-preview"></div></details>'+
  '<details class="sq-setup-section"><summary>Audit history</summary>'+
  (setup.events.length?'<ul class="sq-events">'+setup.events.map(e=>'<li>'+esc(e.at.slice(0,16))+' · '+esc(e.action)+' · '+esc(e.actor)+'</li>').join('')+'</ul>':'<p class="mini-note">No setup changes recorded yet.</p>')+
  '</details></section>';
+ const apiMappingButton=$('#sqPreviewApiMapping');
+ if(apiMappingButton)apiMappingButton.onclick=async()=>{
+   try{
+    const plan=await api('/api/smartquote/sicon/setups/'+id+'/preview');
+    const area=$('#sqApiMapping');if(!area)return;
+    area.innerHTML='<p><strong>Future API: '+plan.lines.length+' dated contract lines, '+
+      plan.equipment.length+' individual machine records.</strong></p>'+
+      '<p class="mini-note">Read-only preparation; API writes remain disabled. No live credentials or connection required.</p>'+
+      '<ul>'+plan.blockers.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+   }catch(err){toast(err.message)}
+ };
  const send=async(url,body)=>{
    const response=await api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
    toast('Contract setup updated');await sqShowSetup(id,quote);return response;

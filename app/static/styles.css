@@ -103,3 +103,10 @@ body.pulse-pro{--bg:#f4f5f8;--navy:#101010;--teal:#65c9ff;--ink:#1e2025;--muted:
 .sq-upcoming-entry{display:flex;gap:10px;align-items:center;border-top:1px solid #e1edf3;padding:7px 0;font-size:12px}
 .sq-upcoming-entry span{flex:1}
 .sq-upcoming-entry .button{font-size:11px;padding:6px 9px}
+
+/* Optional Sicon API: no keys or live connection required in the coordinator pilot */
+.sq-integration-banner{display:flex;flex-wrap:wrap;gap:10px;align-items:center;border:1px solid #c8dbe8;border-radius:10px;padding:12px 14px;margin:8px 0 16px;background:#eef6fb;font-size:12px;color:#17435b}
+.sq-integration-banner strong{white-space:nowrap}
+.sq-integration-banner span{flex:1 1 320px;line-height:1.5}
+.sq-api-preview{padding:8px 2px 0;font-size:12px;color:#50697a}
+.sq-api-preview ul{padding-left:20px;line-height:1.7}
