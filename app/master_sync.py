@@ -22,9 +22,9 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .excel_io import ExcelSource, REGISTER_SHEETS
-from .source_integrity import source_audit
 from .master_roundtrip import normal, DERIVED
 from .pilot_access import PILOT_MODE, actor, current_role
+from .backups import create_local_backup
 from .store import DB, DATA, TEMPLATE, connect, now
 
 router = APIRouter(prefix="/api/pilot/master-sync", tags=["Recurring working Master synchronisation"])
@@ -237,9 +237,15 @@ def _load_validated(path):
 
 
 def _baseline_verified(db):
-    row = db.execute(
-        "SELECT sha256 FROM master_source_loads ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    try:
+        row = db.execute(
+            "SELECT sha256 FROM master_source_loads ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.Error as exc:
+        raise HTTPException(
+            409, "A verified prior Master baseline is not recorded in this database. "
+                 "IT must establish one without overwriting existing staff edits."
+        ) from exc
     if row is None:
         raise HTTPException(
             409, "The previous workbook has no recorded source fingerprint. "
@@ -329,6 +335,24 @@ def apply_review(review_id: str, body: ApplyRequest):
         raise HTTPException(422, "Duplicate selections are not permitted.")
     with closing(connect()) as db:
         _tables(db)
+        # Backup before starting the write transaction. The application must
+        # not proceed if a consistent local recovery checkpoint fails.
+        before = db.execute(
+            "SELECT status,expires_at FROM working_master_reviews WHERE review_id=?",
+            (review_id,)
+        ).fetchone()
+        if before is None:
+            raise HTTPException(404, "Workbook review not found.")
+        if before["status"] != "Pending":
+            raise HTTPException(409, "This review was already processed.")
+        if dt.datetime.fromisoformat(before["expires_at"]) <= dt.datetime.now(dt.timezone.utc):
+            raise HTTPException(409, "This review expired. Upload the latest workbook again.")
+        try:
+            recovery = create_local_backup(force=True)
+            if not recovery.get("created") or recovery.get("integrity") != "ok":
+                raise RuntimeError("Local recovery checkpoint was not verified.")
+        except Exception as exc:
+            raise HTTPException(503, "No verified local backup; workbook changes were not applied.") from exc
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
             "SELECT * FROM working_master_reviews WHERE review_id=?",(review_id,)
@@ -405,7 +429,9 @@ def apply_review(review_id: str, body: ApplyRequest):
         )
         db.commit()
     return {
-        "ok":True,"approved_records_updated":len(updated),
+        "ok":True,"recovery_backup_created":True,
+        "local_backup_is_not_offsite_disaster_recovery":True,
+        "approved_records_updated":len(updated),
         "unapplied_safe_updates":len(items)-len(updated),
         "requires_new_upload_to_continue":len(items)>len(updated),
         "source_sha256":row["sha256"],
