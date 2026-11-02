@@ -71,6 +71,57 @@ def drafts(limit:int=Query(100,ge=1,le=500)):
         items=con.execute("SELECT id,created_at,updated_at,revision,payload_json FROM unified_quote_drafts ORDER BY updated_at DESC LIMIT ?",(limit,)).fetchall()
         return {"items":[{"id":r["id"],"created_at":r["created_at"],"updated_at":r["updated_at"],"revision":r["revision"],**json.loads(r["payload_json"])} for r in items]}
 
+def _validate_id(draft_id: str):
+    if len(draft_id) != 32 or any(c not in "0123456789abcdef" for c in draft_id):
+        raise HTTPException(422, "Invalid draft ID.")
+    return draft_id
+
+
+@router.get("/drafts/{draft_id}")
+def get_draft(draft_id: str):
+    _check_access()
+    _validate_id(draft_id)
+    with connect() as con:
+        _init(con)
+        row = con.execute(
+            "SELECT id, created_at, updated_at, revision, payload_json FROM unified_quote_drafts WHERE id=?",
+            (draft_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "Quotation draft not found.")
+    return {
+        "id": row["id"], "created_at": row["created_at"],
+        "updated_at": row["updated_at"], "revision": row["revision"],
+        **json.loads(row["payload_json"]),
+    }
+
+
+@router.get("/drafts/{draft_id}/readiness")
+def draft_readiness(draft_id: str):
+    """Operational review, not pricing authority or a promise of contract readiness."""
+    record = get_draft(draft_id)
+    issues = []
+    if not record["equipment"]:
+        issues.append("Add equipment before requesting commercial pricing.")
+    missing_sku = sum(not line["item_code"] for line in record["equipment"])
+    if missing_sku:
+        issues.append(f"Confirm product codes for {missing_sku} equipment line(s).")
+    missing_serials = sum(
+        line["quantity"] if not line["serial"] else max(0, line["quantity"] - 1)
+        for line in record["equipment"]
+    )
+    if missing_serials:
+        issues.append(f"Verify {missing_serials} equipment serial number(s).")
+    issues.append("Price all equipment using the approved SmartQuote pricing engine.")
+    issues.append("Obtain commercial approval and archive the issued PDF before acceptance.")
+    return {
+        "id": draft_id, "review_issues": issues,
+        "equipment_lines": len(record["equipment"]),
+        "equipment_units": sum(item["quantity"] for item in record["equipment"]),
+        "pricing_ready": False, "contract_setup_ready": False,
+    }
+
+
 @router.post("/drafts",status_code=201)
 def create_draft(payload:dict=Body(...)):
     user=_check_access(write=True)
@@ -85,8 +136,7 @@ def create_draft(payload:dict=Body(...)):
 @router.put("/drafts/{draft_id}")
 def update_draft(draft_id:str,payload:dict=Body(...)):
     _check_access(write=True)
-    if len(draft_id)!=32 or not all(c in "0123456789abcdef" for c in draft_id):
-        raise HTTPException(422,"Invalid draft ID.")
+    _validate_id(draft_id)
     revision=payload.get("revision")
     if type(revision) is not int or revision<1:
         raise HTTPException(422,"Revision is required.")
