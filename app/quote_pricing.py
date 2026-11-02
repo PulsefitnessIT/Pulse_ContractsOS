@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from .quote_drafts import get_draft
 from ._smartquote_staged_v10 import stage_summary
+from .quote_sage_reference import snapshot as sage_snapshot, reference as sage_reference
 from .pilot_access import actor
 
 router = APIRouter(prefix="/api/quoting", tags=["Unified SmartQuote price preview"])
@@ -275,4 +276,35 @@ def draft_price_preview(draft_id: str):
     actor()
     draft = get_draft(draft_id)
     catalog, configs, pricing, fingerprints = source_snapshot()
-    return preview(draft, catalog, configs, pricing, fingerprints)
+    result = preview(draft, catalog, configs, pricing, fingerprints)
+    # Sage Sales Price is advisory ONLY, not a verified Master Price List RRP.
+    # Never use this source to replace an existing/conflicting master SKU or
+    # increase approved/partial quotation totals.
+    missing = [line for line in result["lines"] if not line["priced"]]
+    if missing:
+        catalogue_codes = {
+            str(p.get("sku") or "").strip().upper()
+            for p in catalog if isinstance(p, dict)
+        }
+        try:
+            source = sage_snapshot()
+        except HTTPException:
+            source = None
+            result["issues"].append("The original Sage reference source could not be verified.")
+        if source is not None:
+            for line in missing:
+                if line["item_code"] in catalogue_codes:
+                    continue
+                info = sage_reference(line["item_code"], source)
+                if info:
+                    line["sage_reference"] = info
+                    result["issues"].append(
+                        f"Line {line['line']}: dated Sage Sales Price reference exists but "
+                        "is excluded from maintenance quote totals until a verified Master RRP is approved."
+                    )
+            result["sage_reference_status"] = {
+                "source_date": source["source_date"],
+                "review_overdue": source["review_overdue"],
+                "used_for_quotation": False,
+            }
+    return result
