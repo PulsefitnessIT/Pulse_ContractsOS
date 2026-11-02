@@ -8,7 +8,7 @@ import json
 import uuid
 from fastapi import APIRouter, HTTPException, Body, Query
 from .store import connect, now
-from .pilot_access import actor, PILOT_MODE
+from .pilot_access import actor, PILOT_MODE, current_role
 
 router = APIRouter(prefix="/api/quoting", tags=["Unified quotation drafts"])
 TIERS = {"Silver", "Gold", "Platinum"}
@@ -16,8 +16,12 @@ MAX_LINES = 500
 
 def _check_access(write=False):
     identity = actor()
-    if write and PILOT_MODE and identity == "Viewer":
-        raise HTTPException(403, "Viewer cannot modify quotation drafts.")
+    if PILOT_MODE:
+        role = current_role()
+        if role is None:
+            raise HTTPException(401, "A verified pilot session is required.")
+        if write and role == "Viewer":
+            raise HTTPException(403, "Viewer cannot modify quotation drafts.")
     return identity
 
 def _init(con):
