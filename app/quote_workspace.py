@@ -10,6 +10,7 @@ import json
 import os
 import sqlite3
 from pathlib import Path
+from contextlib import closing
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
@@ -60,7 +61,7 @@ def integration_status():
 @router.get("/quotes")
 def list_quotes(limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
     actor()
-    with _connect() as db:
+    with closing(_connect()) as db:
         try:
             rows = db.execute(
                 "SELECT id, quote_no, created, updated, status, payload "
@@ -97,7 +98,7 @@ def quote_detail(quote_id: str):
     actor()
     if not quote_id or len(quote_id) > 160:
         raise HTTPException(422, "Invalid quotation reference.")
-    with _connect() as db:
+    with closing(_connect()) as db:
         try:
             row = db.execute(
                 "SELECT id, quote_no, created, updated, status, payload FROM quotes WHERE id=?",
