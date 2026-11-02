@@ -139,3 +139,49 @@ def test_client_cannot_smuggle_an_approved_price_into_saved_draft():
     })
     assert prepared["price"] is None
     assert prepared["approved"] is False
+
+
+
+def test_text_rrp_is_not_silently_converted_to_verified_money():
+    catalog,configs,pricing,hashes=example()
+    catalog[0]["rrp"]="2000"
+    result=quote_pricing.preview(draft(),catalog,configs,pricing,hashes)
+    assert not result["lines"][0]["priced"]
+    assert result["annual_partial"] == 0
+
+
+def test_invalid_console_multiplier_cannot_crash_or_price():
+    catalog,configs,pricing,hashes=example()
+    catalog[0]["console_multiplier_override"] = "not-a-number"
+    result=quote_pricing.preview(draft(),catalog,configs,pricing,hashes)
+    assert result["lines"][0]["priced"] is False
+    assert "multiplier" in result["lines"][0]["exception"]
+
+
+def test_unknown_console_requires_review_even_for_exact_sku():
+    catalog,configs,pricing,hashes=example()
+    catalog[0]["console"]="Unknown Console"
+    result=quote_pricing.preview(draft(),catalog,configs,pricing,hashes)
+    assert result["lines"][0]["priced"] is True
+    assert result["lines"][0]["review_required"] is True
+    assert any("Console" in text for text in result["lines"][0]["coverage_review"])
+
+
+def test_non_active_rate_is_flagged_as_not_authorised():
+    catalog,configs,pricing,hashes=example()
+    pricing["rates"][0]["status"] = "Review"
+    result=quote_pricing.preview(draft(),catalog,configs,pricing,hashes)
+    assert result["lines"][0]["priced"] is True
+    assert result["lines"][0]["review_required"] is True
+    assert result["commercially_approved"] is False
+
+
+def test_source_discount_rounds_one_unit_before_quantity():
+    catalog,configs,pricing,hashes=example()
+    catalog[0]["rrp"] = 333.33
+    q=draft("Silver")
+    q["equipment"][0]["quantity"]=3
+    # 333.33 * .03 * .8 = 7.99992 -> 8.00 per machine -> 24.00.
+    result=quote_pricing.preview(q,catalog,configs,pricing,hashes)
+    assert result["lines"][0]["unit_annual"] == 8.0
+    assert result["lines"][0]["annual"] == 24.0
