@@ -3,6 +3,7 @@
 let unifiedDraftSelected = null;
 let unifiedEquipment = [];
 let unifiedDraftRecords = [];
+let unifiedCatalogueMatches = [];
 
 async function quotingWorkspacePage() {
   unifiedDraftSelected = null;
@@ -21,6 +22,10 @@ async function quotingWorkspacePage() {
     '<label>Maintenance cover <select name="tier"><option>Gold</option><option>Silver</option><option>Platinum</option></select></label>' +
     '</div></form>' +
     '<h4>Equipment lines</h4>' +
+    '<form id="unifiedCatalogueSearch"><label>Find a SmartQuote product (SKU, model or name) ' +
+    '<input name="q" minlength="2" maxlength="100" required placeholder="Search approved product identity"></label> ' +
+    '<button type="submit" class="button button-outline">Find equipment</button></form>' +
+    '<div id="unifiedCatalogueResults" aria-live="polite"></div>' +
     '<div id="unifiedEquipmentTable"></div>' +
     '<form id="unifiedEquipmentAdd">' +
     '<div class="form-grid">' +
@@ -39,6 +44,7 @@ async function quotingWorkspacePage() {
     '<div id="unifiedLegacyList">Checking the original SmartQuote source…</div>' +
     '<div id="unifiedLegacyDetail" aria-live="polite"></div></section>';
   document.querySelector('#unifiedEquipmentAdd').addEventListener('submit', unifiedAddEquipment);
+  document.querySelector('#unifiedCatalogueSearch').addEventListener('submit', unifiedSearchCatalogue);
   document.querySelector('#unifiedDraftSave').addEventListener('click', unifiedSaveDraft);
   document.querySelector('#unifiedDraftNew').addEventListener('click', unifiedNewDraft);
   renderUnifiedEquipment();
@@ -231,5 +237,44 @@ async function unifiedShowLegacyQuote(id) {
   } catch(error) {
     const target = document.querySelector('#unifiedLegacyDetail');
     if (target) target.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
+  }
+}
+
+
+async function unifiedSearchCatalogue(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const host = document.querySelector('#unifiedCatalogueResults');
+  if (!host) return;
+  const q = String(new FormData(form).get('q') || '').trim();
+  if (q.length < 2) return;
+  host.textContent = 'Searching the privately configured SmartQuote product catalogue…';
+  try {
+    const response = await api('/api/quoting/catalogue/search?q=' + encodeURIComponent(q));
+    if (view !== 'quoting' || !document.querySelector('#unifiedCatalogueResults')) return;
+    unifiedCatalogueMatches = response.results || [];
+    host.innerHTML = unifiedCatalogueMatches.length
+      ? '<p>Identity suggestions only. A product match does not establish an approved tariff.</p>' +
+        '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>SKU</th><th>Equipment</th><th>Model</th><th>Review</th><th></th></tr></thead><tbody>' +
+        unifiedCatalogueMatches.map((p,i) => '<tr><td>' + esc(p.sku) + '</td><td>' + esc(p.name) +
+          '</td><td>' + esc(p.model) + '</td><td>' + (p.duplicate_sku ? 'Duplicate code — manual review' : 'Identity suggestion') +
+          '</td><td><button class="button button-outline" type="button" data-use-catalogue="' + i + '"' +
+          (p.duplicate_sku ? ' disabled' : '') + '>Use identity</button></td></tr>').join('') +
+        '</tbody></table></div>'
+      : '<p>No matching product identity. You can still enter equipment details manually.</p>';
+    host.querySelectorAll('[data-use-catalogue]').forEach(button => button.addEventListener('click', () => {
+      const choice = unifiedCatalogueMatches[Number(button.dataset.useCatalogue)];
+      if (!choice || choice.duplicate_sku) return;
+      const equipmentForm = document.querySelector('#unifiedEquipmentAdd');
+      equipmentForm.elements.description.value = choice.name || choice.model || choice.sku;
+      equipmentForm.elements.item_code.value = choice.sku;
+      equipmentForm.elements.serial.focus();
+      const feedback = document.querySelector('#unifiedDraftFeedback');
+      if (feedback) feedback.textContent = 'Product identity selected. Confirm serial and quantity; no price has been approved.';
+    }));
+  } catch (error) {
+    const target = document.querySelector('#unifiedCatalogueResults');
+    if (target) target.innerHTML = '<p class="notice warning">' + esc(error.message) +
+      ' Manual equipment entry is still available.</p>';
   }
 }
