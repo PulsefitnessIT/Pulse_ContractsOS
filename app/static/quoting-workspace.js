@@ -4,6 +4,7 @@ let unifiedDraftSelected = null;
 let unifiedEquipment = [];
 let unifiedDraftRecords = [];
 let unifiedCatalogueMatches = [];
+let unifiedSiteMatches = [];
 
 async function quotingWorkspacePage() {
   unifiedDraftSelected = null;
@@ -14,7 +15,13 @@ async function quotingWorkspacePage() {
     '<section class="panel" id="unifiedDraftPanel">' +
     '<h3 id="unifiedDraftTitle">New quotation draft</h3>' +
     '<p>This draft is not priced or approved; it cannot be sent to a customer.</p>' +
+    '<form id="unifiedSiteSearch"><label>Find a site already recorded in Contracts OS ' +
+    '<input name="q" minlength="2" maxlength="100" placeholder="Search recorded site name" required></label> ' +
+    '<button class="button button-outline" type="submit">Find site</button></form>' +
+    '<div id="unifiedSiteResults" aria-live="polite"></div>' +
+    '<p class="fine-print">A recorded site label is not proof of the legal customer or current cover.</p>' +
     '<form id="unifiedDraftForm">' +
+    '<input type="hidden" name="source_contract_id" value="">' +
     '<div class="form-grid">' +
     '<label>Customer <input name="customer" maxlength="250" required></label>' +
     '<label>Site <input name="site" maxlength="250" required></label>' +
@@ -51,6 +58,13 @@ async function quotingWorkspacePage() {
     '<div id="unifiedLegacyList">Checking the original SmartQuote source…</div>' +
     '<div id="unifiedLegacyDetail" aria-live="polite"></div></section>';
   document.querySelector('#unifiedEquipmentAdd').addEventListener('submit', unifiedAddEquipment);
+  document.querySelector('#unifiedSiteSearch').addEventListener('submit', unifiedSearchSites);
+  document.querySelector('#unifiedDraftForm').elements.site.addEventListener('input', () => {
+    const form = document.querySelector('#unifiedDraftForm');
+    form.elements.source_contract_id.value = '';
+    const host = document.querySelector('#unifiedSiteResults');
+    if (host) host.textContent = 'Site manually edited. Source link cleared; verify independently.';
+  });
   document.querySelector('#unifiedCatalogueSearch').addEventListener('submit', unifiedSearchCatalogue);
   document.querySelector('#unifiedDraftSave').addEventListener('click', unifiedSaveDraft);
   document.querySelector('#unifiedDraftNew').addEventListener('click', unifiedNewDraft);
@@ -136,7 +150,9 @@ async function unifiedSaveDraft() {
   const payload = {
     customer:data.customer, site:data.site, contact:data.contact,
     tier:data.tier, term_years:Number(data.term_years), discount_percent:Number(data.discount_percent),
-    contract_start:data.contract_start, contract_end:data.contract_end, equipment:unifiedEquipment
+    contract_start:data.contract_start, contract_end:data.contract_end,
+    source_contract_id:data.source_contract_id ? Number(data.source_contract_id) : null,
+    equipment:unifiedEquipment
   };
   let url = '/api/quoting/drafts', method = 'POST';
   if (unifiedDraftSelected) {
@@ -192,6 +208,7 @@ async function unifiedOpenDraft(id) {
     const form = document.querySelector('#unifiedDraftForm');
     form.elements.customer.value = draft.customer;
     form.elements.site.value = draft.site;
+    form.elements.source_contract_id.value = String(draft.source_contract_id || '');
     form.elements.contact.value = draft.contact;
     form.elements.tier.value = draft.tier;
     form.elements.term_years.value = String(draft.term_years || 1);
@@ -368,6 +385,7 @@ async function unifiedPricePreview() {
   const original = unifiedDraftRecords.find(q => q.id === unifiedDraftSelected.id);
   if (!original || original.revision !== unifiedDraftSelected.revision ||
       original.customer !== data.customer || original.site !== data.site ||
+      Number(original.source_contract_id || 0) !== Number(data.source_contract_id || 0) ||
       original.contact !== data.contact || original.tier !== data.tier ||
       Number(original.term_years || 1) !== Number(data.term_years) ||
       Number(original.discount_percent || 0) !== Number(data.discount_percent) ||
@@ -421,5 +439,49 @@ async function unifiedPricePreview() {
   } catch(error) {
     const current = document.querySelector('#unifiedPricePanel');
     if (current) current.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
+  }
+}
+
+
+async function unifiedSearchSites(event) {
+  event.preventDefault();
+  const host = document.querySelector('#unifiedSiteResults');
+  if (!host) return;
+  const phrase = String(new FormData(event.currentTarget).get('q') || '').trim();
+  if (phrase.length < 2) return;
+  host.textContent = 'Searching recorded sites — no legal customer names will be inferred.';
+  try {
+    const response = await api('/api/quoting/sites?q=' + encodeURIComponent(phrase) + '&limit=20');
+    if (view !== 'quoting' || !document.querySelector('#unifiedSiteResults')) return;
+    unifiedSiteMatches = response.items || [];
+    if (!unifiedSiteMatches.length) {
+      host.textContent = 'No recorded site matched. Enter details only from verified customer evidence.';
+      return;
+    }
+    host.innerHTML = '<p>Confirm legal customer identity, cover and site references before quoting.</p>' +
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
+      '<th>Recorded site</th><th>Database status</th><th>Cover label</th>' +
+      '<th>Contract ref</th><th>Source worksheet row</th><th></th></tr></thead><tbody>' +
+      unifiedSiteMatches.map((item,i) => '<tr><td>' + esc(item.site_label) +
+        '</td><td>' + esc(item.status) + '</td><td>' +
+        esc(item.recorded_cover_label || 'Not recorded') + '</td><td>' +
+        esc(item.recorded_contract_reference) + '</td><td>' +
+        esc(item.source_sheet) + ' / ' + esc(item.source_row) +
+        '</td><td><button type="button" class="button button-outline" data-site-index="' + i +
+        '">Use recorded site</button></td></tr>').join('') + '</tbody></table></div>';
+    host.querySelectorAll('[data-site-index]').forEach(button => button.addEventListener('click', () => {
+      const item = unifiedSiteMatches[Number(button.dataset.siteIndex)];
+      const form = document.querySelector('#unifiedDraftForm');
+      if (!item || !form) return;
+      form.elements.site.value = item.site_label;
+      form.elements.source_contract_id.value = String(item.contract_id);
+      host.textContent = 'Source link: ' + item.source_sheet + ' row ' + item.source_row +
+        '. Legal customer and terms still need verification.';
+      unifiedClearPrice();
+      form.elements.customer.focus();
+    }));
+  } catch (error) {
+    host.textContent = 'Source site lookup unavailable: ' + error.message +
+      '. Do not substitute fictional customer data.';
   }
 }
