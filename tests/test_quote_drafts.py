@@ -31,3 +31,55 @@ def test_too_many_lines_rejected():
     with pytest.raises(HTTPException):
         quote_drafts.validate_draft({"customer":"Demo","site":"Gym",
            "equipment":[{"description":"Test"} for _ in range(501)]})
+
+def test_create_edit_and_reopen_draft_with_revision_control(tmp_path, monkeypatch):
+    import sqlite3
+    from app import store
+    db_path = tmp_path / "contracts.sqlite3"
+
+    def test_connect():
+        con = sqlite3.connect(db_path)
+        con.row_factory = sqlite3.Row
+        return con
+
+    monkeypatch.setattr(quote_drafts, "connect", test_connect)
+    monkeypatch.setattr(quote_drafts, "actor", lambda: "demo-coordinator")
+    monkeypatch.setattr(quote_drafts, "PILOT_MODE", False)
+
+    payload = {"customer": "Example Leisure", "site": "Demo Pool", "tier": "Gold",
+        "equipment": [{"description": "Bike", "item_code": "DEMO-001", "quantity": 2}]}
+    created = quote_drafts.create_draft(payload)
+    assert created["approved"] is False and created["price"] is None
+
+    opened = quote_drafts.get_draft(created["id"])
+    assert opened["equipment"][0]["quantity"] == 2
+    assert opened["revision"] == 1
+
+    review = quote_drafts.draft_readiness(created["id"])
+    assert review["pricing_ready"] is False
+    assert review["contract_setup_ready"] is False
+    assert any("serial" in item.lower() for item in review["review_issues"])
+
+    updated = quote_drafts.update_draft(created["id"], {**payload, "revision": 1,
+        "equipment": [{"description": "Bike", "item_code": "DEMO-001",
+                        "quantity": 1, "serial": "SERIAL-1"}]})
+    assert updated["revision"] == 2
+    assert quote_drafts.get_draft(created["id"])["equipment"][0]["serial"] == "SERIAL-1"
+
+    with pytest.raises(HTTPException) as error:
+        quote_drafts.update_draft(created["id"], {**payload, "revision": 1})
+    assert error.value.status_code == 409
+
+    with sqlite3.connect(db_path) as con:
+        count = con.execute("SELECT COUNT(*) FROM unified_quote_drafts").fetchone()[0]
+    assert count == 1
+
+
+def test_client_cannot_assert_pricing_or_approval():
+    result = quote_drafts.validate_draft({
+        "customer": "Demo", "site": "Demo Site",
+        "approved": True, "price": 12345,
+        "commercial_status": "Approved", "equipment": []})
+    assert result["approved"] is False
+    assert result["price"] is None
+    assert result["commercial_status"] == "Unpriced draft"
