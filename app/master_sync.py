@@ -22,6 +22,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .excel_io import ExcelSource, REGISTER_SHEETS
+from .data_readiness import _amount_kind
 from .master_roundtrip import normal, DERIVED
 from .pilot_access import PILOT_MODE, actor, current_role
 from .backups import create_local_backup
@@ -109,7 +110,10 @@ def _live(db):
 
 def _field_changes(old, incoming, current):
     result = []
-    for field in sorted((set(old) | set(incoming)) - EXCLUDED):
+    # New/unknown columns are NOT automatically introduced into Contracts OS.
+    # A missing source column cannot be interpreted as an instruction to blank
+    # existing records; only the intersection of known columns is updatable.
+    for field in sorted((set(old) & set(incoming)) - EXCLUDED):
         prior = old.get(field, "")
         next_value = incoming.get(field, "")
         existing = current.get(field, "")
@@ -188,6 +192,35 @@ def plan(db, previous, incoming, sha256):
             if not changes:
                 totals["unchanged_or_already_current"] += 1
                 continue
+            # Working Excel may contain incomplete or incorrect dates/amounts.
+            # Such evidence stays visible for manual correction, never becomes
+            # an unreviewed live financial value or false contract expiry.
+            incoming_fields = entry["fields"]
+            new_amount = incoming_fields.get("Contract amount (£)")
+            if _amount_kind(new_amount) == "invalid":
+                blocked.append({
+                    "sheet":sheet,"source_row":entry["row"],
+                    "contract_id":live["id"],"reason":"Invalid source contract amount; review Excel",
+                })
+                totals["invalid_financial_or_date_rows"] += 1
+                continue
+            dates = {}
+            try:
+                for name in ("Start date", "Expiry date"):
+                    value = normal(incoming_fields.get(name))
+                    if value:
+                        dates[name] = dt.date.fromisoformat(value[:10])
+                if dates.get("Start date") and dates.get("Expiry date") and (
+                    dates["Expiry date"] < dates["Start date"]
+                ):
+                    raise ValueError("Expiry before start")
+            except ValueError:
+                blocked.append({
+                    "sheet":sheet,"source_row":entry["row"],
+                    "contract_id":live["id"],"reason":"Invalid contract date or expiry before start",
+                })
+                totals["invalid_financial_or_date_rows"] += 1
+                continue
             if any(change["conflict"] for change in changes):
                 blocked.append({
                     "sheet": sheet, "source_row": entry["row"], "contract_id": live["id"],
@@ -217,6 +250,7 @@ def plan(db, previous, incoming, sha256):
             "safe_updates","unchanged_or_already_current","new_or_unmatched",
             "ambiguous_rows","moves_requiring_review","identity_conflicts",
             "conflicts","missing_or_removed_from_workbook",
+            "invalid_financial_or_date_rows",
         )},
         "items": actions,
         "review_required": blocked[:500],
