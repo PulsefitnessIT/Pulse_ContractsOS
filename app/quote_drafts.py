@@ -51,6 +51,11 @@ def validate_draft(data):
     if tier not in TIERS:
         raise HTTPException(422,"Choose Silver, Gold or Platinum.")
     contact=_clean(data.get("contact",""),"contact")
+    source_contract_id = data.get("source_contract_id")
+    if source_contract_id in ("", None):
+        source_contract_id = None
+    elif type(source_contract_id) is not int or source_contract_id < 1:
+        raise HTTPException(422, "Source site reference must be an existing record ID.")
     term = data.get("term_years", 1)
     if type(term) is not int or not 1 <= term <= 5:
         raise HTTPException(422, "Contract term must be 1–5 whole years.")
@@ -105,6 +110,7 @@ def validate_draft(data):
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
             "contract_start":contract_start,"contract_end":contract_end,
+            "source_contract_id":source_contract_id,
             "equipment":result,"commercial_status":"Unpriced draft",
             "price":None,"approved":False}
 
@@ -169,10 +175,33 @@ def draft_readiness(draft_id: str):
     }
 
 
+def verify_source_site_link(data):
+    """Recheck exact original site label; legal customer name is never inferred."""
+    source_id = data.get("source_contract_id")
+    if source_id is None:
+        return
+    with connect() as db:
+        row = db.execute(
+            "SELECT fields FROM contracts WHERE id=?", (source_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(409, "The selected source site no longer exists.")
+    try:
+        original = json.loads(row["fields"])
+    except (ValueError,TypeError) as exc:
+        raise HTTPException(409, "The selected source row cannot be verified.") from exc
+    label = str(original.get("Customer / site") or "").strip()
+    if not label or label != data["site"]:
+        raise HTTPException(
+            409, "Site label changed or does not match the source record. Select it again."
+        )
+
+
 @router.post("/drafts",status_code=201)
 def create_draft(payload:dict=Body(...)):
     user=_check_access(write=True)
     data=validate_draft(payload)
+    verify_source_site_link(data)
     ref=uuid.uuid4().hex
     with connect() as con:
         _init(con)
@@ -188,6 +217,7 @@ def update_draft(draft_id:str,payload:dict=Body(...)):
     if type(revision) is not int or revision<1:
         raise HTTPException(422,"Revision is required.")
     data=validate_draft(payload)
+    verify_source_site_link(data)
     with connect() as con:
         _init(con)
         cur=con.execute("UPDATE unified_quote_drafts SET payload_json=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?",
