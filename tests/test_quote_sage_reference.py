@@ -1,0 +1,69 @@
+"""Sage price-source regression tests: advisory only, never pricing authority."""
+import gzip
+import hashlib
+import json
+import sqlite3
+import datetime as dt
+import pytest
+from fastapi import HTTPException
+from app import quote_sage_reference as sage
+
+
+def test_verified_sage_snapshot_is_read_only_reference(tmp_path,monkeypatch):
+    dbpath=tmp_path/"smartquote_demo.db"
+    price_export=b"Code,Name,Product Group Description,Sales Price\nEXAMPLE-1,Fictional Bike,Strength Equipment,1234\n"
+    sha=hashlib.sha256(price_export).hexdigest()
+    payload=gzip.compress(json.dumps({"EXAMPLE-1":{
+        "sku":"EXAMPLE-1", "name":"Fictional Bike",
+        "group":"Strength Equipment","sales_price":1234.56
+    }}).encode())
+    with sqlite3.connect(dbpath) as db:
+        db.execute("CREATE TABLE sage_price_snapshots(id INTEGER PRIMARY KEY, active INTEGER, source_date TEXT, review_due TEXT, file_sha256 TEXT, usable_rows INTEGER, payload BLOB)")
+        db.execute("INSERT INTO sage_price_snapshots VALUES (?,?,?,?,?,?,?)",
+                   (7,1,"2026-10-23","2027-10-23",sha,1,payload))
+    def read_only():
+        uri="file:"+str(dbpath)+"?mode=ro"
+        conn=sqlite3.connect(uri,uri=True)
+        conn.row_factory=sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        return conn
+    monkeypatch.setattr(sage,"_connect",read_only)
+    snap=sage.snapshot()
+    record=sage.reference("EXAMPLE-1",snap)
+    assert record["sage_sales_price"]==1234.56
+    assert record["approved_rrp"] is False
+    assert record["quoted_annual_amount"] is None
+    assert record["source_file_sha256"]==sha
+    with sqlite3.connect(dbpath) as db:
+        assert db.execute("SELECT COUNT(*) FROM sage_price_snapshots").fetchone()[0]==1
+
+
+def test_missing_sage_source_is_not_invented(tmp_path,monkeypatch):
+    dbpath=tmp_path/"no_sage.db"
+    with sqlite3.connect(dbpath) as db:
+        db.execute("CREATE TABLE quotes (id TEXT)")
+    def read_only():
+        conn=sqlite3.connect("file:"+str(dbpath)+"?mode=ro",uri=True)
+        conn.row_factory=sqlite3.Row
+        return conn
+    monkeypatch.setattr(sage,"_connect",read_only)
+    assert sage.snapshot() is None
+
+
+@pytest.mark.parametrize("source",[
+    {"prices":{"EXAMPLE-1":{"sku":"DIFFERENT","sales_price":100}},"review_due":"2026-01-01",
+     "source_date":"2025-01-01","source_file_sha256":"0"*64},
+    {"prices":{"EXAMPLE-1":{"sku":"EXAMPLE-1","sales_price":"NaN"}},"review_due":"2026-01-01",
+     "source_date":"2025-01-01","source_file_sha256":"0"*64},
+    {"prices":{"EXAMPLE-1":{"sku":"EXAMPLE-1","sales_price":-1}},"review_due":"2026-01-01",
+     "source_date":"2025-01-01","source_file_sha256":"0"*64},
+])
+def test_inconsistent_sage_records_never_quoted(source):
+    assert sage.reference("EXAMPLE-1",source) is None
+
+
+def test_oversized_sage_export_is_rejected(monkeypatch):
+    monkeypatch.setattr(sage,"MAX_UNCOMPRESSED",1024)
+    with pytest.raises(HTTPException) as error:
+        sage._unpack(gzip.compress(b"a"*5000))
+    assert error.value.status_code==503
