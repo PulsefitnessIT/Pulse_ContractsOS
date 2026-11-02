@@ -22,6 +22,8 @@ async function quotingWorkspacePage() {
     '<label>Maintenance cover <select name="tier"><option>Gold</option><option>Silver</option><option>Platinum</option></select></label>' +
     '<label>Term (years) <select name="term_years"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>' +
     '<label>Discount % <input name="discount_percent" type="number" min="0" max="100" step="0.01" value="0" required></label>' +
+    '<label>Contract start <input name="contract_start" type="date"></label>' +
+    '<label>Contract end <input name="contract_end" type="date"></label>' +
     '</div></form>' +
     '<h4>Equipment lines</h4>' +
     '<form id="unifiedCatalogueSearch"><label>Find a SmartQuote product (SKU, model or name) ' +
@@ -34,6 +36,7 @@ async function quotingWorkspacePage() {
     '<label>Equipment description <input name="description" maxlength="400" required></label>' +
     '<label>Product code <input name="item_code" maxlength="100"></label>' +
     '<label>Serial number <input name="serial" maxlength="120"></label>' +
+    '<label>Equipment cover starts <input name="cover_start" type="date"></label>' +
     '<label>Quantity <input name="quantity" type="number" min="1" max="10000" step="1" value="1" required></label>' +
     '</div><button type="submit" class="button button-outline">Add equipment line</button></form>' +
     '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem">' +
@@ -65,12 +68,13 @@ function renderUnifiedEquipment() {
   const rows = unifiedEquipment.map((item, i) =>
     '<tr><td>' + esc(item.description) + '</td><td>' + esc(item.item_code) +
     '</td><td>' + esc(item.serial || 'Not confirmed') + '</td><td>' +
+    esc(item.cover_start || 'Contract start') + '</td><td>' +
     esc(item.quantity) + '</td><td><button class="button button-outline" type="button" data-remove-line="' +
     i + '">Remove</button></td></tr>'
   ).join('');
   host.innerHTML =
-    '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Machine</th><th>Code</th><th>Serial</th><th>Qty</th><th></th></tr></thead><tbody>' +
-    (rows || '<tr><td colspan="5">No equipment added yet.</td></tr>') +
+    '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Machine</th><th>Code</th><th>Serial</th><th>Cover starts</th><th>Qty</th><th></th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="6">No equipment added yet.</td></tr>') +
     '</tbody></table></div>';
   host.querySelectorAll('[data-remove-line]').forEach(b => b.addEventListener('click', () => {
     unifiedEquipment.splice(Number(b.dataset.removeLine), 1);
@@ -102,6 +106,7 @@ function unifiedAddEquipment(event) {
     description: String(data.description).trim(),
     item_code: String(data.item_code || '').trim(),
     serial: String(data.serial || '').trim(),
+    cover_start: String(data.cover_start || ''),
     quantity
   });
   form.reset();
@@ -130,7 +135,8 @@ async function unifiedSaveDraft() {
   const data = Object.fromEntries(new FormData(form).entries());
   const payload = {
     customer:data.customer, site:data.site, contact:data.contact,
-    tier:data.tier, term_years:Number(data.term_years), discount_percent:Number(data.discount_percent), equipment:unifiedEquipment
+    tier:data.tier, term_years:Number(data.term_years), discount_percent:Number(data.discount_percent),
+    contract_start:data.contract_start, contract_end:data.contract_end, equipment:unifiedEquipment
   };
   let url = '/api/quoting/drafts', method = 'POST';
   if (unifiedDraftSelected) {
@@ -190,6 +196,8 @@ async function unifiedOpenDraft(id) {
     form.elements.tier.value = draft.tier;
     form.elements.term_years.value = String(draft.term_years || 1);
     form.elements.discount_percent.value = String(draft.discount_percent ?? 0);
+    form.elements.contract_start.value = draft.contract_start || '';
+    form.elements.contract_end.value = draft.contract_end || '';
     unifiedEquipment = draft.equipment.map(e => ({...e}));
     unifiedClearPrice();
     unifiedDraftSelected = {id:draft.id, revision:draft.revision};
@@ -363,8 +371,10 @@ async function unifiedPricePreview() {
       original.contact !== data.contact || original.tier !== data.tier ||
       Number(original.term_years || 1) !== Number(data.term_years) ||
       Number(original.discount_percent || 0) !== Number(data.discount_percent) ||
-      JSON.stringify(original.equipment.map(e => [e.item_code, e.description, e.serial, e.quantity])) !==
-      JSON.stringify(unifiedEquipment.map(e => [e.item_code, e.description, e.serial, e.quantity]))) {
+      (original.contract_start || '') !== (data.contract_start || '') ||
+      (original.contract_end || '') !== (data.contract_end || '') ||
+      JSON.stringify(original.equipment.map(e => [e.item_code, e.description, e.serial, e.cover_start || '', e.quantity])) !==
+      JSON.stringify(unifiedEquipment.map(e => [e.item_code, e.description, e.serial, e.cover_start || '', e.quantity]))) {
     host.textContent = 'Save any changes to this draft before requesting a price preview.';
     return;
   }
@@ -391,8 +401,13 @@ async function unifiedPricePreview() {
       '<p><strong>' + esc(preview.priced_count) + ' of ' + esc(preview.line_count) +
       '</strong> lines priced from exact SKUs. ' +
       'Annual ' + money(preview.annual_partial) + '; monthly ' + money(preview.monthly_partial) +
-      '; ' + esc(preview.term_years) + '-year indicative total ' + money(preview.term_partial) +
+      '; ' + esc(preview.term_years) + '-year indicative total ' +
+      (preview.term_partial === null ? 'Unavailable until both contract dates are set' : money(preview.term_partial)) +
       ' (partial if any line is unpriced).</p>' +
+      (preview.staged.enabled ?
+        '<h4>Staged cover — inclusive calendar-year prorating</h4><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Start date</th><th>Units</th><th>Period charge</th></tr></thead><tbody>' +
+        preview.staged.stages.map(stage => '<tr><td>' + esc(stage.start) + '</td><td>' + esc(stage.count) + '</td><td>' + money(stage.amount) + '</td></tr>').join('') +
+        '</tbody></table></div>' : '') +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
       '<th>Line</th><th>SKU</th><th>Qty</th><th>RRP</th><th>Annual/unit</th><th>Annual/line</th><th>Review</th>' +
       '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
