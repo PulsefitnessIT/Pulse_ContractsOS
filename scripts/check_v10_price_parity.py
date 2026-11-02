@@ -11,8 +11,8 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import math
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 
@@ -73,9 +73,12 @@ def run(source_root: Path, maximum: int = 250) -> dict:
                 # Price_line annual values are already rounded by V10; compare
                 # exact pennies and the minimum threshold to catch drift.
                 ok = (
-                    math.isclose(baseline["unit"], new["unit_annual"], abs_tol=0.001)
-                    and math.isclose(baseline["annual"], new["annual"], abs_tol=0.001)
-                    and math.isclose(baseline["minimum"], new["minimum_annual"], abs_tol=0.001)
+                    Decimal(str(baseline["unit"])).quantize(Decimal(".01")) ==
+                    Decimal(str(new["unit_annual"])).quantize(Decimal(".01"))
+                    and Decimal(str(baseline["annual"])).quantize(Decimal(".01")) ==
+                    Decimal(str(new["annual"])).quantize(Decimal(".01"))
+                    and Decimal(str(baseline["minimum"])).quantize(Decimal(".01")) ==
+                    Decimal(str(new["minimum_annual"])).quantize(Decimal(".01")))
                 )
                 verified += 1
                 if not ok:
