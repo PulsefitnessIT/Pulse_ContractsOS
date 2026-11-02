@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, HTTPException, Body, Query
 from .store import connect, now
 from .pilot_access import actor, PILOT_MODE, current_role
+from ._smartquote_staged_v10 import parse_date, valid_contract
 
 router = APIRouter(prefix="/api/quoting", tags=["Unified quotation drafts"])
 TIERS = {"Silver", "Gold", "Platinum"}
@@ -62,6 +63,20 @@ def validate_draft(data):
             raise InvalidOperation()
     except (InvalidOperation, ValueError):
         raise HTTPException(422, "Discount must be between 0% and 100%, with at most two decimals.")
+    contract_start = _clean(data.get("contract_start", ""), "contract_start", 10)
+    contract_end = _clean(data.get("contract_end", ""), "contract_end", 10)
+    # Original SmartQuote permits a partially prepared contract draft.
+    for entered in (contract_start, contract_end):
+        if entered:
+            try:
+                parse_date(entered)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+    if contract_start and contract_end:
+        try:
+            valid_contract(contract_start, contract_end)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     equipment=data.get("equipment",[])
     if not isinstance(equipment,list) or len(equipment)>MAX_LINES:
         raise HTTPException(422,"Maximum 500 equipment lines.")
@@ -72,12 +87,24 @@ def validate_draft(data):
         qty=line.get("quantity",1)
         if type(qty) is not int or qty<1 or qty>10000:
             raise HTTPException(422,"Equipment quantity must be a positive whole number.")
+        cover_start = _clean(line.get("cover_start", ""), "cover_start", 10)
+        if cover_start:
+            try:
+                first = parse_date(cover_start)
+                if contract_start and contract_end:
+                    begin, finish = valid_contract(contract_start, contract_end)
+                    if not begin <= first <= finish:
+                        raise ValueError("Equipment cover start must be within the contract period.")
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
         result.append({"item_code":_clean(line.get("item_code",""),"item_code",100),
                        "description":_clean(line.get("description",""),"description",400,required=True),
                        "serial":_clean(line.get("serial",""),"serial",120),
+                       "cover_start":cover_start,
                        "quantity":qty})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
+            "contract_start":contract_start,"contract_end":contract_end,
             "equipment":result,"commercial_status":"Unpriced draft",
             "price":None,"approved":False}
 
