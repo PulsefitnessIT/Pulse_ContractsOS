@@ -100,7 +100,10 @@ def _line_price(product, config, pricing, tier, discount, qty):
         return None, "Product is excluded from maintenance cover."
     if config.get("eligible") == "No":
         return None, "Service configuration is excluded from maintenance."
-    rrp = _positive_number(product.get("rrp"))
+    source_rrp = product.get("rrp")
+    # V10 price_line requires an actual JSON number; numeric-looking text
+    # must be reconciled in the master instead of quietly becoming a price.
+    rrp = _positive_number(source_rrp) if type(source_rrp) in (int, float) else None
     if rrp is None:
         return None, "No valid current RRP in the exact catalogue SKU."
     coefficient = _positive_number(rate.get("standard"))
