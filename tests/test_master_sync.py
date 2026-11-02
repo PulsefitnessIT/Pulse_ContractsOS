@@ -115,7 +115,7 @@ def _seed_review(tmp_path,monkeypatch):
     original=FakeSource([row(4,"ID-001",120)])
     incoming=FakeSource([row(4,"ID-001",140)])
     staged=tmp_path/"source.xlsx"
-    staged.write_bytes(b"synthetic workbook bytes — test only")
+    staged.write_bytes(b"synthetic workbook bytes for testing only")
     sha=hashlib.sha256(staged.read_bytes()).hexdigest()
     monkeypatch.setattr(master_sync,"connect",connect)
     monkeypatch.setattr(master_sync,"_pending_path",lambda value: staged)
