@@ -113,6 +113,7 @@ def assess_database(db_path, workbook_path):
             result["database_valid"] = True
             refs = Counter()
             cover = {}
+            source_labels = {}
             money = result["financial_completeness"]
             summary = result["contracts"]
             for status, raw in con.execute("SELECT status,fields FROM contracts"):
@@ -138,11 +139,16 @@ def assess_database(db_path, workbook_path):
                     summary["missing_expiry"] += 1
                 if not str(fields.get("Sales manager") or "").strip():
                     summary["missing_sales_manager"] += 1
+                literal_label = str(fields.get("Contract / warranty type") or "").strip()
+                literal_label = literal_label or "(blank in record)"
+                if literal_label not in source_labels:
+                    source_labels[literal_label] = Counter()
                 group = _contract_group(fields.get("Contract / warranty type"))
                 if group not in cover:
                     cover[group] = Counter()
                 kind = _amount_kind(fields.get("Contract amount (£)"))
                 cover[group][kind] += 1
+                source_labels[literal_label][kind] += 1
                 money[kind] += 1
             summary["repeated_reference_records"] = sum(count for count in refs.values() if count > 1)
             money["recorded"] = money["positive"] + money["zero"] + money["negative"]
@@ -152,6 +158,12 @@ def assess_database(db_path, workbook_path):
                 key: {"total": sum(counts.values()), **dict(sorted(counts.items()))}
                 for key, counts in sorted(cover.items())
             }
+            money["cover_type_grouping_is_heuristic"] = True
+            money["by_recorded_source_label"] = {
+                key: {"total": sum(counts.values()), **dict(sorted(counts.items()))}
+                for key, counts in sorted(source_labels.items())
+            }
+            money["recorded_source_labels_are_not_legal_cover_verification"] = True
     except (sqlite3.Error, OSError, ValueError) as error:
         result["issues"].append("Private contract database failed validation: " + type(error).__name__)
     if result["database_valid"] and result["contracts"]["active"] == 0:
