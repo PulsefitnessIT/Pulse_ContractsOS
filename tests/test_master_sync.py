@@ -120,6 +120,7 @@ def _seed_review(tmp_path,monkeypatch):
     monkeypatch.setattr(master_sync,"connect",connect)
     monkeypatch.setattr(master_sync,"_pending_path",lambda value: staged)
     monkeypatch.setattr(master_sync,"_baseline_verified",lambda db: "baseline-trusted")
+    monkeypatch.setattr(master_sync,"create_local_backup",lambda force: {"created":True,"integrity":"ok"})
     monkeypatch.setattr(master_sync,"PILOT_MODE",True)
     monkeypatch.setattr(master_sync,"current_role",lambda: "Admin")
     monkeypatch.setattr(master_sync,"actor",lambda: "fictional-admin")
@@ -186,3 +187,50 @@ def test_forged_review_selection_is_rejected_atomically(tmp_path,monkeypatch):
     assert error.value.status_code==422
     with connect() as db:
         assert db.execute("SELECT COUNT(*) FROM working_master_actions").fetchone()[0]==0
+
+
+
+def test_empty_financial_field_is_not_imputed_to_zero(tmp_path):
+    _,connect=database(tmp_path)
+    old=FakeSource([row(4,"ID-001",120)])
+    incoming=FakeSource([row(4,"ID-001","")])
+    with connect() as db:
+        result=master_sync.plan(db,old,incoming,"d"*64)
+    assert result["summary"]["safe_updates"]==1
+    assert result["items"][0]["changes"][0]["in_workbook"]==""
+    assert result["items"][0]["changes"][0]["in_workbook"]!=0
+
+
+def test_bad_financial_amount_is_manual_review_only(tmp_path):
+    _,connect=database(tmp_path)
+    old=FakeSource([row(4,"ID-001",120)])
+    incoming=FakeSource([row(4,"ID-001","not a price")])
+    with connect() as db:
+        result=master_sync.plan(db,old,incoming,"e"*64)
+    assert result["summary"]["safe_updates"]==0
+    assert result["summary"]["invalid_financial_or_date_rows"]==1
+
+
+def test_backup_failure_prevents_any_update(tmp_path,monkeypatch):
+    connect,review_id=_seed_review(tmp_path,monkeypatch)
+    def backup(force):
+        raise OSError("simulated backup failure")
+    monkeypatch.setattr(master_sync,"create_local_backup",backup)
+    with pytest.raises(HTTPException) as error:
+        master_sync.apply_review(review_id,master_sync.ApplyRequest(approved_items=[0]))
+    assert error.value.status_code==503
+    with connect() as db:
+        assert json.loads(db.execute("SELECT fields FROM contracts WHERE id=1").fetchone()[0])["Contract amount (£)"]==120
+        assert db.execute("SELECT COUNT(*) FROM working_master_actions").fetchone()[0]==0
+
+
+def test_master_sync_is_idempotent_after_approved_import(tmp_path,monkeypatch):
+    connect,review_id=_seed_review(tmp_path,monkeypatch)
+    master_sync.apply_review(review_id,master_sync.ApplyRequest(approved_items=[0]))
+    old=FakeSource([row(4,"ID-001",120)])
+    new=FakeSource([row(4,"ID-001",140)])
+    with connect() as db:
+        result=master_sync.plan(db,old,new,"b"*64)
+    assert result["summary"]["safe_updates"]==0
+    assert result["summary"]["conflicts"]==0
+    assert result["items"]==[]
