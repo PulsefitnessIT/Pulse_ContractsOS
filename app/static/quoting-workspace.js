@@ -200,12 +200,15 @@ async function loadUnifiedLegacyQuotes() {
     const result = await api('/api/quoting/quotes?limit=100');
     if (view !== 'quoting' || !document.querySelector('#unifiedLegacyList')) return;
     host.innerHTML = '<p>' + esc(result.total) + ' historical quotations in the configured read-only source.</p>' +
-      '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Quote</th><th>Customer</th><th>Site</th><th>Cover</th><th>Status</th></tr></thead><tbody>' +
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Quote</th><th>Customer</th><th>Site</th><th>Cover</th><th>Status</th><th>Contract setup</th></tr></thead><tbody>' +
       (result.items || []).map(q => '<tr><td><button class="button button-outline" type="button" data-quote-id="' +
         esc(q.id) + '">' + esc(q.quote_number) + '</button></td><td>' + esc(q.customer) +
-        '</td><td>' + esc(q.site) + '</td><td>' + esc(q.tier) + '</td><td>' + esc(q.status) + '</td></tr>').join('') +
+        '</td><td>' + esc(q.site) + '</td><td>' + esc(q.tier) + '</td><td>' + esc(q.status) + '</td><td>' +
+        (q.status === 'Accepted' ? '<button class="button button-outline" type="button" data-intake-preview="' + esc(q.id) + '">Review handover</button>' : 'Available after acceptance') +
+        '</td></tr>').join('') +
       '</tbody></table></div>';
     host.querySelectorAll('[data-quote-id]').forEach(b => b.addEventListener('click', () => unifiedShowLegacyQuote(b.dataset.quoteId)));
+    host.querySelectorAll('[data-intake-preview]').forEach(b => b.addEventListener('click', () => unifiedPreviewHandover(b.dataset.intakePreview)));
   } catch (error) {
     const target = document.querySelector('#unifiedLegacyList');
     if (target) target.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
@@ -276,5 +279,51 @@ async function unifiedSearchCatalogue(event) {
     const target = document.querySelector('#unifiedCatalogueResults');
     if (target) target.innerHTML = '<p class="notice warning">' + esc(error.message) +
       ' Manual equipment entry is still available.</p>';
+  }
+}
+
+
+async function unifiedPreviewHandover(id) {
+  const host = document.querySelector('#unifiedLegacyDetail');
+  if (!host) return;
+  host.textContent = 'Verifying the original accepted quotation and archived PDF…';
+  try {
+    const preview = await api('/api/quoting/quotes/' + encodeURIComponent(id) + '/intake-preview');
+    const current = document.querySelector('#unifiedLegacyDetail');
+    if (!current || view !== 'quoting') return;
+    const issues = preview.readiness.missing || [];
+    current.innerHTML =
+      '<section class="panel"><h4>Contract setup handover — ' + esc(preview.quote_number) + '</h4>' +
+      '<p>The original archived PDF has been checked for integrity. Pricing and customer acceptance still require coordinator verification.</p>' +
+      '<p><strong>' + esc(preview.equipment_lines) + '</strong> equipment lines. ' +
+      (preview.already_imported_id ? 'Already in setup worklist.' : 'Not yet added to setup worklist.') + '</p>' +
+      '<h5>Required review</h5><ul>' +
+      issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
+      '</ul><button type="button" class="button button-primary" id="unifiedConfirmHandover">' +
+      (preview.already_imported_id ? 'Open existing setup worklist' : 'Add to contract setup review') + '</button></section>';
+    current.querySelector('#unifiedConfirmHandover').addEventListener('click', async e => {
+      const button = e.currentTarget;
+      if (preview.already_imported_id) {
+        setView('accepted_quotes');
+        return;
+      }
+      button.disabled = true;
+      try {
+        const result = await api('/api/quoting/quotes/' + encodeURIComponent(id) + '/intake', {method:'POST'});
+        current.innerHTML = '<p>Accepted quote added to contract setup review (intake ' +
+          esc(result.intake_id) + '). No Sicon records have been changed.</p>' +
+          '<button type="button" id="unifiedGoToSetups" class="button button-primary">Open accepted quotes</button>';
+        current.querySelector('#unifiedGoToSetups').addEventListener('click', () => setView('accepted_quotes'));
+      } catch(error) {
+        button.disabled = false;
+        const p = document.createElement('p');
+        p.className = 'notice warning';
+        p.textContent = error.message;
+        current.append(p);
+      }
+    });
+  } catch(error) {
+    const current = document.querySelector('#unifiedLegacyDetail');
+    if (current) current.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
   }
 }
