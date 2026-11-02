@@ -245,6 +245,9 @@ def preview(draft, catalog, configs, pricing, hashes):
     term_partial = (
         staged["total"] if staged["enabled"] else _money(total * term)
     )
+    if not any(item["priced"] for item in lines):
+        # Never show a £0 contractual value when everything is simply unpriced.
+        term_partial = None
     source_status = str(pricing.get("pricing_status") or "Not commercially approved")
     issues.append("Source tariff policy: " + source_status)
     issues.append("Source-derived preview only; verify current RRP, scope, exclusions, and authorised terms.")
