@@ -392,7 +392,10 @@ async function unifiedPricePreview() {
       (line.priced ? money(line.rrp) : '—') + '</td><td>' +
       (line.priced ? money(line.unit_annual) : '—') + '</td><td>' +
       (line.priced ? money(line.annual) : 'Not priced') + '</td><td>' +
-      esc(line.exception || (line.coverage_review || []).join('; ') || 'Review commercial terms') +
+      (line.sage_reference ? money(line.sage_reference.sage_sales_price) +
+        ' · Sales Price only · ' + esc(line.sage_reference.source_date) +
+        (line.sage_reference.review_overdue ? ' · Review overdue' : '') : '—') +
+      '</td><td>' + esc(line.exception || (line.coverage_review || []).join('; ') || 'Review commercial terms') +
       '</td></tr>').join('');
     host.innerHTML =
       '<section class="panel"><h3>INTERNAL tariff preview · Not an approved quotation</h3>' +
@@ -409,7 +412,7 @@ async function unifiedPricePreview() {
         preview.staged.stages.map(stage => '<tr><td>' + esc(stage.start) + '</td><td>' + esc(stage.count) + '</td><td>' + money(stage.amount) + '</td></tr>').join('') +
         '</tbody></table></div>' : '') +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>Line</th><th>SKU</th><th>Qty</th><th>RRP</th><th>Annual/unit</th><th>Annual/line</th><th>Review</th>' +
+      '<th>Line</th><th>SKU</th><th>Qty</th><th>RRP</th><th>Annual/unit</th><th>Annual/line</th><th>Sage reference (not RRP)</th><th>Review</th>' +
       '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
       '<h4>Commercial controls and exceptions</h4><ul>' +
       preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
