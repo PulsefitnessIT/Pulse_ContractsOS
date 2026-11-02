@@ -57,3 +57,10 @@ Private runtime settings (provide outside source control):
   approved maintenance master and its separate runtime database.
 
 See [Founder review and release gates](docs/FOUNDER_REVIEW_UNIFIED_PLATFORM_2026-11-02.md).
+
+A new **V10 source-based pricing preview** uses private operational catalogue,
+configuration and tariff JSON files to calculate non-issuable estimates from
+exact SKU matches. Configure PULSE_SMARTQUOTE_CONFIGS_JSON and
+PULSE_SMARTQUOTE_PRICING_JSON in addition to PULSE_SMARTQUOTE_CATALOG_JSON.
+See [Pricing preview and source parity gates](docs/SMARTQUOTE_V10_PRICING_PREVIEW.md).
+
