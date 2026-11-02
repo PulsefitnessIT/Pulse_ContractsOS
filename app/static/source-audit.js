@@ -142,6 +142,9 @@ function renderMasterSyncReview(report) {
     cards + '</tbody></table>' +
     '<h4>Safe field updates — choose only those you have checked</h4>' +
     '<p>Selections are not automatic. Up to 250 records can be applied per review; re-upload the latest file for the remaining changes.</p>' +
+    '<label><input type="checkbox" id="masterSyncSelectAll"' +
+    (shown.length ? '' : ' disabled') +
+    '> Select all currently displayed conflict-free changes (max 250)</label>' +
     '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Select</th><th>Source ID</th><th>Worksheet row</th><th>Current → incoming values</th></tr></thead><tbody>' +
     (actionable || '<tr><td colspan="4">No conflict-free existing-record changes to apply.</td></tr>') +
     '</tbody></table></div>' +
@@ -156,6 +159,12 @@ function renderMasterSyncReview(report) {
     '<button id="masterSyncApply" type="button" class="button button-primary"' +
     (shown.length ? '' : ' disabled') + '>Apply selected safe updates</button>' +
     '<p id="masterSyncFeedback" role="status"></p></section>';
+  const selectAll = host.querySelector('#masterSyncSelectAll');
+  selectAll.addEventListener('change',() => {
+    host.querySelectorAll('input[name=masterReviewIndex]').forEach(check => {
+      check.checked = selectAll.checked;
+    });
+  });
   const button = host.querySelector('#masterSyncApply');
   button.addEventListener('click',async () => {
     const selected = [...host.querySelectorAll('input[name=masterReviewIndex]:checked')]
