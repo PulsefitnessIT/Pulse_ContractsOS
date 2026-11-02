@@ -70,7 +70,10 @@ def source_snapshot():
     catalog, configs, pricing = _parse_source(tuple(proofs), tuple(contents))
     if not isinstance(catalog, list) or len(catalog) > 30000 or not isinstance(configs, list):
         raise HTTPException(503, "Unexpected SmartQuote V10 catalogue format.")
-    if not isinstance(pricing, dict) or pricing.get("currency") != "GBP" or not isinstance(pricing.get("rates"), list):
+    if (not isinstance(pricing, dict) or pricing.get("currency") != "GBP"
+        or not isinstance(pricing.get("rates"), list)
+        or not isinstance(pricing.get("tiers"), dict)
+        or not isinstance(pricing.get("console_rules"), list)):
         raise HTTPException(503, "Unexpected SmartQuote V10 pricing policy.")
     return catalog, configs, pricing, dict(zip(SOURCE_FILES, proofs))
 
@@ -110,7 +113,10 @@ def _line_price(product, config, pricing, tier, discount, qty):
     override = product.get("console_multiplier_override")
     # V10 live_catalogue_option sets console_pricing = override or 1, which
     # takes precedence over the console rule's configured multiplier.
-    console_factor = float(override or 1)
+    try:
+        console_factor = float(override or 1)
+    except (TypeError, ValueError, OverflowError):
+        return None, "Invalid source console multiplier."
     if not math.isfinite(console_factor) or console_factor <= 0:
         return None, "Invalid source console multiplier."
     try:
@@ -137,6 +143,8 @@ def _line_price(product, config, pricing, tier, discount, qty):
         reasons.append("Source SKU is price-list-only; coverage not verified.")
     if rate.get("status") != "Active":
         reasons.append("Rate group is not marked Active in the source.")
+    if not console_name or console_name not in rules:
+        reasons.append("Console configuration is unverified in the source rules.")
     if annual < minimum_total - 0.01:
         reasons.append("Discount makes this line fall below its source minimum.")
     # Even a perfect match does not override the source's provisional policy.
