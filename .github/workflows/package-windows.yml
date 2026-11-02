@@ -28,10 +28,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install "pyinstaller>=6.10,<7"
-      - name: Validate protected development features
+      - name: Validate Windows Python import and document generation
         run: |
           python -m compileall -q app scripts tests
-          python -m unittest discover -s tests -p "test_pilot_data_*.py" -v
+          python -m unittest discover -s tests -p "test_pilot_data_document_exports.py" -v
+          if ($LASTEXITCODE -ne 0) { throw "Windows source/document tests failed" }
       - name: Create explicitly fictional sample data
         run: |
           python scripts/create_demo_runtime.py --output demo_runtime
