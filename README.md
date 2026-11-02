@@ -64,3 +64,12 @@ exact SKU matches. Configure PULSE_SMARTQUOTE_CONFIGS_JSON and
 PULSE_SMARTQUOTE_PRICING_JSON in addition to PULSE_SMARTQUOTE_CATALOG_JSON.
 See [Pricing preview and source parity gates](docs/SMARTQUOTE_V10_PRICING_PREVIEW.md).
 
+Staged maintenance agreements now accept optional contract dates and individual
+equipment cover starts. The preview uses the original V10 inclusive ACT/ACT
+prorating for dated coverage groups. A separate read-only Sage Sales Price
+reference can be surfaced for unmatched catalogue SKUs, but never alters an
+approved Master Price List entry or quotation totals. Missing sources, incomplete
+cover dates, historical estimates and unapproved tariffs remain blocked from
+customer-ready issue.
+
+
