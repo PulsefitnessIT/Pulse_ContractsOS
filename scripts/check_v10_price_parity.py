@@ -78,7 +78,7 @@ def run(source_root: Path, maximum: int = 250) -> dict:
                     and Decimal(str(baseline["annual"])).quantize(Decimal(".01")) ==
                     Decimal(str(new["annual"])).quantize(Decimal(".01"))
                     and Decimal(str(baseline["minimum"])).quantize(Decimal(".01")) ==
-                    Decimal(str(new["minimum_annual"])).quantize(Decimal(".01")))
+                    Decimal(str(new["minimum_annual"])).quantize(Decimal(".01"))
                 )
                 verified += 1
                 if not ok:
