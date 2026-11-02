@@ -23,6 +23,16 @@ async function sourceAuditPage() {
       '<p><strong>Workbook fingerprint:</strong> <code>' + esc(info.workbook_sha256) + '</code></p>' +
       '<p><strong>Source matches last recorded import:</strong> ' +
       (info.source_file_matches_last_load ? 'Yes' : 'No / not proven') + '</p>' +
+      '<p><strong>Latest working Master upload:</strong> ' +
+      (info.last_working_master_upload
+        ? esc(info.last_working_master_upload.status) + ' · ' +
+          esc(info.last_working_master_upload.submitted_at) +
+          ' · <code>' + esc(info.last_working_master_upload.sha256) + '</code>'
+        : 'No recurring uploads recorded') + '</p>' +
+      '<p><strong>Approved field-update actions:</strong> ' +
+      esc(info.reviewed_working_master_updates?.approved_field_update_actions || 0) +
+      (info.reviewed_working_master_updates?.last_applied_at ?
+        ' · Last applied ' + esc(info.reviewed_working_master_updates.last_applied_at) : '') + '</p>' +
       '<p><strong>Workbook and register counts:</strong> ' +
       (info.record_counts_match ? 'Row counts agree' : 'Mismatch — investigate before relying on reports') + '</p>' +
       '<p>Source-backed means the values came from Excel. It does not prove that Sage, Sicon, signed agreements or bank receipts agree.</p>' +
