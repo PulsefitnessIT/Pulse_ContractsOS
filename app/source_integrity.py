@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import collections
 import hashlib
+from contextlib import closing
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -139,7 +140,7 @@ def current_master_source_audit():
         raise HTTPException(503, "Approved private Maintenance Master is not configured.")
     try:
         source = source_audit(TEMPLATE)
-        with connect() as con:
+        with closing(connect()) as con:
             db_rows = {
                 r["status"]: r["n"]
                 for r in con.execute(
