@@ -108,6 +108,12 @@ def test_duplicate_source_id_preserved_without_duplicate_db_key(tmp_path, monkey
             "FROM master_source_loads"
         ).fetchone()
         assert meta == ("a"*64,3,1,1)
+    current = store.stats()
+    assert current["recorded_cover_labels"]["P&L Ext Warr"] == 1
+    assert current["recorded_cover_labels"]["Contract (Chargeable)"] == 1
+    assert current["types_are_heuristic_not_verified"] is True
+    assert current["invoice_amounts_are_revenue_verified"] is False
+
     # Reopening the application must not re-import or duplicate records.
     store.init_db()
     with sqlite3.connect(store.DB) as db:
