@@ -18,6 +18,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from .quote_drafts import get_draft
+from ._smartquote_staged_v10 import stage_summary
 from .pilot_access import actor
 
 router = APIRouter(prefix="/api/quoting", tags=["Unified SmartQuote price preview"])
@@ -213,6 +214,36 @@ def preview(draft, catalog, configs, pricing, hashes):
         if not line["priced"]:
             issues.append(f"Line {index}: {line.get('exception')}")
         lines.append(line)
+    # Original SmartQuote V10 stage_summary uses inclusive ACT/ACT calendar
+    # days and rounds each machine LINE once, including leap years.
+    source_assets = [
+        {"id": "line-" + str(index), "code": str(a.get("item_code") or ""),
+         "name": str(a.get("description") or ""), "qty": a["quantity"],
+         "cover_start": str(a.get("cover_start") or "")}
+        for index, a in enumerate(draft.get("equipment", []), 1)
+    ]
+    price_by_id = {
+        "line-" + str(line["line"]): {"annual": line["annual"]}
+        for line in lines if line["priced"]
+    }
+    staged = stage_summary({
+        "contract_start": draft.get("contract_start") or "",
+        "contract_end": draft.get("contract_end") or "",
+        "assets": source_assets,
+    }, price_by_id)
+    stage_by_id = {item["id"]: item for item in staged["lines"]}
+    for line in lines:
+        period = stage_by_id.get("line-" + str(line["line"]))
+        if period:
+            line["cover_start"] = period["cover_start"]
+            line["cover_end"] = period["cover_end"]
+            line["period_charge"] = period["period_charge"]
+            line["period_days"] = period["days"]
+    issues.extend(staged["issues"])
+    # With only one contract date, no term amount may be represented as £0.
+    term_partial = (
+        staged["total"] if staged["enabled"] else _money(total * term)
+    )
     source_status = str(pricing.get("pricing_status") or "Not commercially approved")
     issues.append("Source tariff policy: " + source_status)
     issues.append("Source-derived preview only; verify current RRP, scope, exclusions, and authorised terms.")
@@ -225,9 +256,10 @@ def preview(draft, catalog, configs, pricing, hashes):
         "priced_count": sum(1 for item in lines if item["priced"]),
         "annual_partial": _money(total),
         "monthly_partial": _money(total / 12),
-        "term_partial": _money(total * term),
+        "term_partial": term_partial,
         "complete_price": bool(lines) and all(item["priced"] for item in lines),
         "lines": lines, "issues": issues,
+        "staged": staged,
         "source_pricing_status": source_status,
         "source_snapshot": pricing.get("source_snapshot"),
         "source_sha256": hashes,
