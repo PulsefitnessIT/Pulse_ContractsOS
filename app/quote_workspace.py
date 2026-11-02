@@ -89,3 +89,60 @@ def list_quotes(limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge
             continue
     return {"items": result, "total": total, "limit": limit, "offset": offset,
             "read_only": True, "source": "Pulse SmartQuote"}
+
+
+@router.get("/quotes/{quote_id}")
+def quote_detail(quote_id: str):
+    """Return the existing saved quote and PDF-version metadata, never PDF bytes."""
+    actor()
+    if not quote_id or len(quote_id) > 160:
+        raise HTTPException(422, "Invalid quotation reference.")
+    with _connect() as db:
+        try:
+            row = db.execute(
+                "SELECT id, quote_no, created, updated, status, payload FROM quotes WHERE id=?",
+                (quote_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(404, "Quotation not found.")
+            versions = db.execute(
+                "SELECT version, created, status, pdf_sha256 FROM quote_versions "
+                "WHERE quote_id=? ORDER BY version DESC LIMIT 100",
+                (quote_id,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise HTTPException(503, "SmartQuote history could not be read.") from exc
+    try:
+        saved = json.loads(row["payload"])
+        if not isinstance(saved, dict):
+            raise ValueError()
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, "The stored quotation could not be decoded.") from exc
+    assets = saved.get("assets", [])
+    if not isinstance(assets, list):
+        assets = []
+    safe_assets = []
+    for asset in assets[:2000]:
+        if not isinstance(asset, dict):
+            continue
+        selected = asset.get("selected") if isinstance(asset.get("selected"), dict) else {}
+        safe_assets.append({
+            "name": str(asset.get("name") or asset.get("description") or "")[:300],
+            "sku": str(selected.get("sku") or asset.get("sku") or "")[:100],
+            "serial": str(asset.get("serial") or "")[:120],
+            "quantity": asset.get("quantity") if isinstance(asset.get("quantity"), int) else None,
+            "excluded": asset.get("excluded") is True,
+        })
+    return {
+        "id": row["id"], "quote_number": row["quote_no"],
+        "created": row["created"], "updated": row["updated"],
+        "status": saved.get("pipeline_status") or row["status"],
+        "customer": str(saved.get("customer") or "")[:250],
+        "site": str(saved.get("site") or "")[:250],
+        "tier": str(saved.get("tier") or "")[:40],
+        "term": saved.get("term"),
+        "pricing_approved": saved.get("pricing_approved") is True,
+        "assets": safe_assets,
+        "pdf_versions": [dict(v) for v in versions],
+        "read_only": True,
+    }
