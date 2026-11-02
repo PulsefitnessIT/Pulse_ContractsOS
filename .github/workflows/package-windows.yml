@@ -1,0 +1,146 @@
+name: Package Pulse Contracts OS Windows demo
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feature/unified-smartquote-intake']
+    paths:
+      - 'app/**'
+      - 'scripts/launch_windows.py'
+      - 'scripts/create_demo_runtime.py'
+      - '.github/workflows/package-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-demo:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout protected integration branch
+        uses: actions/checkout@v4
+      - name: Python with bundled Windows runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install app and packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pyinstaller>=6.10,<7"
+      - name: Validate protected development features
+        run: |
+          python -m compileall -q app scripts tests
+          python -m unittest discover -s tests -p "test_pilot_data_*.py" -v
+      - name: Create explicitly fictional sample data
+        run: |
+          python scripts/create_demo_runtime.py --output demo_runtime
+          $env:PULSE_DATA_DIR = (Resolve-Path demo_runtime/data).Path
+          $env:PULSE_PILOT_MODE = "0"
+          $env:PULSE_AUTO_BACKUP = "0"
+          python -c "from app.main import app; from app.store import connect; con=connect(); print('DEMO CONTRACTS:',con.execute('select count(*) from contracts').fetchone()[0]); con.close(); print('HEALTH:',len(app.routes))"
+          if ($LASTEXITCODE -ne 0) { throw "Demo runtime cannot import application" }
+      - name: Bundle Python and Windows executable
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --console --name Pulse_Contracts_OS --add-data "app/static;app/static" --collect-all fitz --collect-all pymupdf scripts/launch_windows.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller packaging failed" }
+      - name: Stage standalone Windows demo
+        run: |
+          Copy-Item -Recurse demo_runtime/data dist/Pulse_Contracts_OS/data
+          Copy-Item -Recurse demo_runtime/demo_files dist/Pulse_Contracts_OS/demo_files
+          @'
+          @echo off
+          setlocal
+          cd /d "%~dp0"
+          echo.
+          echo Pulse Contracts OS - Fictional Demo Only
+          echo Starts on local computer at http://127.0.0.1:8765/
+          echo No Sicon API keys required.
+          echo.
+          "%~dp0Pulse_Contracts_OS.exe"
+          if errorlevel 1 (
+              echo Application returned an error. Please send the startup text to Pulse IT.
+              pause
+          )
+          endlocal
+          '@ | Set-Content -Path dist/Pulse_Contracts_OS/Start_Pulse_Contracts_OS.bat -Encoding Ascii
+          @'
+          PULSE CONTRACTS OS - WINDOWS DEMONSTRATION BUILD
+
+          Start: extract the whole ZIP, then run Start_Pulse_Contracts_OS.bat.
+          Windows 10/11 x64 supported. No Python installation needed.
+          Access: http://127.0.0.1:8765/ (local computer only).
+
+          IMPORTANT
+          The supplied database and eight-tab Maintenance Master are FICTIONAL.
+          This localhost demonstration does not implement staff login.
+          DO NOT copy live customer information into this demo.
+          The real multi-user system must be deployed by IT using the protected
+          source kit, real approved eight-tab Master, private SQLite database,
+          per-user access, HTTPS/VPN and backups.
+          No live Sicon credentials are required for the manual workflow.
+          Agreement previews and Sicon spreadsheets are REVIEW-ONLY pending
+          Legal, Finance and Sicon sandbox signoff.
+
+          How to demo the new coordinator workbench:
+          1. Start the application.
+          2. Open Accepted quotes.
+          3. Select demo_files/FICTIONAL_ACCEPTED_SMARTQUOTE.json.
+          4. Click Check quotation then Add to setup worklist.
+          5. Click Review and inspect grouped verification/actions.
+          6. The Sicon WebAPI mapping is an optional read-only preview.
+          7. All new document previews require the supplied source templates
+             staged under data/approved_sicon_templates (included in
+             the complete ZIP when assembled using approved attachments).
+
+          The app requires its local data folder to remain alongside the EXE.
+          Do not merge the demo data with a real production snapshot.
+          '@ | Set-Content -Path dist/Pulse_Contracts_OS/README_FIRST.txt -Encoding UTF8
+          @'
+          Local Windows demonstration only.
+          This distribution is neither a hosted company service nor a
+          production-approved Sicon integration.
+          Do not input personal or confidential customer information.
+          '@ | Set-Content -Path dist/Pulse_Contracts_OS/DEMO_ONLY.txt -Encoding Ascii
+          Compress-Archive -Path app,scripts,docs,README.md,requirements.txt,Dockerfile.pilot,compose.pilot.yml -DestinationPath dist/Pulse_Contracts_OS/IT_Server_Source_Kit.zip -CompressionLevel Optimal -Force
+      - name: Verify that the packaged executable actually starts
+        run: |
+          $exe=(Resolve-Path dist/Pulse_Contracts_OS/Pulse_Contracts_OS.exe).Path
+          $p=Start-Process -FilePath $exe -WorkingDirectory (Resolve-Path dist/Pulse_Contracts_OS).Path -PassThru -RedirectStandardOutput build_stdout.txt -RedirectStandardError build_stderr.txt
+          try {
+            $ok=$false
+            for ($i=0; $i -lt 75; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $health=Invoke-RestMethod -Uri "http://127.0.0.1:8765/api/health" -TimeoutSec 2
+                $mode=Invoke-RestMethod -Uri "http://127.0.0.1:8765/api/smartquote/sicon/status" -TimeoutSec 2
+                $html=Invoke-WebRequest -Uri "http://127.0.0.1:8765/" -TimeoutSec 2 -UseBasicParsing
+                if ($health.status -eq "ok" -and $mode.mode -eq "manual_excel" -and !$mode.api_write_enabled -and $html.Content -match "Pulse Contracts OS") {
+                  $ok=$true
+                  break
+                }
+              } catch { }
+              if ($p.HasExited) { break }
+            }
+            if (!$ok) {
+              Get-Content build_stdout.txt -ErrorAction SilentlyContinue
+              Get-Content build_stderr.txt -ErrorAction SilentlyContinue
+              throw "Frozen exe did not pass actual HTTP startup smoke test"
+            }
+            Write-Output "PASS: FROZEN WINDOWS EXECUTABLE — health, browser homepage, manual Sicon fallback"
+          } finally {
+            if (!$p.HasExited) { Stop-Process -Id $p.Id -Force }
+          }
+      - name: Build portable ZIP
+        run: |
+          Compress-Archive -Path dist/Pulse_Contracts_OS -DestinationPath Pulse_Contracts_OS_Unified_Windows_Pilot.zip -CompressionLevel Optimal -Force
+          $bytes=(Get-Item Pulse_Contracts_OS_Unified_Windows_Pilot.zip).Length
+          if ($bytes -lt 1000000) { throw "Unexpectedly small Windows distribution" }
+          Write-Output "WINDOWS PACKAGE SIZE: $bytes bytes"
+      - name: Upload verified Windows pilot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pulse-Contracts-OS-Unified-Windows-Pilot
+          path: Pulse_Contracts_OS_Unified_Windows_Pilot.zip
+          if-no-files-found: error
+          retention-days: 14
