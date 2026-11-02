@@ -20,6 +20,8 @@ async function quotingWorkspacePage() {
     '<label>Site <input name="site" maxlength="250" required></label>' +
     '<label>Contact <input name="contact" maxlength="250"></label>' +
     '<label>Maintenance cover <select name="tier"><option>Gold</option><option>Silver</option><option>Platinum</option></select></label>' +
+    '<label>Term (years) <select name="term_years"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>' +
+    '<label>Discount % <input name="discount_percent" type="number" min="0" max="100" step="0.01" value="0" required></label>' +
     '</div></form>' +
     '<h4>Equipment lines</h4>' +
     '<form id="unifiedCatalogueSearch"><label>Find a SmartQuote product (SKU, model or name) ' +
@@ -36,8 +38,10 @@ async function quotingWorkspacePage() {
     '</div><button type="submit" class="button button-outline">Add equipment line</button></form>' +
     '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem">' +
     '<button type="button" class="button button-primary" id="unifiedDraftSave">Save unpriced draft</button>' +
-    '<button type="button" class="button button-outline" id="unifiedDraftNew">New draft</button></div>' +
+    '<button type="button" class="button button-outline" id="unifiedDraftNew">New draft</button>' +
+    '<button type="button" class="button button-outline" id="unifiedDraftPrice">Preview V10 price</button></div>' +
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
+    '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
     '<section class="panel"><h3>Quotation drafts</h3><div id="unifiedDraftList">Loading saved drafts…</div></section>' +
     '<section class="panel"><h3>Existing SmartQuote quotations</h3>' +
@@ -47,6 +51,9 @@ async function quotingWorkspacePage() {
   document.querySelector('#unifiedCatalogueSearch').addEventListener('submit', unifiedSearchCatalogue);
   document.querySelector('#unifiedDraftSave').addEventListener('click', unifiedSaveDraft);
   document.querySelector('#unifiedDraftNew').addEventListener('click', unifiedNewDraft);
+  document.querySelector('#unifiedDraftPrice').addEventListener('click', unifiedPricePreview);
+  document.querySelector('#unifiedDraftForm').addEventListener('input', unifiedClearPrice);
+  document.querySelector('#unifiedDraftForm').addEventListener('change', unifiedClearPrice);
   renderUnifiedEquipment();
   // Independent requests: a disconnected original SmartQuote must never hide draft creation.
   await Promise.allSettled([loadUnifiedDrafts(), loadUnifiedLegacyQuotes()]);
@@ -67,6 +74,7 @@ function renderUnifiedEquipment() {
     '</tbody></table></div>';
   host.querySelectorAll('[data-remove-line]').forEach(b => b.addEventListener('click', () => {
     unifiedEquipment.splice(Number(b.dataset.removeLine), 1);
+    unifiedClearPrice();
     renderUnifiedEquipment();
   }));
 }
@@ -89,6 +97,7 @@ function unifiedAddEquipment(event) {
     feedback.textContent = 'Maximum 500 equipment lines per draft.';
     return;
   }
+  unifiedClearPrice();
   unifiedEquipment.push({
     description: String(data.description).trim(),
     item_code: String(data.item_code || '').trim(),
@@ -103,6 +112,7 @@ function unifiedAddEquipment(event) {
 function unifiedNewDraft() {
   unifiedDraftSelected = null;
   unifiedEquipment = [];
+  unifiedClearPrice();
   const form = document.querySelector('#unifiedDraftForm');
   if (form) form.reset();
   const heading = document.querySelector('#unifiedDraftTitle');
@@ -120,7 +130,7 @@ async function unifiedSaveDraft() {
   const data = Object.fromEntries(new FormData(form).entries());
   const payload = {
     customer:data.customer, site:data.site, contact:data.contact,
-    tier:data.tier, equipment:unifiedEquipment
+    tier:data.tier, term_years:Number(data.term_years), discount_percent:Number(data.discount_percent), equipment:unifiedEquipment
   };
   let url = '/api/quoting/drafts', method = 'POST';
   if (unifiedDraftSelected) {
@@ -133,6 +143,7 @@ async function unifiedSaveDraft() {
   try {
     const saved = await api(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     unifiedDraftSelected = {id:saved.id, revision:saved.revision};
+    unifiedClearPrice();
     feedback.textContent = 'Saved. This quotation remains unpriced and cannot be issued yet.';
     document.querySelector('#unifiedDraftTitle').textContent = 'Edit quotation draft';
     await loadUnifiedDrafts();
@@ -177,7 +188,10 @@ async function unifiedOpenDraft(id) {
     form.elements.site.value = draft.site;
     form.elements.contact.value = draft.contact;
     form.elements.tier.value = draft.tier;
+    form.elements.term_years.value = String(draft.term_years || 1);
+    form.elements.discount_percent.value = String(draft.discount_percent ?? 0);
     unifiedEquipment = draft.equipment.map(e => ({...e}));
+    unifiedClearPrice();
     unifiedDraftSelected = {id:draft.id, revision:draft.revision};
     document.querySelector('#unifiedDraftTitle').textContent = 'Edit quotation draft';
     feedback.textContent = 'Loaded draft revision ' + draft.revision + '. Pricing and approval are not enabled.';
@@ -324,6 +338,68 @@ async function unifiedPreviewHandover(id) {
     });
   } catch(error) {
     const current = document.querySelector('#unifiedLegacyDetail');
+    if (current) current.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
+  }
+}
+
+
+function unifiedClearPrice() {
+  const host = document.querySelector('#unifiedPricePanel');
+  if (host) host.innerHTML = '';
+}
+
+async function unifiedPricePreview() {
+  const host = document.querySelector('#unifiedPricePanel');
+  if (!host) return;
+  if (!unifiedDraftSelected) {
+    host.textContent = 'Save the quotation draft before calculating a tariff preview.';
+    return;
+  }
+  const form = document.querySelector('#unifiedDraftForm');
+  const data = Object.fromEntries(new FormData(form).entries());
+  const original = unifiedDraftRecords.find(q => q.id === unifiedDraftSelected.id);
+  if (!original || original.revision !== unifiedDraftSelected.revision ||
+      original.customer !== data.customer || original.site !== data.site ||
+      original.contact !== data.contact || original.tier !== data.tier ||
+      Number(original.term_years || 1) !== Number(data.term_years) ||
+      Number(original.discount_percent || 0) !== Number(data.discount_percent) ||
+      JSON.stringify(original.equipment) !== JSON.stringify(unifiedEquipment)) {
+    host.textContent = 'Save any changes to this draft before requesting a price preview.';
+    return;
+  }
+  host.textContent = 'Checking exact product identities against the staged V10 pricing rules…';
+  try {
+    const preview = await api('/api/quoting/drafts/' + encodeURIComponent(unifiedDraftSelected.id) + '/price-preview');
+    if (view !== 'quoting' || !document.querySelector('#unifiedPricePanel')) return;
+    if (preview.revision !== unifiedDraftSelected.revision) {
+      host.textContent = 'The draft has changed. Reopen it before pricing.';
+      return;
+    }
+    const lines = preview.lines.map(line =>
+      '<tr><td>' + esc(line.line) + '</td><td>' + esc(line.item_code) +
+      '</td><td>' + esc(line.quantity) + '</td><td>' +
+      (line.priced ? money(line.rrp) : '—') + '</td><td>' +
+      (line.priced ? money(line.unit_annual) : '—') + '</td><td>' +
+      (line.priced ? money(line.annual) : 'Not priced') + '</td><td>' +
+      esc(line.exception || (line.coverage_review || []).join('; ') || 'Review commercial terms') +
+      '</td></tr>').join('');
+    host.innerHTML =
+      '<section class="panel"><h3>INTERNAL tariff preview · Not an approved quotation</h3>' +
+      '<p>Source: ' + esc(preview.source_pricing_status) + ' · Snapshot ' +
+      esc(preview.source_snapshot || 'not specified') + '</p>' +
+      '<p><strong>' + esc(preview.priced_count) + ' of ' + esc(preview.line_count) +
+      '</strong> lines priced from exact SKUs. ' +
+      'Annual ' + money(preview.annual_partial) + '; monthly ' + money(preview.monthly_partial) +
+      '; ' + esc(preview.term_years) + '-year indicative total ' + money(preview.term_partial) +
+      ' (partial if any line is unpriced).</p>' +
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
+      '<th>Line</th><th>SKU</th><th>Qty</th><th>RRP</th><th>Annual/unit</th><th>Annual/line</th><th>Review</th>' +
+      '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
+      '<h4>Commercial controls and exceptions</h4><ul>' +
+      preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
+      '</ul><p>Customer PDF issuance, tariff approval and contract activation are disabled for this preview.</p></section>';
+  } catch(error) {
+    const current = document.querySelector('#unifiedPricePanel');
     if (current) current.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
   }
 }
