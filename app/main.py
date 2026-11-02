@@ -29,6 +29,7 @@ from .local_ocr import available as local_ocr_available, read_local_scanned_pdf,
 from .v12_features import router as v12_router
 from .v13_history import router as v13_router
 from .quote_intake import router as smartquote_router
+from .quote_workspace import router as quoting_workspace_router
 from .contract_setup import router as contract_setup_router
 from .sicon_bridge import router as sicon_bridge_router
 from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
@@ -98,6 +99,7 @@ def pilot_logout():
 app.include_router(v12_router)
 app.include_router(v13_router)
 app.include_router(smartquote_router)
+app.include_router(quoting_workspace_router)
 app.include_router(contract_setup_router)
 app.include_router(sicon_bridge_router)
 
