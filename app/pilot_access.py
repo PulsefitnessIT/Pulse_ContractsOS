@@ -21,11 +21,17 @@ COOKIE_SECURE = os.getenv('PULSE_COOKIE_SECURE','1') == '1'
 SESSION_TTL = 8 * 60 * 60
 ROLES={'Admin','Coordinator','Viewer'}
 _actor=contextvars.ContextVar('pulse_actor',default=None)
+_actor_role=contextvars.ContextVar('pulse_actor_role',default=None)
 _fails={}
 
 
 def actor(fallback='Coordinator'):
     return _actor.get() or fallback
+
+
+def current_role():
+    """Effective role from the verified session, not the username."""
+    return _actor_role.get() if PILOT_MODE else 'Coordinator'
 
 
 def configure_users():
@@ -139,10 +145,13 @@ async def pilot_middleware(request:Request,call_next):
         if not csrf or not hmac.compare_digest(csrf,session.get('csrf','')):
             return JSONResponse({'detail':'Session verification missing. Refresh and try again.'},status_code=403)
     token=_actor.set(session['sub'])
+    role_token=_actor_role.set(session['role'])
     try:
         response=await call_next(request)
         response.headers['Cache-Control']='no-store'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['X-Frame-Options']='DENY'
         return response
-    finally:_actor.reset(token)
+    finally:
+        _actor_role.reset(role_token)
+        _actor.reset(token)
