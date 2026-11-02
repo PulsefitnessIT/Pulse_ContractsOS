@@ -43,7 +43,7 @@ def find_sites(term: str, limit: int = 20):
                 "source_sheet": row["source_sheet"],
                 "source_row": row["source_row"],
                 "source_record_id": str(fields.get("Record ID") or "")[:100],
-                "evidence": "Recorded Contracts OS row — not independent Sage/Sicon or contract verification",
+                "evidence": "Stored Contracts OS row (may include coordinator edits); not proven against live Sage/Sicon or signed terms",
             })
     # Match exact labels first, then active records, then original source row.
     matches.sort(key=lambda r: (
@@ -54,7 +54,7 @@ def find_sites(term: str, limit: int = 20):
         r["source_row"],
     ))
     return {"items": matches[:limit], "total": len(matches),
-            "exact_source_rows_only": True, "legal_customer_name_inferred": False}
+            "stored_contract_records_only": True, "independent_verification_performed": False, "legal_customer_name_inferred": False}
 
 
 @router.get("/sites")
