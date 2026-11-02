@@ -363,7 +363,8 @@ async function unifiedPricePreview() {
       original.contact !== data.contact || original.tier !== data.tier ||
       Number(original.term_years || 1) !== Number(data.term_years) ||
       Number(original.discount_percent || 0) !== Number(data.discount_percent) ||
-      JSON.stringify(original.equipment) !== JSON.stringify(unifiedEquipment)) {
+      JSON.stringify(original.equipment.map(e => [e.item_code, e.description, e.serial, e.quantity])) !==
+      JSON.stringify(unifiedEquipment.map(e => [e.item_code, e.description, e.serial, e.quantity]))) {
     host.textContent = 'Save any changes to this draft before requesting a price preview.';
     return;
   }
