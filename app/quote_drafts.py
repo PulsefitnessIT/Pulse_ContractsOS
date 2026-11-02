@@ -148,6 +148,8 @@ def draft_readiness(draft_id: str):
     issues = []
     if not record["equipment"]:
         issues.append("Add equipment before requesting commercial pricing.")
+    if not record.get("contract_start") or not record.get("contract_end"):
+        issues.append("Confirm the common contract start/end dates before staged cover can be finalised.")
     missing_sku = sum(not line["item_code"] for line in record["equipment"])
     if missing_sku:
         issues.append(f"Confirm product codes for {missing_sku} equipment line(s).")
