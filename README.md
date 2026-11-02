@@ -34,3 +34,26 @@ See the migration checklist and current release notes for detailed acceptance ga
 ## Real-data protected pilot (development)
 
 `feature/real-data-pilot-readiness` adds secure staging of a private snapshot and read-only financial completeness indicators. **It does not include a customer database and has not been deployed.** Follow [Private data pilot setup](docs/PRIVATE_DATA_PILOT_SETUP.md) for IT instructions. The stage tool preserves WAL-consistent SQLite data and refuses overwrites; GitHub CI tests use fictional synthetic fixtures. Missing amounts are reported separately, not counted as £0 or verified revenue.
+
+## Unified SmartQuote workspace (development branch)
+
+The SmartQuote tab now supports independent unpriced quote drafts, multiple equipment
+lines, revision-aware reopening, optional read-only historic quotation browsing,
+identity-only V10 catalogue lookup and an integrity-checked direct *accepted
+snapshot -> Contract Setup* review handover.
+
+**This does not yet replace the SmartQuote pricing engine.** It must not be used
+to issue commercial quotations, calculate approved tariffs or activate Sicon
+contracts. The original SmartQuote database is never overwritten by the
+unified workspace.
+
+Private runtime settings (provide outside source control):
+- `PULSE_SMARTQUOTE_DB` — absolute path to the original SmartQuote V10
+  SQLite database, read-only from Contracts OS.
+- `PULSE_SMARTQUOTE_CATALOG_JSON` — optional absolute path to the approved
+  operational copy of SmartQuote V10 `data/catalog.json`. Product identity
+  only; no automatic price.
+- The existing protected `PULSE_DATA_DIR` for Contracts OS, including the
+  approved maintenance master and its separate runtime database.
+
+See [Founder review and release gates](docs/FOUNDER_REVIEW_UNIFIED_PLATFORM_2026-11-02.md).
