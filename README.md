@@ -110,3 +110,22 @@ aggregate checks and its checksum may be committed to GitHub.
 These features are development-only until full CI, staging, signed commercial
 controls and actual Sage/Sicon reconciliation are complete. No production
 installation or private workbook transfer is implied by the code commits.
+
+## Recurring upload of the working Maintenance Master
+
+During parallel operation, **Excel remains the authoritative source file**.
+Contracts OS now provides a separate administrator-reviewed **Source audit →
+Upload latest working Maintenance Master** flow. It accepts a complete
+independently edited eight-tab workbook, fingerprints and privately stages it,
+then previews exact source-ID matches, safe field updates, conflicting staff
+edits, new sites, duplicate IDs, status moves and absent rows before any write.
+
+Only selected safe existing-record field changes may be applied. Approval
+requires a verified pilot Admin session, an online SQLite recovery backup,
+unchanged record revisions and an auditable original source SHA-256. Uploading
+never replaces the entire Contracts OS database, edits the customer's Excel
+file or automatically deletes/archives unmatched records. New/moved/ambiguous
+records remain a manual review worklist until an approved reconciliation
+workflow can handle them.
+
+See [Recurring working-Master upload procedure](docs/RECURRING_WORKING_MASTER_SYNC.md).
