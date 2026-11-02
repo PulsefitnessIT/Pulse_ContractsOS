@@ -148,6 +148,41 @@ def current_master_source_audit():
                 )
             }
             loaded = _loaded_source(con)
+            tables = {
+                r[0] for r in con.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            recent_review = None
+            applied = {"approved_field_update_actions": 0, "last_applied_at": None,
+                       "latest_approved_source_sha256": None}
+            if "working_master_reviews" in tables:
+                last = con.execute(
+                    "SELECT sha256,submitted_at,status FROM working_master_reviews "
+                    "ORDER BY submitted_at DESC, rowid DESC LIMIT 1"
+                ).fetchone()
+                if last:
+                    recent_review = dict(last)
+            if "working_master_actions" in tables:
+                count = con.execute(
+                    "SELECT COUNT(*) AS n,MAX(applied_at) AS latest "
+                    "FROM working_master_actions"
+                ).fetchone()
+                applied["approved_field_update_actions"] = count["n"]
+                applied["last_applied_at"] = count["latest"]
+                latest = con.execute(
+                    "SELECT source_sha256 FROM working_master_actions "
+                    "ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                applied["latest_approved_source_sha256"] = (
+                    latest["source_sha256"] if latest else None
+                )
+        source["last_working_master_upload"] = recent_review
+        source["reviewed_working_master_updates"] = applied
+        source["record_source_warning"] = (
+            "Original bootstrap workbook and any approved recurring field "
+            "updates are separate sources; neither establishes ERP or signed-contract reconciliation."
+        )
         source["database_rows"] = {
             "active": db_rows.get("Active", 0),
             "expired": db_rows.get("Expired", 0),
