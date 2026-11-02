@@ -73,3 +73,40 @@ cover dates, historical estimates and unapproved tariffs remain blocked from
 customer-ready issue.
 
 
+
+## Factual workbook source and provenance (November 2026)
+
+The latest user-provided Maintenance Master was reviewed as a **source file**,
+not silently merged into a running staff database. Its audited source checksum,
+row counts and non-personal quality findings are documented in
+[2026-11-02 Master evidence](docs/MASTER_SOURCE_AUDIT_2026-11-02.md).
+
+A new **Source audit** screen reads the configured private approved_master.xlsx,
+reports its fingerprint, exact cover-type labels, missing information and
+source/database record count differences. The dashboard now distinguishes
+worksheet records from legally verified live maintenance agreements.
+
+The native SmartQuote interface can search existing site labels stored in the
+Contracts OS register. Selecting one records the source record ID, but **never
+invents a legal customer name** or assumes the agreement is current. Editing a
+site clears the source link until the coordinator reselects it.
+
+To prepare a **new** private database from an IT/data-owner-approved Excel
+Master, rather than use fictional demonstration data:
+
+```bash
+python scripts/prepare_factual_master.py \\
+  --source /secure/latest-approved-master.xlsx \\
+  --destination /secure/new-source-backed-snapshot \\
+  --approved-current-master
+```
+
+The destination must not exist and must be outside the GitHub checkout. The
+script refuses to overwrite an existing application database or merge over
+staff edits. It retains duplicated source IDs in their original fields while
+using labelled internal unique keys. The source file remains private; only
+aggregate checks and its checksum may be committed to GitHub.
+
+These features are development-only until full CI, staging, signed commercial
+controls and actual Sage/Sicon reconciliation are complete. No production
+installation or private workbook transfer is implied by the code commits.
