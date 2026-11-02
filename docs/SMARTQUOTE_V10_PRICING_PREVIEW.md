@@ -76,3 +76,20 @@ catalogue is populated; the source repository alone is not a guarantee.
 - GET /api/quoting/drafts/{id}/price-preview (read-only)
 
 Development branch: feature/unified-smartquote-intake.
+
+## Original-engine parity harness (protected staging only)
+
+From the Contracts OS source checkout, with dependencies available and an
+approved disposable copy of the full original SmartQuote V10 source/runtime:
+
+    python scripts/check_v10_price_parity.py /protected/staging/SmartQuoteV10 --max-skus 250
+
+The checker invokes the original V10 price_line and this integration's
+matching standard-rate calculation against identical original source SKUs for
+Silver, Gold, Platinum and representative discounts. It compares annual/unit
+and minimum values to the penny, prints aggregate mismatch counts rather than
+customer details, and returns failure status on numeric differences.
+
+This parity check must be run in a secured staging environment; it cannot run
+in public GitHub CI because the authentic operational catalogue is intentionally
+not committed. A numeric pass is necessary but not sufficient for release.
