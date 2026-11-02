@@ -67,3 +67,63 @@ def test_oversized_sage_export_is_rejected(monkeypatch):
     with pytest.raises(HTTPException) as error:
         sage._unpack(gzip.compress(b"a"*5000))
     assert error.value.status_code==503
+
+
+
+def test_sage_references_cannot_supersede_master_rrp_or_change_totals(monkeypatch):
+    from app import quote_pricing
+    code = "EXACT-1"
+    conflict = "MASTER-NO-RRP"
+    unknown = "SAGE-ONLY"
+    catalog = [
+        {"sku":code,"name":"Test Bike","model":"X",
+         "service_key":"X | No Console / N/A","console":"No Console / N/A",
+         "rrp":2000.0,"match":"Mapped"},
+        {"sku":conflict,"name":"Unpriced machine","model":"X",
+         "service_key":"X | No Console / N/A","console":"No Console / N/A",
+         "rrp":None,"match":"Mapped"}
+    ]
+    configs = [{"key":"X | No Console / N/A","eligible":"Yes",
+                "rate_group":"Standard Equipment"}]
+    pricing = {
+        "currency":"GBP", "tiers":{"Gold":1.0},
+        "pricing_status":"Provisional", "rates":[{
+            "group":"Standard Equipment","standard":0.03,"minimum":0.025,
+            "uplift":0,"status":"Active"}],
+        "console_rules":[{"name":"No Console / N/A","multiplier":1,"uplift":0}]
+    }
+    draft = {
+        "id":"d"*32, "revision":1, "customer":"Fictional",
+        "tier":"Gold","term_years":1,"discount_percent":0,
+        "equipment":[
+            {"item_code":code,"description":"Test bike","quantity":1},
+            {"item_code":conflict,"description":"Master unpriced","quantity":1},
+            {"item_code":unknown,"description":"Sage-only","quantity":1}
+        ]
+    }
+    source = {
+        "prices":{
+            code:{"sku":code,"sales_price":5000},
+            conflict:{"sku":conflict,"sales_price":5000},
+            unknown:{"sku":unknown,"name":"Sage-only",
+                     "group":"Strength Equipment","sales_price":5000}
+        },
+        "source_date":"2026-10-23","review_due":"2027-10-23",
+        "review_overdue":False,"source_file_sha256":"b"*64,
+        "source":"Sage Sales Price — NOT approved RRP"
+    }
+    monkeypatch.setattr(quote_pricing, "actor", lambda: "test")
+    monkeypatch.setattr(quote_pricing, "get_draft", lambda _: draft)
+    monkeypatch.setattr(quote_pricing, "source_snapshot",
+                        lambda: (catalog,configs,pricing,{"catalog":"fictional"}))
+    monkeypatch.setattr(quote_pricing, "sage_snapshot", lambda: source)
+    result = quote_pricing.draft_price_preview(draft["id"])
+    assert result["annual_partial"] == 60.0
+    assert result["priced_count"] == 1
+    assert result["complete_price"] is False
+    assert "sage_reference" not in result["lines"][0]
+    assert "sage_reference" not in result["lines"][1]  # Master always takes priority
+    assert result["lines"][2]["sage_reference"]["sage_sales_price"] == 5000.0
+    assert result["lines"][2]["sage_reference"]["quoted_annual_amount"] is None
+    assert result["commercially_approved"] is False
+    assert result["sage_reference_status"]["used_for_quotation"] is False
