@@ -404,7 +404,8 @@ async function unifiedPricePreview() {
       '<p><strong>' + esc(preview.priced_count) + ' of ' + esc(preview.line_count) +
       '</strong> lines priced from exact SKUs. ' +
       'Annual ' + money(preview.annual_partial) + '; monthly ' + money(preview.monthly_partial) +
-      '; ' + esc(preview.term_years) + '-year indicative total ' +
+      '; ' + (preview.staged.enabled ? 'staged cover period total ' :
+        esc(preview.term_years) + '-year indicative total ') +
       (preview.term_partial === null ? 'Unavailable until both contract dates are set' : money(preview.term_partial)) +
       ' (partial if any line is unpriced).</p>' +
       (preview.staged.enabled ?
