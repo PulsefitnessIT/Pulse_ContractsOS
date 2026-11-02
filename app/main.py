@@ -34,6 +34,7 @@ from .quote_drafts import router as quoting_drafts_router
 from .quote_catalogue import router as quoting_catalogue_router
 from .native_quote_handover import router as native_quote_handover_router
 from .quote_pricing import router as quote_pricing_router
+from .quote_sage_reference import router as sage_reference_router
 from .contract_setup import router as contract_setup_router
 from .sicon_bridge import router as sicon_bridge_router
 from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
@@ -108,6 +109,7 @@ app.include_router(quoting_drafts_router)
 app.include_router(quoting_catalogue_router)
 app.include_router(native_quote_handover_router)
 app.include_router(quote_pricing_router)
+app.include_router(sage_reference_router)
 app.include_router(contract_setup_router)
 app.include_router(sicon_bridge_router)
 
