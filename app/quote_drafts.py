@@ -6,6 +6,7 @@ or claim these drafts have been approved by SmartQuote's pricing engine.
 from __future__ import annotations
 import json
 import uuid
+from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, HTTPException, Body, Query
 from .store import connect, now
 from .pilot_access import actor, PILOT_MODE, current_role
@@ -49,6 +50,18 @@ def validate_draft(data):
     if tier not in TIERS:
         raise HTTPException(422,"Choose Silver, Gold or Platinum.")
     contact=_clean(data.get("contact",""),"contact")
+    term = data.get("term_years", 1)
+    if type(term) is not int or not 1 <= term <= 5:
+        raise HTTPException(422, "Contract term must be 1–5 whole years.")
+    raw_discount = data.get("discount_percent", 0)
+    if type(raw_discount) not in (int, float, str) or str(raw_discount).strip() == "":
+        raise HTTPException(422, "Discount must be a number between 0% and 100%.")
+    try:
+        discount = Decimal(str(raw_discount))
+        if not discount.is_finite() or not 0 <= discount <= 100 or discount.as_tuple().exponent < -2:
+            raise InvalidOperation()
+    except (InvalidOperation, ValueError):
+        raise HTTPException(422, "Discount must be between 0% and 100%, with at most two decimals.")
     equipment=data.get("equipment",[])
     if not isinstance(equipment,list) or len(equipment)>MAX_LINES:
         raise HTTPException(422,"Maximum 500 equipment lines.")
@@ -64,6 +77,7 @@ def validate_draft(data):
                        "serial":_clean(line.get("serial",""),"serial",120),
                        "quantity":qty})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
+            "term_years":term,"discount_percent":float(discount),
             "equipment":result,"commercial_status":"Unpriced draft",
             "price":None,"approved":False}
 
