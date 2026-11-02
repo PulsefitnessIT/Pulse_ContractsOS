@@ -83,3 +83,20 @@ def test_client_cannot_assert_pricing_or_approval():
     assert result["approved"] is False
     assert result["price"] is None
     assert result["commercial_status"] == "Unpriced draft"
+
+def test_viewer_cannot_write_drafts_even_with_non_viewer_username(monkeypatch):
+    monkeypatch.setattr(quote_drafts, "actor", lambda: "lee")
+    monkeypatch.setattr(quote_drafts, "PILOT_MODE", True)
+    monkeypatch.setattr(quote_drafts, "current_role", lambda: "Viewer")
+    with pytest.raises(HTTPException) as error:
+        quote_drafts._check_access(write=True)
+    assert error.value.status_code == 403
+
+
+def test_pilot_requires_verified_session_role(monkeypatch):
+    monkeypatch.setattr(quote_drafts, "actor", lambda: "Coordinator")
+    monkeypatch.setattr(quote_drafts, "PILOT_MODE", True)
+    monkeypatch.setattr(quote_drafts, "current_role", lambda: None)
+    with pytest.raises(HTTPException) as error:
+        quote_drafts._check_access(write=False)
+    assert error.value.status_code == 401
