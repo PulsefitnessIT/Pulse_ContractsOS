@@ -23,7 +23,7 @@ from .quote_workspace import _connect
 router = APIRouter(prefix="/api/quoting", tags=["Unapproved Sage price references"])
 MAX_COMPRESSED = 10 * 1024 * 1024
 MAX_UNCOMPRESSED = 32 * 1024 * 1024
-SKU = re.compile(r"^[A-Z0-9][A-Z0-9._/-]{0,99}$")
+SKU = re.compile(r"^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$")
 
 
 def _unpack(raw: bytes) -> dict:
