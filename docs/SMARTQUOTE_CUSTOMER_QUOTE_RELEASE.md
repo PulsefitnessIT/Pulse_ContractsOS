@@ -29,7 +29,7 @@ merged, staged with live Pulse data, commercially signed off or deployed.
    expiry date, and five mandatory attestations for customer identity,
    equipment/serials, rates/discount, scope/terms and VAT basis.
 6. **Approve and create customer PDF** atomically freezes a unique
-   \`PFQ-YYYY-000001\` quotation number, original source hashes, priced draft,
+   `PFQ-YYYY-000001` quotation number, original source hashes, priced draft,
    contract dates, approval actor/reference, approved terms and the PDF.
 7. **Download approved customer PDF**. Send it to the customer through the
    existing approved Pulse Fitness mailbox. **The app has not emailed it,
@@ -52,7 +52,7 @@ preview.** The issued route requires:
   unpriced Sage items, stale administrator corrections, overdue fallback prices,
   discounts below minimum or other review warnings block customer issuance.
 - A dedicated, company-approved tariff fingerprint, matching the exact V10
-  \`pricing.json\` being used by the quote engine. The repository's
+  `pricing.json` being used by the quote engine. The repository's
   provisional V10 rates are **not** implicitly approved just because tests pass.
 - A real, commercially approved maintenance **terms PDF**, staged outside the
   repository and verified against the exact signed-off SHA-256.
@@ -60,7 +60,7 @@ preview.** The issued route requires:
   registered address, company number and verified service contact email.
 - An administrator-supplied quote-specific sign-off reference and all five
   attestations.
-- IT's \`PULSE_QUOTE_LIVE_ISSUANCE=1\` opt-in, which must remain off until the
+- IT's `PULSE_QUOTE_LIVE_ISSUANCE=1` opt-in, which must remain off until the
   previous evidence is complete.
 
 The source and effective line prices are checked again before the immutable
@@ -73,7 +73,7 @@ pricing snapshot; downloads fail closed if either differs.
 All paths below are private protected-runtime paths, **not** GitHub files.
 Do not set these to fictional data for customer use.
 
-\`\`\`bash
+```bash
 # Already required by source V10/August/Sage price integration:
 PULSE_SMARTQUOTE_CATALOG_JSON=/secure/v10/data/catalog.json
 PULSE_SMARTQUOTE_CONFIGS_JSON=/secure/v10/data/configs.json
@@ -89,11 +89,11 @@ PULSE_QUOTE_TERMS_SHA256=<SHA256-of-approved-terms-file>
 PULSE_QUOTE_ISSUER_JSON=/secure/commercial/verified-issuer.json
 PULSE_QUOTE_ISSUER_SHA256=<SHA256-of-verified-issuer-json>
 PULSE_QUOTE_LIVE_ISSUANCE=1
-\`\`\`
+```
 
-Example \`verified-issuer.json\` **structure** (replace with verified facts):
+Example `verified-issuer.json` **structure** (replace with verified facts):
 
-\`\`\`json
+```json
 {
   "legal_name": "Pulse Fitness Ltd",
   "registered_address": "THE VERIFIED REGISTERED OFFICE ADDRESS",
@@ -102,12 +102,12 @@ Example \`verified-issuer.json\` **structure** (replace with verified facts):
   "telephone": "VERIFIED CUSTOMER PHONE",
   "vat_number": "VERIFIED VAT NUMBER"
 }
-\`\`\`
+```
 
 The company identity file is validated against the exact byte SHA-256. The
 example values are placeholders, not verified Pulse details and must never
 be deployed unchanged. On Windows, an authorised IT colleague can use
-\`Get-FileHash -Algorithm SHA256 <path>\` to produce each exact fingerprint.
+`Get-FileHash -Algorithm SHA256 <path>` to produce each exact fingerprint.
 
 ## Important boundaries
 
@@ -129,15 +129,15 @@ be deployed unchanged. On Windows, an authorised IT colleague can use
 
 ## Implemented code and checks
 
-- \`app/quote_customer_pdf.py\`: customer PDF layout, equipment schedule,
+- `app/quote_customer_pdf.py`: customer PDF layout, equipment schedule,
   annual/term GBP totals, exclusions pointer, signed-off supplier identity,
   original maintenance terms appendix, unmistakable draft watermark.
-- \`app/quote_customer_issuance.py\`: approval/readiness routes,
+- `app/quote_customer_issuance.py`: approval/readiness routes,
   customer PDF archive with price source fingerprints, commercial gates,
   irreversible quote-number assignment and read-only download.
-- \`app/static/quote-customer-issue.js\`: staff quote approval UI and PDF
+- `app/static/quote-customer-issue.js`: staff quote approval UI and PDF
   download, wired into the existing unified SmartQuote workspace.
-- \`tests/test_quote_customer_issuance.py\`: fictional customer tests for
+- `tests/test_quote_customer_issuance.py`: fictional customer tests for
   PDF formatting, appended terms, approval gating, archive integrity,
   duplicate issuance, authorisation, unsupported console and source data.
 - CI: Python 3.11 and 3.12 source-safety tests, Node JavaScript checks,
