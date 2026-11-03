@@ -17,6 +17,11 @@ WORKSHEETS = [
     "Home", "Maintenance Database", "Weekly Values", "Invoices",
     "Monthly Report", "Sales Report", "Quotes", "Expired",
 ]
+CURRENT_WORKSHEETS = [
+    "Home", "Action Centre", "Maintenance Database", "MOD",
+    "Weekly Values", "Invoices", "Monthly Report", "Sales Report",
+    "Quotes", "Expired",
+]
 SHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 
@@ -30,20 +35,31 @@ def workbook_check(path):
         with zipfile.ZipFile(path) as archive:
             if archive.testzip() is not None:
                 raise ValueError("Workbook ZIP integrity check failed")
-            required_parts = ["xl/workbook.xml", "xl/styles.xml"] + [
-                f"xl/worksheets/sheet{n}.xml" for n in range(1, 9)
-            ]
+            required_parts = ["xl/workbook.xml", "xl/styles.xml",
+                              "xl/_rels/workbook.xml.rels"]
             if any(name not in archive.namelist() for name in required_parts):
-                raise ValueError("Required eight-sheet workbook XML parts are missing")
+                raise ValueError("Required workbook metadata parts are missing")
             root = ET.fromstring(archive.read("xl/workbook.xml"))
             sheets = root.find(SHEET_NS + "sheets")
             if sheets is None:
                 raise ValueError("Workbook sheet definitions are missing")
             result["sheet_names"] = [item.attrib["name"] for item in sheets]
-            if result["sheet_names"] != WORKSHEETS:
-                result["issues"].append("The workbook does not have the approved eight worksheets in order")
+            if result["sheet_names"] not in (WORKSHEETS, CURRENT_WORKSHEETS):
+                result["issues"].append("Workbook sheet layout does not match the supported eight-tab or ten-tab Master")
             else:
-                result["valid"] = True
+                # Verify sheet relationship targets rather than assuming sheet
+                # positions. Old file IDs need not change when tabs are inserted.
+                from .excel_io import ExcelSource
+                src = ExcelSource(path)
+                try:
+                    for name in result["sheet_names"]:
+                        if name not in src.sheet_parts:
+                            raise ValueError("Missing worksheet part")
+                    result["valid"] = True
+                    result["profile"] = ("ten_tab_mod_action_centre"
+                        if result["sheet_names"] == CURRENT_WORKSHEETS else "legacy_eight_tab")
+                finally:
+                    src.z.close()
     except (OSError, KeyError, ValueError, zipfile.BadZipFile, ET.ParseError) as error:
         result["issues"].append("The approved Excel Master could not be validated: " + type(error).__name__)
     return result
