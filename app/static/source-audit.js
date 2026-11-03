@@ -6,8 +6,12 @@ async function sourceAuditPage() {
     if (view !== 'source_audit') return;
     const active = info.registers['Maintenance Database'];
     const expired = info.registers['Expired'];
+    const mod = info.registers.MOD || null;
+    const combinedCurrent = active.populated_site_rows + (mod ? mod.populated_site_rows : 0);
     const counts = [
-      ['Current source rows', active.populated_site_rows, info.database_rows.active],
+      ['Non-MOD source rows', active.populated_site_rows, info.database_rows.active - (info.database_mod_rows || 0)],
+      ...(mod ? [['MOD source rows', mod.populated_site_rows, info.database_mod_rows || 0]] : []),
+      ['All current source rows', combinedCurrent, info.database_rows.active],
       ['Expired source rows', expired.populated_site_rows, info.database_rows.expired],
     ];
     const rows = counts.map(([title,source,stored]) => '<tr><td>' + esc(title) +
@@ -36,6 +40,9 @@ async function sourceAuditPage() {
       '<p><strong>Workbook and register counts:</strong> ' +
       (info.record_counts_match ? 'Row counts agree' : 'Mismatch — investigate before relying on reports') + '</p>' +
       '<p>Source-backed means the values came from Excel. It does not prove that Sage, Sicon, signed agreements or bank receipts agree.</p>' +
+      (mod ? '<p><strong>MOD register:</strong> '+esc(mod.populated_site_rows)+
+        ' current source rows; ' + esc(mod.amounts_as_recorded.missing) +
+        ' amounts blank as recorded.</p>' : '') +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
       '<th>Register</th><th>Workbook rows</th><th>Database rows</th><th>Comparison</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div></section>' +
@@ -137,6 +144,7 @@ function renderMasterSyncReview(report) {
     '<p><strong>Filename:</strong> ' + esc(report.filename) + ' · <strong>SHA-256:</strong> <code>' +
     esc(report.sha256) + '</code></p>' +
     '<p>Source rows — Maintenance Database: ' + esc(report.registers['Maintenance Database']) +
+    ' · MOD: ' + esc(report.registers.MOD || 0) +
     ' · Expired: ' + esc(report.registers.Expired) + '</p>' +
     '<table class="data-table"><thead><tr><th>Comparison</th><th>Rows</th></tr></thead><tbody>' +
     cards + '</tbody></table>' +
