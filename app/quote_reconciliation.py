@@ -550,10 +550,24 @@ def historical_search(q: str = Query(..., min_length=2, max_length=100),
     records = history.get("records", {})
     aliases = history.get("aliases", {})
     matched = []
-    alias_targets = aliases.get(key, [])
-    if not isinstance(alias_targets, list):
-        alias_targets = []
-    selected_aliases = set(str(x).strip().upper() for x in alias_targets)
+    # Original source alias keys may differ in casing. Resolve them by whole
+    # normalised code, not by prefix, while preserving collisions as review
+    # exceptions instead of choosing an arbitrary source row.
+    alias_matches = [
+        targets for source_code, targets in aliases.items()
+        if _code(source_code) == key
+    ]
+    selected_aliases = set()
+    alias_source_requires_review = len(alias_matches) > 1
+    for alias_targets in alias_matches:
+        if not isinstance(alias_targets, list) or not alias_targets:
+            alias_source_requires_review = True
+            continue
+        for target in alias_targets:
+            if not isinstance(target, str) or not SKU_REGEX.fullmatch(_code(target)):
+                alias_source_requires_review = True
+                continue
+            selected_aliases.add(_code(target))
     for code, item in records.items():
         if not isinstance(item, dict):
             continue
@@ -592,6 +606,7 @@ def historical_search(q: str = Query(..., min_length=2, max_length=100),
         "results":[x[2] for x in matched[:limit]],
         "source_sha256":sha,
         "contains_price_information":False,
-        "ambiguous_or_multiple_variants":len(matched)>1,
+        "ambiguous_or_multiple_variants":len(matched)>1 or alias_source_requires_review,
+        "historical_alias_source_requires_review":alias_source_requires_review,
         "cannot_auto_select_for_current_pricing":True,
     }
