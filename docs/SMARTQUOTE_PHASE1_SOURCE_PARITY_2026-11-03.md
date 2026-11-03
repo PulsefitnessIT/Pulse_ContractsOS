@@ -1,5 +1,15 @@
 # SmartQuote Phase 1 — source-backed equipment reconciliation and V10 price parity
 
+> **Latest Sage pricing development (3 November 2026):** Pulse confirmed that
+> the August 2026 Master covers current machines, while Sage contains the
+> full range of item codes. Exact Sage Sales Price is now the working internal
+> equipment price basis when a SKU is **absent from** the August Master.
+> Earlier notes describing Sage as reference-only or requiring individual
+> RRP sign-off are superseded by
+> [SMARTQUOTE_SAGE_REFRESH_2026-11-03.md](SMARTQUOTE_SAGE_REFRESH_2026-11-03.md).
+> Administrator price corrections and full CSV/XLSX Sage refreshes are audited;
+> maintenance tariff approval and customer quote issuance remain separate.
+
 **Date:** 3 November 2026  
 **Development branch:** `feature/unified-smartquote-intake`  
 **Status:** Engineering progress, **not commercially authorised** and **not deployed**.
