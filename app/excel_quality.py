@@ -9,7 +9,8 @@ from zipfile import ZipFile
 from lxml import etree as ET
 from .excel_io import ExcelSource,NS,Q,REGISTER_SHEETS,splitcell
 
-EXPECTED=('Home','Maintenance Database','Weekly Values','Invoices','Monthly Report','Sales Report','Quotes','Expired')
+from .data_readiness import WORKSHEETS, CURRENT_WORKSHEETS
+EXPECTED=tuple(WORKSHEETS)
 TABLE_SHEETS={'ContractsRegister','WeeklyValuesRegister','InvoiceRunRegister','QuotationRegister','ExpiredHistoryRegister'}
 
 
@@ -20,20 +21,29 @@ def inspect_excel(path):
         if corrupt:failures.append(f'Corrupt archive part: {corrupt}')
         root=ET.fromstring(z.read('xl/workbook.xml'))
         sheet_names=[x.get('name') for x in root.findall('.//'+Q('sheet'))]
-        if tuple(sheet_names)!=EXPECTED:failures.append('Worksheet names or ordering differ from the approved eight-sheet Master')
+        ten_tab = sheet_names == CURRENT_WORKSHEETS
+        if not ten_tab and tuple(sheet_names)!=EXPECTED:
+            failures.append('Worksheet names or ordering differ from supported eight/ten-tab Masters')
         formula_count=sum(z.read(x).count(b'<f>') for x in z.namelist() if x.startswith('xl/worksheets/sheet') and x.endswith('.xml'))
         for name in z.namelist():
             if not (name.startswith('xl/tables/') and name.endswith('.xml')):continue
             r=ET.fromstring(z.read(name));table=r.get('name');tables[table]={'ref':r.get('ref'),'has_filter':r.find(Q('autoFilter')) is not None}
             if table in TABLE_SHEETS and not tables[table]['has_filter']:
                 failures.append(f'Excel filter missing in table {table}')
-        missing=TABLE_SHEETS-set(tables)
+        expected_tables=TABLE_SHEETS | ({'MODContractsRegister'} if sheet_names==CURRENT_WORKSHEETS else set())
+        missing=expected_tables-set(tables)
         if missing:failures.append('Missing Excel tables: '+', '.join(sorted(missing)))
     src=ExcelSource(path)
     try:
         main,active=src.records('Maintenance Database')
         hist,expired=src.records('Expired')
-        if main!=hist:failures.append('Active and Expired contract column layouts differ')
+        # Expired retains additional historical columns deliberately.
+        if hist[:len(main)]!=main:
+            failures.append('Expired source columns do not match current Master columns')
+        mod_rows=[]
+        if 'MOD' in src.sheet_parts:
+            mod_cols,mod_rows=src.records('MOD')
+            if mod_cols!=main:failures.append('MOD register columns do not match Maintenance Database')
         if 'Original Amount Notes' not in main and 'Original amount notes' not in main:
             warnings.append('Original Amount Notes heading not found under the expected spelling')
         if not {'Invoice Code','Sage Checked and Updated','Customer / site','Record ID'}.issubset(set(main)):
@@ -41,17 +51,23 @@ def inspect_excel(path):
         # Every populated source row must fall within its existing Excel table;
         # a worksheet dimension alone does not make new records filterable.
         table_per_sheet={'Maintenance Database':'ContractsRegister','Expired':'ExpiredHistoryRegister',
+            'MOD':'MODContractsRegister',
             'Weekly Values':'WeeklyValuesRegister','Invoices':'InvoiceRunRegister','Quotes':'QuotationRegister'}
         from .table_growth import CELL_RANGE
         for sheet_name,table_name in table_per_sheet.items():
-            values=active if sheet_name=='Maintenance Database' else expired if sheet_name=='Expired' else src.records(sheet_name)[1]
+            values=active if sheet_name=='Maintenance Database' else (
+                mod_rows if sheet_name=='MOD' else expired if sheet_name=='Expired' else
+                src.records(sheet_name)[1])
             maxrow=max((x['row'] for x in values),default=1)
             tab=tables.get(table_name)
             if tab:
                 m=CELL_RANGE.fullmatch(tab['ref'])
                 end=int(m.group(4) or m.group(2)) if m else 0
                 if maxrow>end:failures.append(f'{table_name} does not cover populated row {maxrow}')
-        stats={'active_rows':len(active),'expired_rows':len(expired),'columns':len(main),'sheets':len(sheet_names),'formula_cells_approx':formula_count}
+        stats={'active_rows':len(active)+len(mod_rows),'mod_rows':len(mod_rows),
+               'non_mod_rows':len(active),'expired_rows':len(expired),
+               'columns':len(main),'sheets':len(sheet_names),
+               'formula_cells_approx':formula_count}
     finally:src.z.close()
     return {'ok':not failures,'failures':failures,'warnings':warnings,'tables':tables,'stats':stats}
 
