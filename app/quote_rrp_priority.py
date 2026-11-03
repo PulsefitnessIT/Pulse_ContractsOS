@@ -23,7 +23,7 @@ MASTER_DATE = "2026-08-24"
 MASTER_ORIGINAL_SHA256 = "fbc544db9365f6b47cd37fb3e085e5c75acc03042eff5d6f820ffa55f80b3433"
 MAX_COMPRESSED = 8 * 1024 * 1024
 MAX_DECOMPRESSED = 32 * 1024 * 1024
-CODE = re.compile(r"^[A-Z0-9][A-Z0-9._/-]{0,99}$")
+CODE = re.compile(r"^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$")
 
 
 def _code(value):
