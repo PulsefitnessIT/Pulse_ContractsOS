@@ -179,6 +179,41 @@ The original parity checker, signed-off maintenance tariffs, coverage rules,
 approved source precedence, quotation issuance and Sicon/Sage writes remain
 separate release gates.
 
+## Latest development — strict original-engine sampling and source pinning
+
+The private `scripts/check_v10_price_parity.py` command now refuses to
+execute an original V10 runtime unless `PULSE_SMARTQUOTE_SOURCE_MANIFEST`
+points to a valid, matching IT-created manifest. The exact bytes that are
+hashed are also the bytes parsed for the numerical comparison. Original
+catalogue, configurations and pricing files are rechecked after original
+engine import and after every sampled comparison; changes invalidate the run.
+
+The comparison uses `scripts/parity_source_coverage.py` to choose candidates
+in a deterministic round-robin across **distinct rate-group and console
+families**. Every eligible source family must be sampled; a lower
+`--max-skus` limit that omits a family is a non-passing parity run. The
+aggregate-only report includes the number of eligible, sampled and missing
+families, as well as original SKU omissions and policy rule conflicts.
+
+Duplicate tariff group identities and duplicate console rule identities
+now block the affected family from a clean parity pass. Missing or invalid
+rate/console source rows also block the overall result. Other excluded
+source SKUs are explicitly counted but must be reconciled separately. The
+script distinguishes `numeric_comparisons_match` from `pass` to avoid
+mistaking matching sampled arithmetic for full original-source coverage.
+
+On the isolated staging host run:
+
+```bash
+export PULSE_SMARTQUOTE_SOURCE_MANIFEST=/secure/smartquote_source_manifest.json
+python scripts/check_v10_price_parity.py /secure/v10-original --max-skus 300
+```
+
+No real source files, customer records, RRPs, maintenance rates or signed
+PDFs belong in GitHub. A passing numerical parity result is **not** commercial
+tariff authorisation, and it does not enable customer quote issuance. The
+original V10 engine must be run only in a controlled disposable environment.
+
 ## How IT stages the source evidence
 
 Never copy real customer files, catalogue price lists or signed PDFs into
