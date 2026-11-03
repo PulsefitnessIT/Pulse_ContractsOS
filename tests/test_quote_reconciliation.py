@@ -287,3 +287,65 @@ def test_legacy_two_old_fields_do_not_double_count_missing_target():
     )
     assert result["summary"]["legacy_missing_target_mappings"] == 1
     assert result["summary"]["legacy_source_rows_requiring_review"] == 1
+
+
+def test_policy_duplicate_rate_and_console_rows_create_unpriced_review_items(monkeypatch):
+    products, configs, pricing, _, _ = synthetic_sources()
+    pricing["rates"].append(dict(pricing["rates"][0]))
+    pricing["console_rules"].append(dict(pricing["console_rules"][0]))
+    result = quote_reconciliation.reconcile(
+        products, configs, pricing, {"catalog": "fictional"}
+    )
+    summary = result["summary"]
+    assert summary["policy_rule_rows_requiring_review"] == 4
+    assert summary["policy_flag_counts"] == {
+        "duplicate_console_rule": 2,
+        "duplicate_rate_group": 2,
+    }
+    assert summary["pricing_policy_source_rows"] == {
+        "rates": 3, "console_rules": 2
+    }
+    listed = result["policy_worklist"]
+    assert [(row["source_section"], row["source_row"]) for row in listed] == [
+        ("rates", 1), ("rates", 3),
+        ("console_rules", 1), ("console_rules", 2),
+    ]
+    assert all("rrp" not in row and "rate" not in row for row in listed
+               if not isinstance(row, str))
+    assert all(row["price_approved"] is False for row in listed)
+    flagged = next(row for row in result["worklist"] if row["sku"] == "EXAMPLE-001")
+    assert "ambiguous_maintenance_rate_group" in flagged["issues"]
+    assert "ambiguous_console_rule" in flagged["issues"]
+
+    monkeypatch.setattr(quote_reconciliation, "actor", lambda: "fictional-staff")
+    monkeypatch.setattr(quote_reconciliation, "source_report", lambda: result)
+    page = quote_reconciliation.reconciliation_policy_worklist(
+        issue="duplicate_rate_group", limit=1, offset=1
+    )
+    assert page["total"] == 2
+    assert page["items"][0]["source_row"] == 3
+    assert page["price_approved"] is False
+
+
+def test_policy_audit_reports_source_rows_without_identifiers():
+    _, _, pricing, _, _ = synthetic_sources()
+    pricing["rates"].append({"group": "", "standard": 0.99})
+    pricing["console_rules"].append(None)
+    report = quote_reconciliation.policy_reconciliation(pricing)
+    assert report["flag_counts"]["missing_rate_group_name"] == 1
+    assert report["flag_counts"]["invalid_policy_source_row"] == 1
+    assert report["source_rows"]["rates"] == 3
+    assert report["source_rows"]["console_rules"] == 2
+    assert all(item["price_approved"] is False for item in report["worklist"])
+
+
+def test_catalogue_exception_keeps_all_original_row_positions():
+    products, configs, pricing, _, _ = synthetic_sources()
+    report = quote_reconciliation.reconcile(
+        products, configs, pricing, {"catalog": "fictional"}
+    )
+    dup = next(row for row in report["worklist"] if row["sku"] == "EXAMPLE-DUP")
+    assert dup["catalogue_source_rows"] == [4, 5]
+    assert dup["source_rows"] == 2
+    # These source-row identities allow correction without choosing an RRP.
+    assert dup["price_approved"] is False
