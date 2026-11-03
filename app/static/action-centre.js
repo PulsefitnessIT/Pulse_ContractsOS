@@ -76,7 +76,10 @@ async function loadActionCentre() {
       '<div class="fine-print">'+esc(task.sheet)+' · '+esc(task.contract_reference||'No contract ref')+
       ' · '+esc(task.sales_manager||'Manager not recorded')+'</div></td>' +
       '<td><strong>'+esc(ACTION_KIND_LABEL[task.kind]||task.kind)+'</strong>' +
-      '<div>'+esc(task.description)+'</div></td>' +
+      '<div>'+esc(task.description)+'</div>' +
+      (task.kind==='renewal_review' ? '<button type="button" class="button button-outline" ' +
+        'data-start-quote="'+esc(task.contract_id)+'" data-quote-site="'+esc(task.customer_site)+'">' +
+        'Prepare unpriced SmartQuote draft</button>' : '') + '</td>' +
       '<td>'+esc(task.recorded_due_date||'No recorded date')+
       (task.snooze_until?'<div class="fine-print">Reviewed again: '+esc(task.snooze_until)+'</div>':'')+'</td>' +
       '<td>'+chip(task.urgency)+'<div class="fine-print">'+esc(task.status)+
@@ -93,6 +96,15 @@ async function loadActionCentre() {
     '</tbody></table></div></div>' +
     '<p class="fine-print">Completion statuses are stored with a staff identity and event history. ' +
     'They do not automatically overwrite Excel, renew agreements or change Sage/Sicon.</p>';
+  document.querySelectorAll('[data-start-quote]').forEach(button=>{
+    button.addEventListener('click',()=>{
+      window.unifiedSourceFromAction={
+        contract_id:Number(button.dataset.startQuote),
+        site_label:button.dataset.quoteSite
+      };
+      setView('quoting');
+    });
+  });
   const begin=data.offset+1,end=data.offset+items.length;
   document.querySelector('#actionPager').innerHTML=
     '<span>'+ (data.total ? esc(begin)+'–'+esc(end)+' of '+esc(data.total) : 'No actions') +
