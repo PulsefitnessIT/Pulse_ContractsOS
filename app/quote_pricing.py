@@ -378,6 +378,22 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
     }
 
 
+@router.get("/rrp-source/status")
+def rrp_source_status():
+    """Read-only source coverage, without exposing per-item prices."""
+    actor()
+    from .quote_rrp_priority import (
+        source_snapshot as august_snapshot, summarize_priority
+    )
+    catalog, _, _, _ = source_snapshot()
+    master = august_snapshot()
+    try:
+        sage = sage_snapshot()
+    except HTTPException:
+        sage = None
+    return summarize_priority(master, catalog, sage)
+
+
 @router.get("/drafts/{draft_id}/price-preview")
 def draft_price_preview(draft_id: str):
     actor()
