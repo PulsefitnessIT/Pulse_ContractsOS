@@ -100,3 +100,14 @@ def test_deleted_or_unknown_tariff_does_not_auto_price():
     selected=asset()
     selected["selected"]["rate_group"]="Unknown Source Rate"
     assert original_v10_price_line(selected,"Standard","Gold",0,policy()) is None
+
+
+def test_original_price_function_identity_guard_detects_drift():
+    from types import SimpleNamespace
+    from app._smartquote_price_line_v10 import price_line
+    from scripts.check_v10_price_parity import verify_original_function
+    verify_original_function(SimpleNamespace(price_line=price_line))
+    def altered_price_line(asset,level,tier,discount):
+        return {"unit":1000000}
+    with pytest.raises(RuntimeError,match="differs"):
+        verify_original_function(SimpleNamespace(price_line=altered_price_line))
