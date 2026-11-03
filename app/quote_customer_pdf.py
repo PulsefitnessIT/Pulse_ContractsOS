@@ -180,21 +180,29 @@ def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
     for line in pricing["lines"]:
         description = str(line.get("description") or "")
         ident = str(line.get("sku") or line.get("item_code") or "")
+        asset_index = int(line["line"]) - 1
+        asset = (draft["equipment"][asset_index]
+                 if 0 <= asset_index < len(draft["equipment"]) else {})
         desc_lines = _wrap(description, 278, 9, maxlines=3)
-        code_lines = _wrap(ident, 278, 7.5, maxlines=2)
-        h = max(46, 12*len(desc_lines) + 10*len(code_lines) + 13)
+        details = ["Item code: " + ident]
+        if asset.get("serial"):
+            details.append("Serial / reference: " + str(asset["serial"]))
+        if asset.get("cover_start"):
+            details.append("Cover starts: " + str(asset["cover_start"]))
+        detail_lines = []
+        for detail in details:
+            detail_lines.extend(_wrap(detail, 278, 7.5, maxlines=2))
+        h = max(51, 12*len(desc_lines) + 10*len(detail_lines) + 13)
         if y+h > H-115:
             page = _page(doc, quote_no, internal_draft)
             y = head(page, 142 if not internal_draft else 153)
-        if len(doc) and (len(doc) % 2 == 0):
-            pass
         _rect(page, MARGIN, y, RIGHT, y+h, PALE)
-        for j, t in enumerate(desc_lines):
-            _txt(page, (MARGIN+8, y+15+j*12), t, 9, INK,
+        for j, value in enumerate(desc_lines):
+            _txt(page, (MARGIN+8, y+15+j*12), value, 9, INK,
                  "hebo" if j == 0 else "helv")
         start = y+17+len(desc_lines)*12
-        for j, t in enumerate(code_lines):
-            _txt(page, (MARGIN+8, start+j*10), t, 7.5, MUTED)
+        for j, value in enumerate(detail_lines):
+            _txt(page, (MARGIN+8, start+j*10), value, 7.5, MUTED)
         _txt(page, (MARGIN+307, y+20), str(line["quantity"]), 9, INK)
         _txt(page, (MARGIN+359, y+20),
              _money(line["annual"]), 9, INK, "hebo")
