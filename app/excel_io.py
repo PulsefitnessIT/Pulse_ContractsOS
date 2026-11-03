@@ -24,7 +24,7 @@ CURRENT_REGISTER_SHEETS=('Maintenance Database','MOD','Expired')
 
 def register_sheets(source):
     """Only factual contract registers, never calculated Action Centre rows."""
-    return CURRENT_REGISTER_SHEETS if 'MOD' in source.sheet_parts else REGISTER_SHEETS
+    return CURRENT_REGISTER_SHEETS if 'MOD' in getattr(source,'sheet_parts',{}) else REGISTER_SHEETS
 DATE_FIELDS={'Start date','Expiry date','Action due','Last service recorded','Invoice month','Period from','Period to','Date sent','Week ending (Friday)','Prepared date','Sent date','Next action date','Follow Up Date','Revised Date'}
 
 
