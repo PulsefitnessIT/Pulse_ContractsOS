@@ -46,13 +46,15 @@ function sageRefreshSummaryTable(counts){
 function sageRefreshRows(items){
   return '<div style="overflow-x:auto"><table class="data-table"><thead>'+
     '<tr><th>Item code</th><th>Change</th><th>Previous Sage price</th>'+
-    '<th>Replacement price</th></tr></thead><tbody>'+
+    '<th>Replacement price</th><th>Previous equipment</th><th>Updated equipment</th></tr></thead><tbody>'+
     (items||[]).map(row=>
       '<tr><td>'+esc(row.sku)+'</td><td>'+esc(row.kind||row.change_kind)+
       '</td><td>'+esc(row.previous_price===null?'—':money(row.previous_price))+
       '</td><td>'+esc(row.current_price===null?'—':money(row.current_price))+
+      '</td><td>'+esc([row.previous_name,row.previous_group].filter(Boolean).join(' · ')||'—')+
+      '</td><td>'+esc([row.current_name,row.current_group].filter(Boolean).join(' · ')||'—')+
       '</td></tr>').join('')+
-    ((!items||!items.length)?'<tr><td colspan="4">No changes recorded.</td></tr>':'')+
+    ((!items||!items.length)?'<tr><td colspan="6">No changes recorded.</td></tr>':'')+
     '</tbody></table></div>';
 }
 
