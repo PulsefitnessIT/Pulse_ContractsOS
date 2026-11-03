@@ -26,6 +26,7 @@ FILES=("catalog","configs","pricing")
 OPTIONAL_FILES={
     "legacy_crosswalk": ("legacy.json", 8 * 1024 * 1024),
     "historical_identity": ("historical_catalogue_index.json", 35 * 1024 * 1024),
+    "august_2026_rrp": ("rrp_2026_source.json.gz", 8 * 1024 * 1024),
 }
 
 
@@ -102,6 +103,17 @@ def create(root:Path, output:Path, owner:str, effective_date:str,
             if not isinstance(payload,list) or len(payload)>80000:
                 raise ValueError("Unexpected V10 legacy crosswalk format.")
             counts[kind]=len(payload)
+        elif kind=="august_2026_rrp":
+            from app.quote_rrp_priority import MASTER_ORIGINAL_SHA256, MASTER_FILE, MASTER_DATE
+            if (not isinstance(payload,dict)
+                or payload.get("source_file")!=MASTER_FILE
+                or payload.get("source_date")!=MASTER_DATE
+                or str(payload.get("source_sha256") or "").lower()!=MASTER_ORIGINAL_SHA256
+                or not isinstance(payload.get("rows"),list)
+                or not 1<=len(payload["rows"])<=20000
+                or not all(isinstance(row,dict) for row in payload["rows"])):
+                raise ValueError("Unexpected August 2026 source List Price evidence.")
+            counts[kind]=len(payload["rows"])
         else:
             if (not isinstance(payload,dict) or not isinstance(payload.get("records"),dict)
                 or len(payload["records"])>150000
