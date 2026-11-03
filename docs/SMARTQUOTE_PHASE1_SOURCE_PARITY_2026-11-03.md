@@ -32,9 +32,15 @@
    - `GET /api/quoting/catalogue/legacy/resolve?code=...` resolves a *whole*
      original legacy code to possible current SKUs. Multiple target SKUs
      remain ambiguous; even one mapped target needs staff identity review.
-   - A read-only equipment reconciliation panel is now available from the
-     unified **SmartQuote** workspace. No catalogue/master-price editing,
-     legal coverage sign-off or customer issue controls were enabled.
+   - `GET /api/quoting/catalogue/historical/search?q=...` can look up
+     the authentic 2020–2026 historical identity index by whole/partial SKU,
+     model, name or prior alias. It returns original model, console, year
+     and source descriptions only: **no historical RRP or replacement SKU
+     approval**.
+   - A read-only equipment reconciliation and historical-model search panel
+     is available from the unified **SmartQuote** workspace. No catalogue/
+     Master Price List editing, legal coverage sign-off or customer issue
+     controls were enabled.
 
 3. **Pin exact private source snapshots**
    - `scripts/pin_smartquote_v10_sources.py` creates a new SHA-256 manifest
