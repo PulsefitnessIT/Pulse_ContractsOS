@@ -129,3 +129,24 @@ records remain a manual review worklist until an approved reconciliation
 workflow can handle them.
 
 See [Recurring working-Master upload procedure](docs/RECURRING_WORKING_MASTER_SYNC.md).
+
+## Deployment: protected server staging (November 2026)
+
+The repo includes [a controlled server rollout runbook](docs/CONTROLLED_SERVER_ROLLOUT_2026-11-03.md)
+and an opt-in `compose.server-staging.yml`. The backend binds to loopback
+only, uses a non-root container and an externally mounted private database.
+`PULSE_DEPLOYMENT_ENV=staging` fails startup on demo/no-auth mode, insecure
+session cookies, a missing HTTPS origin, an inadequate session secret, an
+unapproved data path or disabled local backups. An unverified
+`PULSE_DEPLOYMENT_ENV=production` explicitly refuses startup.
+
+After IT provisions the private source-approved data, administrator account,
+host HTTPS gateway and external backup controls, run
+`python scripts/server_staging_preflight.py` inside the staging container
+to see privacy-safe checks. Even a passing staging preflight is **not**
+a production launch approval: central MFA, permissions, dependency assessment,
+restoration drill, current Master reconciliation, commercial controls and
+staff acceptance are outstanding.
+
+The working Excel Master remains authoritative until a separately signed
+cutover; no customer files have been committed and no server has been accessed.
