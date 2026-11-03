@@ -217,6 +217,71 @@ PDFs belong in GitHub. A passing numerical parity result is **not** commercial
 tariff authorisation, and it does not enable customer quote issuance. The
 original V10 engine must be run only in a controlled disposable environment.
 
+## Commercial source precedence confirmed — 3 November 2026
+
+Pulse Fitness's pricing instruction confirms **Full Master Price List
+24-08-2026.xlsx** as the current primary equipment RRP source, with Sage as
+the fallback **only when an exact SKU is absent from the August master**.
+
+The original V10 repository has a sanitised extract:
+`data/rrp_2026_source.json.gz`, sourced from the four master worksheets.
+The master workbook's recorded SHA-256 is
+`fbc544db9365f6b47cd37fb3e085e5c75acc03042eff5d6f820ffa55f80b3433`.
+IT should independently verify that hash against the protected original workbook
+before trusting the snapshot. The extract retains only List Price and original
+source sheet/row/console evidence; supplier cost and selling prices are not
+included.
+
+### Source hierarchy implemented
+
+1. **Exact August 2026 SKU with one consistent positive List Price and
+   variant:** Use that List Price in the internal original-V10 tariff preview,
+   keeping the original V10 catalogue unchanged and recording the August
+   source provenance. This is not yet an issued or commercially approved quote.
+2. **August SKU present but inconsistent/missing price or variant:** Block
+   automatic calculation and expose the source rows for review. **Do not
+   fall through to Sage just because August data is conflicting.**
+3. **SKU absent from August:** Read the exact SKU from the manager-imported,
+   dated Sage Sales Price snapshot. The current Sage importer contains a
+   **Sales Price** column, not a separately certified RRP. Present that as
+   an explicit staff fallback reference and require commercial verification
+   before using it as maintenance RRP. Never silently price from the old V10
+   catalogue instead.
+4. **SKU absent from V10's catalogue or lacking a verified service setup:**
+   Record the August/Sage reference where possible, but do not invent a
+   rate group, maintenance eligibility or console mapping. Review before
+   automatic pricing.
+
+The original V10 `price_line` arithmetic is unchanged. No source approval,
+issued customer PDF, contract activation, Sage write or Sicon write occurs.
+`GET /api/quoting/rrp-source/status` exposes aggregate counts of August
+coverage, master conflicts, Sage fallback and unpriced SKUs without disclosing
+any price records. The SmartQuote workspace displays this read-only summary.
+
+### Private IT staging
+
+Retrieve the original master evidence and sanitised extract from the
+controlled original SmartQuote repository, verify the master workbook SHA-256
+independently, and stage it alongside the V10 source files on the **private
+server**. The deployment must set:
+
+```text
+PULSE_SMARTQUOTE_RRP_2026_SOURCE=/secure/v10-original/data/rrp_2026_source.json.gz
+PULSE_SMARTQUOTE_SOURCE_MANIFEST=/secure/smartquote_source_manifest_v2.json
+```
+
+Create the **new** source manifest with
+`scripts/pin_smartquote_v10_sources.py` after staging the August extract;
+its compressed-file SHA-256 is now included under
+`sha256.august_2026_rrp`. The application refuses pricing previews when the
+August source is missing, malformed, not the expected date or original master
+identity, or its bytes differ from the private pinned manifest. Do not place
+the workbook or compressed extract in Contracts OS GitHub source.
+
+Commercially approving maintenance rates, discounts, minimums and whether
+the Sage Sales Price is acceptable as an RRP substitute remain separate
+controls.
+
 ## How IT stages the source evidence
 
 Never copy real customer files, catalogue price lists or signed PDFs into
