@@ -185,3 +185,42 @@ def test_source_discount_rounds_one_unit_before_quantity():
     result=quote_pricing.preview(q,catalog,configs,pricing,hashes)
     assert result["lines"][0]["unit_annual"] == 8.0
     assert result["lines"][0]["annual"] == 24.0
+
+
+def test_missing_private_manifest_never_claims_source_approval(monkeypatch):
+    monkeypatch.delenv("PULSE_SMARTQUOTE_SOURCE_MANIFEST",raising=False)
+    status=quote_pricing.source_manifest_status({
+        "catalog":"a"*64,"configs":"b"*64,"pricing":"c"*64
+    })
+    assert status["pinned"] is False
+    assert status["matches"] is False
+    assert status["commercially_approved"] is False
+
+
+def test_private_source_manifest_detects_changed_rrp_file(tmp_path,monkeypatch):
+    import hashlib
+    catalogue,configs,pricing,_=example()
+    fingerprints={}
+    for part,variable,filename,data in (
+        ("catalog","PULSE_SMARTQUOTE_CATALOG_JSON","catalog.json",catalogue),
+        ("configs","PULSE_SMARTQUOTE_CONFIGS_JSON","configs.json",configs),
+        ("pricing","PULSE_SMARTQUOTE_PRICING_JSON","pricing.json",pricing),
+    ):
+        file=tmp_path/filename
+        file.write_text(json.dumps(data),encoding="utf-8")
+        monkeypatch.setenv(variable,str(file))
+        fingerprints[part]=hashlib.sha256(file.read_bytes()).hexdigest()
+    manifest=tmp_path/"approved_source_manifest.json"
+    manifest.write_text(json.dumps({
+        "sha256":fingerprints,"owner":"Fictional IT owner","effective_date":"2026-11-03"
+    }))
+    monkeypatch.setenv("PULSE_SMARTQUOTE_SOURCE_MANIFEST",str(manifest))
+    assert quote_pricing.source_manifest_status(fingerprints)["pinned"] is True
+    assert quote_pricing.source_manifest_status(fingerprints)["commercially_approved"] is False
+    quote_pricing.source_snapshot()  # Valid pinned test-only source.
+    changed=tmp_path/"catalog.json"
+    changed.write_text(json.dumps([{**catalogue[0],"rrp":9999999}]))
+    with pytest.raises(HTTPException) as error:
+        quote_pricing.source_snapshot()
+    assert error.value.status_code==503
+    assert "source manifest" in error.value.detail.lower()
