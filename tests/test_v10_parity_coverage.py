@@ -141,3 +141,30 @@ def test_strict_parity_refuses_unpinned_source_before_importing_engine(tmp_path,
     monkeypatch.delenv("PULSE_SMARTQUOTE_SOURCE_MANIFEST", raising=False)
     with pytest.raises(RuntimeError, match="Pin and verify"):
         run(root, maximum=3)
+
+
+def test_intentionally_ineligible_equipment_not_confused_with_broken_source():
+    catalogue, configs, pricing = source()
+    configs[0]["eligible"] = "No"
+    samples, summary = select_source_coverage(catalogue, configs, pricing, 10)
+    assert summary["skipped_source_sku_groups_by_reason"]["explicitly_excluded_from_cover"] == 2
+    assert summary["unresolved_numeric_source_exclusions"] == 0
+    assert summary["source_exclusions_require_separate_reconciliation"] is True
+    assert len(samples) == 2
+
+
+def test_unresolved_missing_rrp_is_a_release_blocker_not_an_intentional_exclusion():
+    catalogue, configs, pricing = source()
+    catalogue[0]["rrp"] = None
+    _, summary = select_source_coverage(catalogue, configs, pricing, 10)
+    assert summary["unresolved_numeric_source_exclusions"] == 1
+    assert summary["skipped_source_sku_groups_by_reason"]["rrp_missing_or_invalid"] == 1
+    assert summary["source_rule_identity_conflicts"] is False
+
+
+def test_unverified_cover_is_still_an_unresolved_parity_omission():
+    catalogue, configs, pricing = source()
+    catalogue[0]["match"] = "Price list only - review"
+    _, summary = select_source_coverage(catalogue, configs, pricing, 10)
+    assert summary["skipped_source_sku_groups_by_reason"]["coverage_needs_approval"] == 1
+    assert summary["unresolved_numeric_source_exclusions"] == 1
