@@ -111,7 +111,7 @@ def _row(page, top, label, value, width=190):
 
 def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
                      valid_until, approval_ref, approved_by,
-                     terms_pdf=None, internal_draft=False):
+                     terms_pdf=None, issuer=None, internal_draft=False):
     """Produce immutable PDF bytes for complete, source-priced quote input.
 
     \`pricing\` is the server-generated V10 snapshot, not client-provided money.
@@ -120,7 +120,7 @@ def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
     if not pricing.get("complete_price") or not pricing.get("lines"):
         raise ValueError("Cannot render an incomplete maintenance price.")
     if (not internal_draft and
-            (not terms_pdf or not approval_ref or not approved_by)):
+            (not terms_pdf or not approval_ref or not approved_by or not issuer)):
         raise ValueError("Customer PDF needs real approved terms and sign-off.")
     doc = fitz.open()
     page = _page(doc, quote_no, internal_draft)
@@ -220,6 +220,28 @@ def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
          ("Internal price preview - not authorised for distribution."
           if internal_draft else
           "Commercially reviewed: "+_safe(approval_ref, 100)), 8.5, MUTED)
+    if issuer and not internal_draft:
+        details = [
+            ("Issuer", issuer.get("legal_name", "")),
+            ("Registered address", issuer.get("registered_address", "")),
+            ("Company number", issuer.get("company_number", "")),
+            ("Email", issuer.get("contact_email", "")),
+        ]
+        if issuer.get("telephone"):
+            details.append(("Telephone", issuer["telephone"]))
+        if issuer.get("vat_number"):
+            details.append(("VAT number", issuer["vat_number"]))
+        # Factual company details from an IT-pinned source, never fabricated.
+        if y + 22 + len(details) * 13 > H - 66:
+            page = _page(doc, quote_no, internal_draft)
+            y = 150
+        y += 22
+        _txt(page, (MARGIN, y), "SUPPLIER DETAILS", 9, ACCENT, "hebo")
+        y += 15
+        for label, value in details:
+            for value_line in _wrap(f"{label}: {value}", 490, 8, maxlines=2):
+                _txt(page, (MARGIN, y), value_line, 8, MUTED)
+                y += 13
 
     for number, customer_page in enumerate(doc, start=1):
         _txt(customer_page, (RIGHT-59, H-29), f"Page {number}",
