@@ -224,3 +224,42 @@ def test_private_source_manifest_detects_changed_rrp_file(tmp_path,monkeypatch):
         quote_pricing.source_snapshot()
     assert error.value.status_code==503
     assert "source manifest" in error.value.detail.lower()
+
+
+def test_duplicate_rate_group_blocks_pricing_not_last_rule_wins():
+    catalogue, configs, pricing, fingerprints = example()
+    pricing["rates"].append({
+        "group": "Standard Equipment", "standard": .20,
+        "minimum": .05, "status": "Active",
+    })
+    result = quote_pricing.preview(draft(), catalogue, configs, pricing, fingerprints)
+    assert result["priced_count"] == 0
+    assert result["complete_price"] is False
+    assert result["lines"][0]["priced"] is False
+    assert "Conflicting" in result["lines"][0]["exception"]
+    assert result["issue_quote_enabled"] is False
+    assert result["commercially_approved"] is False
+
+
+def test_duplicate_console_rules_block_pricing_not_last_rule_wins():
+    catalogue, configs, pricing, fingerprints = example()
+    pricing["console_rules"].append({
+        "name": "No Console / N/A", "multiplier": 50, "uplift": 0,
+    })
+    result = quote_pricing.preview(draft(), catalogue, configs, pricing, fingerprints)
+    assert result["priced_count"] == 0
+    assert result["lines"][0]["priced"] is False
+    assert "Conflicting" in result["lines"][0]["exception"]
+    assert result["issue_quote_enabled"] is False
+
+
+def test_unrelated_duplicate_tariff_does_not_block_unique_source_group():
+    catalogue, configs, pricing, fingerprints = example()
+    pricing["rates"].extend([
+        {"group": "Unrelated", "standard": .01, "status": "Active"},
+        {"group": "Unrelated", "standard": .05, "status": "Active"},
+    ])
+    result = quote_pricing.preview(draft(), catalogue, configs, pricing, fingerprints)
+    assert result["priced_count"] == 1
+    assert result["annual_partial"] == 120.0
+    assert result["issue_quote_enabled"] is False
