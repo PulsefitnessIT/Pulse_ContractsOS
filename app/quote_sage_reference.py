@@ -1,7 +1,8 @@
-"""Read-only Sage Sales Price *reference* from original SmartQuote V10.
+"""Read-only Sage item-price source from original SmartQuote V10.
 
-Sales Price is NOT an authorised maintenance RRP or tariff. Even an exact code
-never increases quoted totals here. No database migration, no writes.
+Pulse uses the exact Sage price as the equipment price basis when a SKU is
+absent from the current August master. This module never edits the Sage export
+or authorises maintenance tariffs, customer PDFs or contract activation.
 """
 from __future__ import annotations
 import datetime as dt
@@ -65,7 +66,7 @@ def snapshot():
         "review_due": review_due.isoformat(),
         "review_overdue": review_due <= dt.date.today(),
         "source_file_sha256": digest,
-        "source": "Sage Sales Price export — NOT an approved RRP",
+        "source": "Dated Sage Sales Price export — exact item-code equipment price basis",
     }
 
 
@@ -93,8 +94,9 @@ def reference(sku: str, source: dict):
         "source_file_sha256": source["source_file_sha256"],
         "basis": source["source"],
         "approved_rrp": False,
+        "legacy_equipment_pricing_basis_accepted": True,
         "quoted_annual_amount": None,
-        "action": "Verify this exact product and current Master Price List before converting a Sage sales price into any maintenance quote.",
+        "action": "Use this exact item price for legacy-equipment internal previews when absent from the August master. Service eligibility and maintenance tariffs require separate verification.",
     }
 
 
