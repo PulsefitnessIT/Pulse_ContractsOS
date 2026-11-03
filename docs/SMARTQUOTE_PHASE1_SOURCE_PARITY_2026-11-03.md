@@ -132,6 +132,50 @@ recorded IT source-signoff operation; simply replacing a hash is not approval.
   No real price-master reconciliation, approved tariff or production migration
   is asserted.
 
+## Continued development — historical evidence and private readiness gate
+
+The staged 2020–2026 historical identity index now has a separate source-only
+integrity audit in `app/quote_history_audit.py`. It reports case-normalised
+duplicate historical keys, non-dictionary records, recorded SKU/key
+disagreements, missing console identity, malformed aliases, duplicate or
+missing alias targets and aliases pointing to multiple historic variants.
+No historical or current prices are exposed, and no mapping is approved.
+
+The read-only endpoint
+`GET /api/quoting/catalogue/reconciliation/historical-worklist`
+supports pagination, original historical keys and issue filtering; the staff
+SmartQuote source-audit screen displays the exceptions. A missing historical
+index returns 503 rather than treating absent evidence as a clean result.
+
+### IT-only private reconciliation readiness snapshot
+
+On an access-controlled staging machine **after all authentic V10 files have
+been provisioned and the IT source fingerprint manifest created**, run:
+
+```bash
+python -m scripts.smartquote_source_readiness \\
+  --output /private/staging/smartquote-source-readiness.json
+```
+
+This creates a **new** aggregate-only JSON report outside the repository and
+refuses overwrites. It includes source file hashes, source counts and overall
+exception counts only; it contains no customer names, original SKUs, catalogue
+prices, tariffs, private paths or commercial approvals. It reports:
+- Source manifest fingerprints match the exact staged files.
+- Both optional original legacy and historical evidence are staged.
+- Required catalogue, policy, legacy and historical identity evidence is nonempty.
+- No known SKU, policy, legacy or historical identity exceptions remain.
+
+Exit code **0** means the factual identity evidence is sufficiently complete
+to **run the private original-engine numerical parity check**, not that actual
+V10 parity has been run or that any price is commercially approved. Exit code
+**2** means source evidence remains unresolved or incomplete. Missing/corrupt
+source files and pin mismatches fail closed.
+
+The original parity checker, signed-off maintenance tariffs, coverage rules,
+approved source precedence, quotation issuance and Sicon/Sage writes remain
+separate release gates.
+
 ## How IT stages the source evidence
 
 Never copy real customer files, catalogue price lists or signed PDFs into
