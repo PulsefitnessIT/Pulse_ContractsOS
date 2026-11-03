@@ -337,20 +337,42 @@ async function unifiedSearchCatalogue(event) {
   if (!host) return;
   const q = String(new FormData(form).get('q') || '').trim();
   if (q.length < 2) return;
-  host.textContent = 'Searching the privately configured SmartQuote product catalogue…';
+  host.textContent = 'Searching SmartQuote equipment and the full Sage item price list…';
   try {
-    const response = await api('/api/quoting/catalogue/search?q=' + encodeURIComponent(q));
+    const encoded=encodeURIComponent(q);
+    const responses=await Promise.allSettled([
+      api('/api/quoting/catalogue/search?q='+encoded+'&limit=40'),
+      api('/api/quoting/sage/search?q='+encoded+'&limit=40')
+    ]);
     if (view !== 'quoting' || !document.querySelector('#unifiedCatalogueResults')) return;
-    unifiedCatalogueMatches = response.results || [];
+    if(responses.every(reply=>reply.status==='rejected')){
+      throw new Error('Neither the original equipment catalogue nor Sage list is staged in this pilot.');
+    }
+    const originals=responses[0].status==='fulfilled'?(responses[0].value.results||[]):[];
+    const sage=responses[1].status==='fulfilled'?(responses[1].value.results||[]):[];
+    const known=new Set(originals.map(row=>String(row.sku||'').toUpperCase()));
+    unifiedCatalogueMatches=[...originals,
+      ...sage.filter(row=>!known.has(String(row.sku||'').toUpperCase()))];
     host.innerHTML = unifiedCatalogueMatches.length
-      ? '<p>Identity suggestions only. A product match does not establish an approved tariff.</p>' +
-        '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>SKU</th><th>Equipment</th><th>Model</th><th>Review</th><th></th></tr></thead><tbody>' +
-        unifiedCatalogueMatches.map((p,i) => '<tr><td>' + esc(p.sku) + '</td><td>' + esc(p.name) +
-          '</td><td>' + esc(p.model) + '</td><td>' + (p.duplicate_sku ? 'Duplicate code — manual review' : 'Identity suggestion') +
-          '</td><td><button class="button button-outline" type="button" data-use-catalogue="' + i + '"' +
-          (p.duplicate_sku ? ' disabled' : '') + '>Use identity</button></td></tr>').join('') +
+      ? '<p>Find the exact SKU from the V10 equipment database or Sage. '+
+        'Sage price presence alone does not confirm an approved maintenance rate. '+
+        'Unmapped older machines must be reviewed before issuing a customer quote.</p>' +
+        '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+        '<th>SKU</th><th>Equipment</th><th>Model / group</th>'+
+        '<th>Source</th><th>Review</th><th></th></tr></thead><tbody>' +
+        unifiedCatalogueMatches.map((p,i) => '<tr><td>' + esc(p.sku) +
+          '</td><td>'+esc(p.name)+'</td><td>'+esc(p.model||p.group||'')+
+          '</td><td>'+esc(p.source||'V10 catalogue')+
+          '</td><td>'+(p.duplicate_sku?'Duplicate code — manual review':
+            p.requires_service_mapping?
+              'Sage reference — service mapping must be verified':
+              'Original V10 identity')+
+          '</td><td><button class="button button-outline" type="button" '+
+          'data-use-catalogue="'+i+'"'+(p.duplicate_sku?' disabled':'')+
+          '>Use item code</button></td></tr>').join('') +
         '</tbody></table></div>'
-      : '<p>No matching product identity. You can still enter equipment details manually.</p>';
+      : '<p>No exact catalogue or Sage item matched. You can still enter '+
+        'equipment details manually for review.</p>';
     host.querySelectorAll('[data-use-catalogue]').forEach(button => button.addEventListener('click', () => {
       const choice = unifiedCatalogueMatches[Number(button.dataset.useCatalogue)];
       if (!choice || choice.duplicate_sku) return;
@@ -359,7 +381,9 @@ async function unifiedSearchCatalogue(event) {
       equipmentForm.elements.item_code.value = choice.sku;
       equipmentForm.elements.serial.focus();
       const feedback = document.querySelector('#unifiedDraftFeedback');
-      if (feedback) feedback.textContent = 'Product identity selected. Confirm serial and quantity; no price has been approved.';
+      if (feedback) feedback.textContent = choice.requires_service_mapping
+        ? 'Sage item selected. Confirm its equipment configuration and maintenance eligibility before quoting.'
+        : 'V10 equipment selected. Confirm serial and quantity, then preview pricing.';
     }));
   } catch (error) {
     const target = document.querySelector('#unifiedCatalogueResults');
