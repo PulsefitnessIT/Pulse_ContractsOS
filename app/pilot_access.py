@@ -6,7 +6,8 @@ Suitable for a small supervised pilot behind a managed TLS reverse proxy,
 NOT a replacement for production identity management or security assessment.
 """
 from __future__ import annotations
-import base64, contextvars, datetime as dt, hashlib, hmac, json, os, secrets, sqlite3, time
+import base64, binascii, contextvars, datetime as dt, hashlib, hmac, json, os, secrets, sqlite3, time
+from urllib.parse import urlsplit
 from pathlib import Path
 
 from fastapi import HTTPException, Request
@@ -19,6 +20,8 @@ SESSION_COOKIE='pulse_contracts_session'
 CSRF_COOKIE='pulse_contracts_csrf'
 COOKIE_SECURE = os.getenv('PULSE_COOKIE_SECURE','1') == '1'
 SESSION_TTL = 8 * 60 * 60
+IDLE_TTL = 60 * 60
+SESSION_TOUCH_INTERVAL = 60
 ROLES={'Admin','Coordinator','Viewer'}
 _actor=contextvars.ContextVar('pulse_actor',default=None)
 _actor_role=contextvars.ContextVar('pulse_actor_role',default=None)
@@ -42,6 +45,13 @@ def configure_users():
             password_hash TEXT NOT NULL, role TEXT NOT NULL,
             disabled INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL)''')
+    con.execute('''CREATE TABLE IF NOT EXISTS pilot_sessions(
+        id_hash TEXT PRIMARY KEY, username TEXT NOT NULL,
+        issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL, revoked_at INTEGER NOT NULL DEFAULT 0
+    )''')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_pilot_sessions_user ON pilot_sessions(username)')
+
 
 
 def password_hash(password: str, salt_hex: str):
@@ -61,6 +71,9 @@ def provision_user(username,password,role='Coordinator'):
             VALUES(?,?,?,?,?) ON CONFLICT(username) DO UPDATE SET
             password_salt=excluded.password_salt,password_hash=excluded.password_hash,
             role=excluded.role,disabled=0''', (username,salt,password_hash(password,salt),role,dt.datetime.now(dt.timezone.utc).isoformat()))
+        # Password/role changes must invalidate old login tickets immediately.
+        con.execute('UPDATE pilot_sessions SET revoked_at=? WHERE username=? AND revoked_at=0',
+                    (int(time.time()),username))
     return username
 
 
@@ -82,26 +95,123 @@ def secret():
     return s.encode('utf-8')
 
 
+def _session_digest(session_id):
+    return hashlib.sha256(session_id.encode('utf-8')).hexdigest()
+
+
 def sign_session(user):
-    body={'sub':user['username'],'role':user['role'],'exp':int(time.time())+SESSION_TTL,'csrf':secrets.token_urlsafe(28)}
-    text=base64.urlsafe_b64encode(json.dumps(body,separators=(',',':')).encode()).decode().rstrip('=')
-    signature=hmac.new(secret(),text.encode(),hashlib.sha256).hexdigest()
-    return text+'.'+signature,body
+    """Persist each issued session so logout and offboarding revoke server access."""
+    now_epoch=int(time.time())
+    session_id=secrets.token_urlsafe(32)
+    body={'sub':user['username'],'role':user['role'],
+          'exp':now_epoch+SESSION_TTL,'csrf':secrets.token_urlsafe(28),
+          'sid':session_id}
+    value=base64.urlsafe_b64encode(json.dumps(body,separators=(',',':')).encode()).decode().rstrip('=')
+    signature=hmac.new(secret(),value.encode(),hashlib.sha256).hexdigest()
+    with sqlite3.connect(DB,timeout=20) as con:
+        con.execute('INSERT INTO pilot_sessions(id_hash,username,issued_at,expires_at,last_seen_at)'
+                    ' VALUES(?,?,?,?,?)',
+                    (_session_digest(session_id),user['username'],now_epoch,body['exp'],now_epoch))
+        con.execute('DELETE FROM pilot_sessions WHERE expires_at<?',(now_epoch-7*86400,))
+    return value+'.'+signature,body
 
 
 def read_session(cookie):
-    if not cookie:return None
+    if not cookie or len(cookie)>4096:return None
     try:
         data,sig=cookie.rsplit('.',1)
         expected=hmac.new(secret(),data.encode(),hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig,expected):return None
         body=json.loads(base64.urlsafe_b64decode(data+'='*(-len(data)%4)))
-        if body.get('exp',0)<=time.time() or body.get('role') not in ROLES:return None
+        if not isinstance(body,dict) or body.get('role') not in ROLES:return None
+        if not isinstance(body.get('sid'),str) or len(body['sid'])<32:return None
+        now_epoch=int(time.time())
+        if not isinstance(body.get('exp'),int) or body['exp']<=now_epoch:return None
         with sqlite3.connect(DB,timeout=20) as con:
-            result=con.execute('SELECT role,disabled FROM pilot_users WHERE username=?',(body.get('sub'),)).fetchone()
-        if not result or result[1] or result[0]!=body['role']:return None
+            user=con.execute('SELECT role,disabled FROM pilot_users WHERE username=?',
+                             (body.get('sub'),)).fetchone()
+            session=con.execute(
+                'SELECT username,expires_at,last_seen_at,revoked_at '
+                'FROM pilot_sessions WHERE id_hash=?',(_session_digest(body['sid']),)
+            ).fetchone()
+            if (not user or user[1] or user[0]!=body['role'] or
+                not session or session[0]!=body['sub'] or session[3] or
+                session[1]<=now_epoch or session[2]+IDLE_TTL<=now_epoch):
+                return None
+            if now_epoch-session[2]>=SESSION_TOUCH_INTERVAL:
+                con.execute('UPDATE pilot_sessions SET last_seen_at=? '
+                            'WHERE id_hash=? AND revoked_at=0',
+                            (now_epoch,_session_digest(body['sid'])))
         return body
-    except (ValueError,TypeError,KeyError,sqlite3.Error,UnicodeDecodeError):return None
+    except (ValueError,TypeError,KeyError,sqlite3.Error,UnicodeDecodeError,
+            binascii.Error,AttributeError,IndexError):
+        return None
+
+
+def revoke_session(cookie):
+    """Make a logout final even if the old browser cookie is copied elsewhere."""
+    body=read_session(cookie)
+    if not body:return False
+    with sqlite3.connect(DB,timeout=20) as con:
+        con.execute('UPDATE pilot_sessions SET revoked_at=? WHERE id_hash=?',
+                    (int(time.time()),_session_digest(body['sid'])))
+    return True
+
+
+def revoke_user_sessions(username):
+    """Administrative account revocation primitive; no session IDs exposed."""
+    with sqlite3.connect(DB,timeout=20) as con:
+        cursor=con.execute('UPDATE pilot_sessions SET revoked_at=? '
+                           'WHERE username=? AND revoked_at=0',
+                           (int(time.time()),str(username).strip().casefold()))
+    return cursor.rowcount
+
+
+def disable_user(username):
+    """Disable a named pilot account and immediately revoke its sessions."""
+    name=str(username).strip().casefold()
+    with sqlite3.connect(DB,timeout=20) as con:
+        user=con.execute('SELECT role,disabled FROM pilot_users WHERE username=?',
+                         (name,)).fetchone()
+        if user is None:raise ValueError('Unknown pilot account')
+        if not user[1] and user[0]=='Admin':
+            remaining=con.execute(
+                "SELECT COUNT(*) FROM pilot_users WHERE role='Admin' "
+                "AND disabled=0 AND username<>?",(name,)
+            ).fetchone()[0]
+            if remaining<1:raise ValueError('Cannot disable the last active administrator')
+        con.execute('UPDATE pilot_users SET disabled=1 WHERE username=?',(name,))
+        con.execute('UPDATE pilot_sessions SET revoked_at=? '
+                    'WHERE username=? AND revoked_at=0',(int(time.time()),name))
+    return name
+
+
+def _public_origin_is_allowed(headers):
+    """Fail closed on cross-origin login and write requests in server staging."""
+    if os.environ.get('PULSE_DEPLOYMENT_ENV')!='staging':return True
+    expected=os.environ.get('PULSE_PUBLIC_ORIGIN','').strip()
+    supplied=(headers.get('origin') or '').strip()
+    if not supplied:
+        # Some clients omit Origin on same-site requests; require Referer then.
+        supplied=(headers.get('referer') or '').strip()
+    try:
+        intended=urlsplit(expected)
+        actual=urlsplit(supplied)
+        return (intended.scheme=='https' and actual.scheme=='https' and
+                bool(intended.hostname) and
+                (actual.scheme,actual.hostname,actual.port or 443)==
+                (intended.scheme,intended.hostname,intended.port or 443) and
+                actual.username is None and actual.password is None)
+    except ValueError:
+        return False
+
+
+def _administrator_only(path,method):
+    if method in ('GET','HEAD','OPTIONS'):return False
+    return (path.startswith('/api/admin/') or
+            path.startswith('/api/pilot/master-sync/') or
+            path.startswith('/api/master/reimport/'))
+
 
 
 def limited(request,username):
@@ -130,6 +240,9 @@ def login(username,password,request):
 async def pilot_middleware(request:Request,call_next):
     if not PILOT_MODE:return await call_next(request)
     path=request.url.path
+    unsafe=request.method not in ('GET','HEAD','OPTIONS')
+    if unsafe and not _public_origin_is_allowed(request.headers):
+        return JSONResponse({'detail':'Untrusted request origin'},status_code=403)
     if path in ('/pilot/login','/api/pilot/login','/api/health','/manifest.webmanifest','/sw.js') or path.startswith('/static/'):
         return await call_next(request)
     session=read_session(request.cookies.get(SESSION_COOKIE))
@@ -137,9 +250,11 @@ async def pilot_middleware(request:Request,call_next):
         if path.startswith('/api/'):
             return JSONResponse({'detail':'Sign in to the independent Contracts pilot'},status_code=401)
         return RedirectResponse('/pilot/login',status_code=303)
-    if request.method not in ('GET','HEAD','OPTIONS') and path.startswith('/api/'):
-        if session['role']=='Viewer':return JSONResponse({'detail':'Read-only account'},status_code=403)
-        if path.startswith('/api/admin/') and session['role']!='Admin':
+    if unsafe and path.startswith('/api/'):
+        # Viewers can sign out, but cannot change any contract, quote or file.
+        if session['role']=='Viewer' and path!='/api/pilot/logout':
+            return JSONResponse({'detail':'Read-only account'},status_code=403)
+        if _administrator_only(path,request.method) and session['role']!='Admin':
             return JSONResponse({'detail':'Administrator access required'},status_code=403)
         csrf=request.headers.get('X-Pulse-CSRF','')
         if not csrf or not hmac.compare_digest(csrf,session.get('csrf','')):
@@ -151,6 +266,7 @@ async def pilot_middleware(request:Request,call_next):
         response.headers['Cache-Control']='no-store'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['X-Frame-Options']='DENY'
+        response.headers['Referrer-Policy']='same-origin'
         return response
     finally:
         _actor_role.reset(role_token)
