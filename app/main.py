@@ -145,7 +145,9 @@ def missing_amounts_csv():
 
 
 @app.get('/api/contracts')
-def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:str='',sort:str='Customer / site',direction:str='asc',page:int=1,limit:int=40):
+def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:str='',sheet:str='',sort:str='Customer / site',direction:str='asc',page:int=1,limit:int=40):
+    if sheet and sheet not in ('Maintenance Database','MOD','Expired'):
+        raise HTTPException(422,'Unknown contract register')
     if limit>150:limit=150
     con=connect()
     if status=='All':rows=con.execute('SELECT * FROM contracts').fetchall()
@@ -153,6 +155,7 @@ def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:s
     con.close()
     values=[]
     for row in rows:
+        if sheet and row['source_sheet']!=sheet:continue
         f=json.loads(row['fields'])
         if q and q.lower() not in (' '.join(str(f.get(k,'')) for k in ['Customer / site','Contract number','Invoice Code','Invoice account','Site account','Site notes','Contract coordinator','Record ID'])).lower():continue
         if region and f.get('Sales region')!=region:continue
@@ -283,6 +286,7 @@ def changes(cid:int):
 
 class ContractUpdate(BaseModel):
     fields:dict
+    source_register:str='Maintenance Database'
     actor:str='Demo coordinator'
     expected_revision:int|None=None
 
@@ -330,14 +334,22 @@ def update_contract(cid:int,payload:ContractUpdate):
 
 @app.post('/api/contracts')
 def create_contract(payload:ContractUpdate):
+    if payload.source_register not in ('Maintenance Database','MOD'):
+        raise HTTPException(422,'Choose a valid source register')
+    if payload.source_register=='MOD':
+        from .data_readiness import CURRENT_WORKSHEETS,workbook_check
+        if workbook_check(TEMPLATE).get('sheet_names')!=CURRENT_WORKSHEETS:
+            raise HTTPException(409,'The approved private Master has no MOD worksheet')
     f={k:payload.fields.get(k,'') for k in HEADERS}
     if not str(f.get('Customer / site','')).strip():raise HTTPException(400,'Customer / site is required')
     con=connect();con.execute('BEGIN IMMEDIATE')
-    row=int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet='Maintenance Database'").fetchone()[0])+1
-    if row>803:con.close();raise HTTPException(409,'The Excel template has no remaining preformatted contract rows. Expand the approved template first.')
+    row=int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet=?",
+        (payload.source_register,)).fetchone()[0])+1
+    if row>=1_048_576:
+        con.close();raise HTTPException(409,'The worksheet has reached Excel row capacity')
     key='NEW-'+uuid.uuid4().hex[:8].upper();f['Record ID']=key;f['Renewal status']=status_for(str(f.get('Expiry date') or ''))
     cur=con.execute('INSERT INTO contracts(row_key,status,source_sheet,source_row,fields,fill,dirty,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-        (key,'Active','Maintenance Database',row,json.dumps(f,ensure_ascii=False),'',1,now(),now()))
+        (key,'Active',payload.source_register,row,json.dumps(f,ensure_ascii=False),'',1,now(),now()))
     cid=cur.lastrowid
     con.execute('INSERT INTO changes(contract_id,actor,action,before_data,after_data,at) VALUES (?,?,?,?,?,?)',(cid,actor(payload.actor),'Created contract',None,json.dumps(f,ensure_ascii=False),now()))
     con.commit();con.close();return {'id':cid,'row_key':key}
@@ -350,8 +362,8 @@ def archive(cid:int,payload:ArchiveRequest):
         con.close();raise HTTPException(404,'Active contract not found')
     concurrency_check(r,payload.expected_revision,con)
     row=int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet='Expired'").fetchone()[0])+1
-    if row>8495:
-        con.close();raise HTTPException(409,'The Expired Excel template is full; expand it before archiving')
+    if row>=1_048_576:
+        con.close();raise HTTPException(409,'The Expired worksheet has reached Excel row capacity')
     old=json.loads(r['fields']);f=old.copy();f['Renewal status']='Historical / archived'
     con.execute('UPDATE contracts SET status="Expired",old_sheet=?,old_row=?,source_sheet="Expired",source_row=?,fields=?,revision=revision+1,dirty=1,updated_at=? WHERE id=?',
         (r['source_sheet'],r['source_row'],row,json.dumps(f,ensure_ascii=False),now(),cid))
@@ -503,7 +515,7 @@ def export_excel():
     rows=con.execute('SELECT * FROM contracts').fetchall()
     ledger_rows=con.execute('SELECT * FROM ledger').fetchall()
     updates=defaultdict(list)
-    baseline={'contracts':{},'ledger':{},'created_at':now(),'template':'approved eight-sheet Master'}
+    baseline={'contracts':{},'ledger':{},'created_at':now(),'template':'approved source Master'}
     for r in rows:
         f=json.loads(r['fields'])
         baseline['contracts'][r['row_key']]={'fields':f,'sheet':r['source_sheet'],'revision':r['revision']}
