@@ -117,6 +117,8 @@ def test_sage_references_cannot_supersede_master_rrp_or_change_totals(monkeypatc
     monkeypatch.setattr(quote_pricing, "source_snapshot",
                         lambda: (catalog,configs,pricing,{"catalog":"fictional"}))
     monkeypatch.setattr(quote_pricing, "sage_snapshot", lambda: source)
+    from app import quote_price_overrides
+    monkeypatch.setattr(quote_price_overrides, "active_overrides", lambda codes: {})
     from app import quote_rrp_priority
     # The genuine route requires the authoritative August list to be pinned.
     # Fictional fixture supplies one valid List Price and one invalid
