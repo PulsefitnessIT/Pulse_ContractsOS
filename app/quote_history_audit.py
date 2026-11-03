@@ -89,7 +89,7 @@ def analyze_historical_identity(history):
             valid_targets = []
             for target in targets:
                 code = _key(target)
-                if not CODE.fullmatch(code):
+                if not isinstance(target, str) or not CODE.fullmatch(code):
                     problems.append("invalid_historical_alias_target")
                 elif code not in valid_codes:
                     problems.append("dangling_historical_alias_target")
