@@ -116,10 +116,14 @@ def _live(db):
 
 def _field_changes(old, incoming, current):
     result = []
-    # New/unknown columns are NOT automatically introduced into Contracts OS.
-    # A missing source column cannot be interpreted as an instruction to blank
-    # existing records; only the intersection of known columns is updatable.
-    for field in sorted((set(old) & set(incoming)) - EXCLUDED):
+    # New column names normally require review, not silent schema guessing.
+    # Next action date is one explicitly approved, factual field introduced
+    # by the revised Master. It may be added if the live value is blank.
+    # Missing source columns must NEVER be interpreted as a blank update.
+    eligible = (set(old) & set(incoming)) | (
+        {"Next action date"} & set(incoming)
+    )
+    for field in sorted(eligible - EXCLUDED):
         prior = old.get(field, "")
         next_value = incoming.get(field, "")
         existing = current.get(field, "")
@@ -132,7 +136,8 @@ def _field_changes(old, incoming, current):
             "field": field, "before_source": prior,
             "in_workbook": next_value,
             "in_platform": existing,
-            "conflict": normal(existing) != normal(prior),
+            "conflict": (normal(existing) != normal(prior)
+                         if field in old else bool(normal(existing))),
         })
     return result
 
@@ -253,6 +258,7 @@ def plan(db, previous, incoming, sha256):
         "source_sha256": sha256,
         "registers": {sheet: len(new_rows.get(sheet, [])) for sheet in SHEETS},
         "action_centre_rows_are_derived_only": True,
+        "new_source_date_fields_never_inferred_from_action_text": True,
         "summary": {key: int(totals.get(key, 0)) for key in (
             "safe_updates","unchanged_or_already_current","new_or_unmatched",
             "ambiguous_rows","moves_requiring_review","identity_conflicts",
