@@ -149,3 +149,39 @@ def test_refuses_dual_original_history_sources(tmp_path):
     with pytest.raises(ValueError, match="Two original history"):
         create(root, tmp_path / "unwritten.json", "Fictional custodian",
                "2026-11-03", approved_source_snapshot=True)
+
+
+def test_august_2026_sanitized_master_extract_is_privately_pinned(tmp_path):
+    from app.quote_rrp_priority import MASTER_DATE, MASTER_FILE, MASTER_ORIGINAL_SHA256
+    root = fictional_root(tmp_path)
+    payload = {
+        "source_file": MASTER_FILE, "source_date": MASTER_DATE,
+        "source_sha256": MASTER_ORIGINAL_SHA256,
+        "rows": [{"sku": "SYNTHETIC-SKU", "name": "Fictional product",
+                  "console": "No Console / N/A", "rrp": "100.00",
+                  "sheet": "Example", "row": 5, "rrp_column": "List Price"}],
+    }
+    source = root / "data" / "rrp_2026_source.json.gz"
+    source.write_bytes(gzip.compress(json.dumps(payload).encode("utf-8")))
+    manifest = tmp_path / "august-snapshot-manifest.json"
+    outcome = create(root, manifest, "Fictional owner", "2026-11-03",
+                     approved_source_snapshot=True)
+    assert outcome["source_counts"]["august_2026_rrp"] == 1
+    saved = json.loads(manifest.read_text())
+    assert len(saved["sha256"]["august_2026_rrp"]) == 64
+    assert "SYNTHETIC-SKU" not in manifest.read_text()
+    assert "100.00" not in manifest.read_text()
+
+
+def test_manifest_rejects_unverified_august_master_metadata(tmp_path):
+    from app.quote_rrp_priority import MASTER_FILE, MASTER_DATE
+    root = fictional_root(tmp_path)
+    payload = {
+        "source_file": MASTER_FILE, "source_date": MASTER_DATE,
+        "source_sha256": "0" * 64, "rows": [{"sku": "FICTIONAL", "rrp": 1}],
+    }
+    source = root / "data" / "rrp_2026_source.json.gz"
+    source.write_bytes(gzip.compress(json.dumps(payload).encode("utf-8")))
+    with pytest.raises(ValueError, match="August 2026"):
+        create(root, tmp_path / "should-not-exist.json", "Fictional owner",
+               "2026-11-03", approved_source_snapshot=True)
