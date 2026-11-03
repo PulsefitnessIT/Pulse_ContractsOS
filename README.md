@@ -150,3 +150,32 @@ staff acceptance are outstanding.
 
 The working Excel Master remains authoritative until a separately signed
 cutover; no customer files have been committed and no server has been accessed.
+
+## SmartQuote V10 Phase 1 — canonical catalogue and source arithmetic (November 2026)
+
+The unified SmartQuote workspace now includes a **read-only source catalogue
+reconciliation** panel. It reports duplicate SKUs, missing original-source
+RRPs, ambiguous legacy mappings, unapproved console/eligibility statuses,
+source file fingerprints and incomplete historical data. It does NOT
+manufacture RRP or publish commercial prices.
+
+Native exact-SKU price previews now execute the **verbatim original V10
+`engine.price_line` function arithmetic** with per-request source data
+isolation, while maintaining unpriced/manager-review protections. Original
+V10 term-staging arithmetic is retained.
+
+IT can privately pin the original catalogue/service/pricing JSON hashes using
+`scripts/pin_smartquote_v10_sources.py` and configure
+`PULSE_SMARTQUOTE_SOURCE_MANIFEST`. Source mismatch fails closed; even a
+correct hash never constitutes commercial tariff approval.
+
+`scripts/check_v10_price_parity.py` now compares the original V10 source
+function against the vendored kernel and checks multiple rate/console groups,
+three maintenance tiers, three discounts and three quantities for each
+sampled source SKU. This **must** run against a complete approved private
+V10 runtime before release; fictional CI fixtures cannot certify real
+commercial prices.
+
+See [Phase 1 evidence and source-pinning instructions](docs/SMARTQUOTE_PHASE1_SOURCE_PARITY_2026-11-03.md).
+**Unpriced drafts, internal price previews and reviewed quote handoff remain
+blocked from issuing live customer documents without separate approvals.**
