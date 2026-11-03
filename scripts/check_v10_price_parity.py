@@ -142,7 +142,7 @@ def run(source_root: Path, maximum: int = 300) -> dict:
         "private_source_manifest_verified":True,
         **coverage,
         "sourced_skus_sampled":len(samples),
-        "rate_groups_covered":sorted(covered_groups),
+        "rate_groups_covered_count":len(covered_groups),
         "console_variants_covered":len(covered_consoles),
         "calculations_compared":compared,
         "calculations_expected":len(samples)*27,
@@ -153,13 +153,15 @@ def run(source_root: Path, maximum: int = 300) -> dict:
             bool(samples) and compared==len(samples)*27 and not failures
             and coverage["all_eligible_rate_console_families_sampled"]
             and not coverage["source_rule_identity_conflicts"]
+            and coverage["unresolved_numeric_source_exclusions"]==0
             and coverage["source_catalogue_rows_missing_sku"]==0
         ),
         "tariff_commercially_approved":False,
         "customer_quote_issue_enabled":False,
         "note":(
             "Numeric parity checks only verified eligible sampled source SKUs. "
-            "Excluded source identities still require separate reconciliation. "
+            "Unresolved or ambiguous source identities prevent a clean parity pass. "
+            "Explicitly excluded equipment remains outside the numeric scope. "
             "Commercial approval, full source completeness, and customer quote "
             "issuance are separate gates."
         ),
