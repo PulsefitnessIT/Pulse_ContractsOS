@@ -129,6 +129,14 @@ def test_second_refresh_records_price_added_removed_and_description_changes(tmp_
     assert differences["total"] == 1
     assert differences["items"][0]["previous_price"] == 100
     assert differences["items"][0]["current_price"] == 200
+    details = refresh.sage_refresh_changes(
+        snapshot_id=activated["snapshot_id"], kind="details_changed",
+        limit=50, offset=0,
+    )
+    assert details["total"] == 1
+    assert details["items"][0]["previous_name"] == "Fictional gym equipment"
+    assert details["items"][0]["current_name"] == "Updated fictional label"
+    assert details["items"][0]["previous_group"] == "Cardiovascular Equipment"
     with pytest.raises(HTTPException) as exc:
         refresh.activate_preview(refresh.SageApply(
             preview_token=updated["preview_token"],
@@ -271,3 +279,74 @@ def test_local_active_corrupt_snapshot_fails_closed_not_original_fallback(tmp_pa
     with pytest.raises(HTTPException) as error:
         reference.snapshot()
     assert error.value.status_code == 503
+
+
+def test_sage_refresh_invalidates_previously_audited_local_price_revision(tmp_path, monkeypatch):
+    from app import quote_price_overrides as edits
+    activate_local_db(tmp_path, monkeypatch)
+    first = refresh.preview_import("sage-first.csv", csv_bytes(dataset()), date())
+    refresh.activate_preview(refresh.SageApply(
+        preview_token=first["preview_token"],
+        reason="Full initial Sage pricing evidence export"
+    ))
+    old_source = reference.snapshot()
+    monkeypatch.setattr(edits, "connect", refresh.connect)
+    monkeypatch.setattr(edits.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(edits.pilot_access, "current_role", lambda: "Admin")
+    monkeypatch.setattr(edits.pilot_access, "actor", lambda name="": "fictional-admin")
+    monkeypatch.setattr(edits, "source_for_code", lambda sku: (
+        {"basis": "sage_exact_sku_price", "rrp": 100.0},
+        old_source["source_file_sha256"],
+    ))
+    changed = edits.update_price("FIC-0000", edits.PriceChange(
+        price_gbp="149.99", expected_revision=0,
+        reason="Authorised price correction following review",
+    ))
+    assert changed["revision"] == 1
+    assert edits.active_overrides(["FIC-0000"])["FIC-0000"]["price_pence"] == 14999
+    next_export = csv_bytes(dataset(base=180))
+    latest = refresh.preview_import("sage-updated.csv", next_export, date())
+    refresh.activate_preview(refresh.SageApply(
+        preview_token=latest["preview_token"],
+        reason="New comprehensive Sage Sales Price export"
+    ))
+    new_source = reference.snapshot()
+    assert new_source["source_file_sha256"] != old_source["source_file_sha256"]
+    active = edits.active_overrides(["FIC-0000"])["FIC-0000"]
+    result = edits.effective(
+        {"basis": "sage_exact_sku_price", "rrp": 180.0},
+        active, {}, new_source,
+    )
+    assert result["rrp"] is None
+    assert result["basis"] == "stale_price_override"
+    assert result["override_status"] == "source_changed_review_required"
+
+
+def test_older_sage_price_list_cannot_replace_more_recent_source(tmp_path, monkeypatch):
+    activate_local_db(tmp_path, monkeypatch)
+    first = refresh.preview_import("sage-current.csv", csv_bytes(dataset()), date())
+    refresh.activate_preview(refresh.SageApply(
+        preview_token=first["preview_token"],
+        reason="Latest working source under verification"
+    ))
+    with pytest.raises(HTTPException) as exc:
+        refresh.preview_import(
+            "sage-old.csv", csv_bytes(dataset(base=200)),
+            (dt.date.today() - dt.timedelta(days=3)).isoformat(),
+        )
+    assert exc.value.status_code == 409
+
+
+def test_sage_refresh_requires_full_valid_export_and_hash_integrity(tmp_path, monkeypatch):
+    activate_local_db(tmp_path, monkeypatch)
+    rows = csv_bytes(dataset())
+    preview = refresh.preview_import("valid.csv", rows, date())
+    assert preview["file_sha256"] == hashlib.sha256(rows).hexdigest()
+    assert len(preview["preview_token"]) >= 20
+    with pytest.raises(HTTPException) as err:
+        refresh.activate_preview(refresh.SageApply(
+            preview_token=preview["preview_token"],
+            reason="too short",
+        ))
+    assert err.value.status_code == 422
+    assert reference.snapshot() is None
