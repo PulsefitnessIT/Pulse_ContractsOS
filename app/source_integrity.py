@@ -152,6 +152,10 @@ def current_master_source_audit():
                     "SELECT status,COUNT(*) AS n FROM contracts GROUP BY status"
                 )
             }
+            database_mod_rows = con.execute(
+                "SELECT COUNT(*) AS n FROM contracts "
+                "WHERE status='Active' AND source_sheet='MOD'"
+            ).fetchone()["n"]
             loaded = _loaded_source(con)
             tables = {
                 r[0] for r in con.execute(
@@ -188,6 +192,7 @@ def current_master_source_audit():
             "Original bootstrap workbook and any approved recurring field "
             "updates are separate sources; neither establishes ERP or signed-contract reconciliation."
         )
+        source["database_mod_rows"] = database_mod_rows
         source["database_rows"] = {
             "active": db_rows.get("Active", 0),
             "expired": db_rows.get("Expired", 0),
