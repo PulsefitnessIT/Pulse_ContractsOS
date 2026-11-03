@@ -17,10 +17,33 @@ import hashlib
 import json
 import os
 import sys
+import zlib
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 FILES=("catalog","configs","pricing")
+# Optional evidence is pinned when present, never substituted with synthetic data.
+OPTIONAL_FILES={
+    "legacy_crosswalk": ("legacy.json", 8 * 1024 * 1024),
+    "historical_identity": ("historical_catalogue_index.json", 35 * 1024 * 1024),
+}
+
+
+def _optional_payload(path:Path, maximum:int):
+    if not 2 <= path.stat().st_size <= maximum:
+        raise ValueError("Optional V10 evidence is empty or oversized.")
+    raw=path.read_bytes()
+    if path.suffix.lower()==".gz":
+        decoder=zlib.decompressobj(16+zlib.MAX_WBITS)
+        decoded=decoder.decompress(raw, 80 * 1024 * 1024 + 1)
+        if (len(decoded)>80 * 1024 * 1024 or not decoder.eof
+            or decoder.unused_data or decoder.unconsumed_tail):
+            raise ValueError("Compressed V10 history evidence is not complete or is oversized.")
+        payload=json.loads(decoded.decode("utf-8"))
+    else:
+        payload=json.loads(raw.decode("utf-8"))
+    return raw,payload
+
 
 
 def create(root:Path, output:Path, owner:str, effective_date:str,
@@ -57,8 +80,37 @@ def create(root:Path, output:Path, owner:str, effective_date:str,
             raise ValueError("A required V10 catalogue/configuration source is empty.")
         hashes[kind]=hashlib.sha256(raw).hexdigest()
         counts[kind]=len(payload)
+    # Audit the same legacy/history evidence that the staff reconciliation UI
+    # will read. Ambiguous dual historical files must be resolved by IT.
+    for kind,(filename,maximum) in OPTIONAL_FILES.items():
+        source=root/"data"/filename
+        if kind=="historical_identity":
+            compressed=root/"data"/(filename+".gz")
+            if source.is_file() and compressed.is_file():
+                raise ValueError("Two original history indexes exist; select one verified snapshot.")
+            if compressed.is_file():
+                source=compressed
+        if not source.exists():
+            continue
+        if not source.is_file():
+            raise ValueError(f"Staged optional V10 {kind} is not a regular file.")
+        try:
+            raw,payload=_optional_payload(source,maximum)
+        except (OSError,UnicodeError,ValueError,zlib.error,json.JSONDecodeError) as exc:
+            raise ValueError(f"Staged optional V10 {kind} is invalid.") from exc
+        if kind=="legacy_crosswalk":
+            if not isinstance(payload,list) or len(payload)>80000:
+                raise ValueError("Unexpected V10 legacy crosswalk format.")
+            counts[kind]=len(payload)
+        else:
+            if (not isinstance(payload,dict) or not isinstance(payload.get("records"),dict)
+                or len(payload["records"])>150000
+                or not isinstance(payload.get("aliases",{}),dict)):
+                raise ValueError("Unexpected V10 historical index format.")
+            counts[kind]=len(payload["records"])
+        hashes[kind]=hashlib.sha256(raw).hexdigest()
     manifest={
-        "schema_version":1,
+        "schema_version":2,
         "owner":owner.strip(),
         "effective_date":effective_date,
         "source_kind":"Original V10 private files; source identity verified, NOT commercially approved",
