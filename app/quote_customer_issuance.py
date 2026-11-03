@@ -31,6 +31,8 @@ APPROVAL_SOURCE_ENV = "PULSE_QUOTE_APPROVED_TARIFF_SHA256"
 TERMS_FILE_ENV = "PULSE_QUOTE_TERMS_PDF"
 TERMS_SHA_ENV = "PULSE_QUOTE_TERMS_SHA256"
 ISSUE_ENV = "PULSE_QUOTE_LIVE_ISSUANCE"
+ISSUER_FILE_ENV = "PULSE_QUOTE_ISSUER_JSON"
+ISSUER_SHA_ENV = "PULSE_QUOTE_ISSUER_SHA256"
 MAX_TERMS = 8 * 1024 * 1024
 ALLOWED_PRICE_NOTES = {
     "August 2026 source List Price used; commercial maintenance tariff approval remains separate.",
@@ -86,6 +88,35 @@ def _terms():
         return data, actual
     except (OSError, ValueError, RuntimeError, fitz.FileDataError) as exc:
         raise HTTPException(503, "Approved maintenance terms PDF is missing, damaged or changed.") from exc
+
+
+def _issuer():
+    """Verify factual Pulse legal/company details, never guess them in code."""
+    configured = os.environ.get(ISSUER_FILE_ENV, "").strip()
+    expected = os.environ.get(ISSUER_SHA_ENV, "").strip().lower()
+    if not configured or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise HTTPException(503, "Verified Pulse Fitness issuer details have not been staged.")
+    path = Path(configured).expanduser().resolve()
+    try:
+        if not path.is_file() or path.suffix.lower() != ".json" or not 2 <= path.stat().st_size <= 4096:
+            raise ValueError("Invalid issuer identity file")
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise ValueError("Issuer identity file differs from the IT-approved evidence")
+        data = json.loads(raw.decode("utf-8"))
+        required = ("legal_name", "registered_address", "contact_email", "company_number")
+        if not isinstance(data, dict) or not all(
+            isinstance(data.get(k), str) and 3 <= len(data[k].strip()) <= 250
+            for k in required
+        ):
+            raise ValueError("Incomplete company identity")
+        if "@" not in data["contact_email"] or not re.fullmatch(r"[A-Za-z0-9 .,&'()/#\\-]+", data["registered_address"]):
+            raise ValueError("Unsupported company identity")
+        return {key: data.get(key, "").strip()[:250] for key in (
+            *required, "telephone", "vat_number"
+        )}, expected
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(503, "Verified company identity is missing or changed.") from exc
 
 
 def _price(draft):
@@ -178,7 +209,13 @@ def _readiness(draft):
         terms_ready = True
     except HTTPException:
         terms_ready = False
+    try:
+        _issuer()
+        issuer_ready = True
+    except HTTPException:
+        issuer_ready = False
     flags = _quote_flags(fingerprints, errors, terms_ready)
+    flags["verified_company_issuer_details"] = issuer_ready
     return {
         "draft_id": draft["id"],
         "revision": draft["revision"],
@@ -190,7 +227,8 @@ def _readiness(draft):
         "internal_draft_pdf_available": not errors,
         "customer_issue_configured": (
             not errors and flags["approved_tariff_fingerprint_matches"] and
-            flags["approved_terms_available"] and flags["live_issuance_opted_in_by_it"]
+            flags["approved_terms_available"] and flags["verified_company_issuer_details"]
+            and flags["live_issuance_opted_in_by_it"]
         ),
         "status": "READY_FOR_COMMERCIAL_APPROVAL" if not errors else "PRICING_REVIEW_REQUIRED",
         "no_quotation_has_been_issued": True,
@@ -260,6 +298,7 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
     if os.environ.get(ISSUE_ENV) != "1":
         raise HTTPException(503, "Customer PDF issuance is not enabled by IT in this environment.")
     terms, terms_sha = _terms()
+    issuer, issuer_sha = _issuer()
 
     con = connect()
     try:
@@ -305,6 +344,7 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             "commercial_approval_ref": approval_ref,
             "valid_until": valid_until.isoformat(),
             "terms_sha256": terms_sha, "approved_tariff_sha256": fingerprints["pricing"],
+            "issuer_sha256": issuer_sha, "issuer": issuer,
             "source_fingerprints": fingerprints,
             "customer_email_sent": False,
         }
@@ -328,7 +368,7 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             prepared_date=dt.date.today().isoformat(),
             valid_until=valid_until.isoformat(),
             approval_ref=approval_ref, approved_by=admin,
-            terms_pdf=terms, internal_draft=False,
+            terms_pdf=terms, issuer=issuer, internal_draft=False,
         )
         pdf_digest = hashlib.sha256(pdf).hexdigest()
         con.execute(
@@ -336,9 +376,15 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             (quote_no, pdf_digest, pdf, cur.lastrowid),
         )
         # Reverify immutable V10/August source after building the PDF.
-        _, next_fingerprints = _price(draft)
-        if next_fingerprints != fingerprints:
-            raise HTTPException(409, "Equipment source changed while issuing. Recheck quotation.")
+        next_preview, next_fingerprints = _price(draft)
+        if (next_fingerprints != fingerprints
+                or next_preview["rrp_master"] != preview["rrp_master"]
+                or next_preview["sage_sha256"] != preview["sage_sha256"]
+                or [(r.get("rrp"), r.get("annual"), r.get("rrp_source"),
+                     r.get("price_override")) for r in next_preview["lines"]]
+                   != [(r.get("rrp"), r.get("annual"), r.get("rrp_source"),
+                        r.get("price_override")) for r in preview["lines"]]):
+            raise HTTPException(409, "Equipment, Sage or Master price source changed while issuing. Recheck quotation.")
         con.commit()
         return {
             "issued": True, "quote_no": quote_no, "draft_id": draft_id,
