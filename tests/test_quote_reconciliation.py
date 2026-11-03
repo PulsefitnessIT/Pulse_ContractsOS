@@ -349,3 +349,50 @@ def test_catalogue_exception_keeps_all_original_row_positions():
     assert dup["source_rows"] == 2
     # These source-row identities allow correction without choosing an RRP.
     assert dup["price_approved"] is False
+
+
+def test_historical_whole_code_alias_lookup_handles_original_case_and_collisions(monkeypatch):
+    historical = {
+        "records": {
+            "OLD-BIKE-1": {"model": "B1", "console": "Fictional Console A"},
+            "OLD-BIKE-2": {"model": "B2", "console": "Fictional Console B"},
+        },
+        "aliases": {"old-legacy": ["OLD-BIKE-1"]},
+    }
+    monkeypatch.setattr(quote_reconciliation, "actor", lambda: "fictional-staff")
+    monkeypatch.setattr(
+        quote_reconciliation, "_private_optional_source",
+        lambda kind: (historical, "a" * 64)
+    )
+    found = quote_reconciliation.historical_search("OLD-LEGACY", 20)
+    assert found["total"] == 1
+    assert found["results"][0]["historical_sku"] == "OLD-BIKE-1"
+    assert found["historical_alias_source_requires_review"] is False
+    assert found["results"][0]["current_rrp"] is None
+
+    # Both differently cased source keys are retained and explicitly
+    # marked ambiguous. The query does not pick the last source entry.
+    historical["aliases"]["OLD-LEGACY"] = ["OLD-BIKE-2"]
+    collided = quote_reconciliation.historical_search("old-legacy", 20)
+    assert collided["total"] == 2
+    assert collided["ambiguous_or_multiple_variants"] is True
+    assert collided["historical_alias_source_requires_review"] is True
+    assert {row["historical_sku"] for row in collided["results"]} == {
+        "OLD-BIKE-1", "OLD-BIKE-2"
+    }
+
+
+def test_malformed_historical_alias_lookup_fails_safe_without_auto_selection(monkeypatch):
+    historical = {
+        "records": {"OLD-EXAMPLE": {"model": "B", "console": "Example Console"}},
+        "aliases": {"BROKEN-ALIAS": [1234]},
+    }
+    monkeypatch.setattr(quote_reconciliation, "actor", lambda: "fictional-staff")
+    monkeypatch.setattr(
+        quote_reconciliation, "_private_optional_source",
+        lambda kind: (historical, "b" * 64)
+    )
+    result = quote_reconciliation.historical_search("broken-alias", 20)
+    assert result["total"] == 0
+    assert result["historical_alias_source_requires_review"] is True
+    assert result["cannot_auto_select_for_current_pricing"] is True
