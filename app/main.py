@@ -24,6 +24,7 @@ from .import_queue import build_review_queue, queue_csv
 from .excel_quality import inspect_excel,remaining_capacity
 from .invoice_quality import invoice_quality,invoice_quality_csv
 from .pilot_access import PILOT_MODE, SESSION_COOKIE, CSRF_COOKIE, COOKIE_SECURE, configure_users, secret, sign_session, login, actor, pilot_middleware
+from .deployment_guards import check_deployment_environment
 from .matching import candidate_matches
 from .local_ocr import available as local_ocr_available, read_local_scanned_pdf, LocalOCRError
 from .v12_features import router as v12_router
@@ -44,6 +45,7 @@ from .sicon_bridge import router as sicon_bridge_router
 from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
 
 APP_ROOT=Path(__file__).parent
+DEPLOYMENT_PROFILE=check_deployment_environment()
 # Fail before creating an empty database if the protected shared pilot has not
 # been supplied with its approved private snapshot and Master workbook.
 if PILOT_MODE and (not os.path.isfile(DB) or not os.path.isfile(TEMPLATE)):
@@ -1288,4 +1290,20 @@ def approve_proposal(iid:int,pid:int,options:ApprovalOptions=Body(default=Approv
     return {'ok':True,'contract_id':cid,'action':action}
 
 @app.get('/api/health')
-def health():return {'status':'ok','database':'sqlite','template_present':os.path.isfile(TEMPLATE)}
+def health():
+    """Minimal unauthenticated liveness for loopback-only reverse-proxy checks.
+
+    Never returns contract counts, filesystem paths, secrets or user information.
+    A dead/missing database must not claim a healthy service.
+    """
+    if not os.path.isfile(TEMPLATE):
+        raise HTTPException(503,'Service not ready')
+    try:
+        # A read-only probe avoids accidental empty SQLite creation and never
+        # performs writes during container health monitoring.
+        uri=Path(DB).resolve().as_uri()+'?mode=ro'
+        with sqlite3.connect(uri,uri=True,timeout=3) as connection:
+            connection.execute('SELECT 1 FROM contracts LIMIT 1').fetchone()
+    except (sqlite3.Error,OSError):
+        raise HTTPException(503,'Service not ready')
+    return {'status':'ok'}
