@@ -186,7 +186,7 @@ execute an original V10 runtime unless `PULSE_SMARTQUOTE_SOURCE_MANIFEST`
 points to a valid, matching IT-created manifest. The exact bytes that are
 hashed are also the bytes parsed for the numerical comparison. Original
 catalogue, configurations and pricing files are rechecked after original
-engine import and after every sampled comparison; changes invalidate the run.
+engine import and again after the sampled comparisons; changes invalidate the run.
 
 The comparison uses `scripts/parity_source_coverage.py` to choose candidates
 in a deterministic round-robin across **distinct rate-group and console
@@ -197,8 +197,11 @@ families, as well as original SKU omissions and policy rule conflicts.
 
 Duplicate tariff group identities and duplicate console rule identities
 now block the affected family from a clean parity pass. Missing or invalid
-rate/console source rows also block the overall result. Other excluded
-source SKUs are explicitly counted but must be reconciled separately. The
+rate/console source rows also block the overall result. Missing RRPs,
+ambiguous configurations and unverified coverage are counted as unresolved
+source exclusions and prevent a clean pass. Equipment explicitly marked
+not eligible for maintenance remains excluded from numeric comparison and
+is reported separately for source reconciliation. The
 script distinguishes `numeric_comparisons_match` from `pass` to avoid
 mistaking matching sampled arithmetic for full original-source coverage.
 
