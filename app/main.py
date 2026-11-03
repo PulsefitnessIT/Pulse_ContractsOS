@@ -33,6 +33,7 @@ from .quote_intake import router as smartquote_router
 from .quote_workspace import router as quoting_workspace_router
 from .quote_drafts import router as quoting_drafts_router
 from .quote_catalogue import router as quoting_catalogue_router
+from .quote_reconciliation import router as quote_reconciliation_router
 from .native_quote_handover import router as native_quote_handover_router
 from .quote_pricing import router as quote_pricing_router
 from .quote_sage_reference import router as sage_reference_router
@@ -117,6 +118,7 @@ app.include_router(smartquote_router)
 app.include_router(quoting_workspace_router)
 app.include_router(quoting_drafts_router)
 app.include_router(quoting_catalogue_router)
+app.include_router(quote_reconciliation_router)
 app.include_router(native_quote_handover_router)
 app.include_router(quote_pricing_router)
 app.include_router(sage_reference_router)
