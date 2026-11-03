@@ -234,3 +234,36 @@ def test_master_sync_is_idempotent_after_approved_import(tmp_path,monkeypatch):
     assert result["summary"]["safe_updates"]==0
     assert result["summary"]["conflicts"]==0
     assert result["items"]==[]
+
+
+def test_new_source_next_action_date_is_eligible_for_review(tmp_path):
+    _,connect=database(tmp_path)
+    baseline=FakeSource([row(4,"ID-001",120)])
+    updated=row(4,"ID-001",120)
+    updated["fields"]["Next action date"]="2026-11-05"
+    incoming=FakeSource([updated])
+    with connect() as db:
+        report=master_sync.plan(db,baseline,incoming,"d"*64)
+    assert report["summary"]["safe_updates"]==1
+    assert report["items"][0]["changes"]==[{
+        "field":"Next action date",
+        "before_source":"",
+        "in_workbook":"2026-11-05",
+        "in_platform":"",
+        "conflict":False,
+    }]
+    assert report["new_source_date_fields_never_inferred_from_action_text"] is True
+
+
+def test_mod_transfer_is_flagged_not_silently_reclassified(tmp_path):
+    _,connect=database(tmp_path)
+    previous=FakeSource([row(4,"ID-001",120)])
+    new=FakeSource([])
+    new.sheet_parts={"MOD":"xl/worksheets/sheet9.xml"}
+    new.rows["MOD"]=[row(3,"ID-001",120)]
+    with connect() as db:
+        report=master_sync.plan(db,previous,new,"e"*64)
+        assert db.execute("SELECT source_sheet FROM contracts WHERE id=1").fetchone()[0]=="Maintenance Database"
+    assert report["summary"]["moves_requiring_review"]==1
+    assert report["summary"]["safe_updates"]==0
+    assert report["deleted_or_archived_by_upload"]==0
