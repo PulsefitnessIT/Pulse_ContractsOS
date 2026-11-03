@@ -13,13 +13,16 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from .data_readiness import WORKSHEETS, workbook_check, _amount_kind
-from .excel_io import ExcelSource, REGISTER_SHEETS
+from .excel_io import ExcelSource, register_sheets
 from .store import DB, TEMPLATE, connect
 from .pilot_access import actor
 
 router = APIRouter(prefix="/api/pilot", tags=["Factual source provenance"])
 REQUIRED_COLUMNS = {
     "Maintenance Database": {"Customer / site", "Record ID", "Contract number",
+        "Contract / warranty type", "Start date", "Expiry date",
+        "Contract amount (£)", "Invoice Code"},
+    "MOD": {"Customer / site", "Record ID", "Contract number",
         "Contract / warranty type", "Start date", "Expiry date",
         "Contract amount (£)", "Invoice Code"},
     "Expired": {"Customer / site", "Record ID", "Contract number",
@@ -37,8 +40,8 @@ def source_row_key(sheet: str, row: int, record_id: str, repeated_ids: set[str])
 def source_audit(path):
     path = Path(path)
     structure = workbook_check(path)
-    if not structure["valid"] or structure["sheet_names"] != WORKSHEETS:
-        raise ValueError("The source must be the verified eight-sheet Maintenance Master.")
+    if not structure["valid"]:
+        raise ValueError("The workbook must match a verified supported Maintenance Master layout.")
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -49,7 +52,7 @@ def source_audit(path):
         summaries = {}
         ids = collections.Counter()
         locations = collections.defaultdict(list)
-        for sheet in REGISTER_SHEETS:
+        for sheet in register_sheets(src):
             headers, entries = src.records(sheet)
             missing = sorted(REQUIRED_COLUMNS[sheet] - set(headers))
             if missing:
@@ -102,7 +105,9 @@ def source_audit(path):
             raise ValueError("Source record keys conflict after duplicate handling.")
         return {
             "workbook_sha256": digest.hexdigest(),
-            "worksheet_names": list(WORKSHEETS),
+            "worksheet_names": list(structure["sheet_names"]),
+            "workbook_profile": structure.get("profile"),
+            "computed_action_centre_is_not_a_contract_register": True,
             "source_status": "read from approved private Excel source; not ERP-certified",
             "source_id_duplicates": {
                 "repeated_distinct_ids": len(repeats),
@@ -192,8 +197,13 @@ def current_master_source_audit():
             loaded and loaded["sha256"] == source["workbook_sha256"]
         )
         source["record_counts_match"] = (
-            db_rows.get("Active", 0) == source["registers"]["Maintenance Database"]["populated_site_rows"]
-            and db_rows.get("Expired", 0) == source["registers"]["Expired"]["populated_site_rows"]
+            db_rows.get("Active", 0) == sum(
+                source["registers"][name]["populated_site_rows"]
+                for name in ("Maintenance Database", "MOD")
+                if name in source["registers"]
+            )
+            and db_rows.get("Expired", 0) ==
+                source["registers"]["Expired"]["populated_site_rows"]
         )
         source["fully_reconciled"] = False  # Counts/hash cannot certify every customer or amount.
         return source
