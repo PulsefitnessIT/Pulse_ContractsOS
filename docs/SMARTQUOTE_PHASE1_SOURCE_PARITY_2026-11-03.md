@@ -140,6 +140,9 @@ duplicate historical keys, non-dictionary records, recorded SKU/key
 disagreements, missing console identity, malformed aliases, duplicate or
 missing alias targets and aliases pointing to multiple historic variants.
 No historical or current prices are exposed, and no mapping is approved.
+Historical exact-code alias searches now also recognise whole codes recorded in
+different letter case. Case-colliding aliases remain explicit review exceptions,
+rather than silently selecting a last-wins historical target.
 
 The read-only endpoint
 `GET /api/quoting/catalogue/reconciliation/historical-worklist`
