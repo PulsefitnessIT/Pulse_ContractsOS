@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import zlib
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -52,7 +53,6 @@ def _private_optional_source(kind):
         digest = hashlib.sha256(raw).hexdigest()
         if path.suffix.lower() == ".gz":
             # Bound inflated content regardless of compressed source size.
-            import zlib
             decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
             decoded = decoder.decompress(raw, 80 * 1024 * 1024 + 1)
             if (len(decoded) > 80 * 1024 * 1024 or not decoder.eof
@@ -68,7 +68,7 @@ def _private_optional_source(kind):
         ):
             raise ValueError("Unexpected original historical identity index.")
         return payload, digest
-    except (OSError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, UnicodeError, zlib.error, json.JSONDecodeError) as exc:
         raise HTTPException(503, f"{kind} staged source failed integrity checks.") from exc
 
 
