@@ -7,6 +7,7 @@ Only authenticated pilot Administrators can preview and activate an import.
 from __future__ import annotations
 
 import csv
+import gzip
 import datetime as dt
 import hashlib
 import io
@@ -237,7 +238,7 @@ def _ensure_tables(con):
 
 
 def _packed(prices):
-    return zlib.compress(json.dumps(prices, separators=(",", ":"), ensure_ascii=False).encode("utf-8"), 9)
+    return gzip.compress(json.dumps(prices, separators=(",", ":"), ensure_ascii=False).encode("utf-8"), compresslevel=9)
 
 
 def _unpacked(blob):
@@ -287,7 +288,11 @@ def preview_import(filename, raw, source_date):
     who = _admin()
     date = _date(source_date)
     parsed = parse_export(filename, raw)
+    if parsed["conflicting_item_codes"]:
+        raise HTTPException(422, "Sage export contains conflicting equipment item codes. Correct the export before replacing prices.")
     previous = _current()
+    if previous and date.isoformat() < previous["source_date"]:
+        raise HTTPException(409, "Sage export date is older than the active source. Verify the list revision.")
     before_sha = previous["source_file_sha256"] if previous else None
     if before_sha == parsed["source_file_sha256"]:
         raise HTTPException(409, "This exact Sage export is already active.")
