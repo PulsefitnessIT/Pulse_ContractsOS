@@ -230,11 +230,22 @@ def _ensure_tables(con):
             snapshot_id INTEGER NOT NULL, sku TEXT NOT NULL,
             change_kind TEXT NOT NULL, previous_price REAL,
             current_price REAL, previous_name TEXT, current_name TEXT,
+            previous_group TEXT, current_group TEXT,
             FOREIGN KEY(snapshot_id) REFERENCES smartquote_sage_snapshots(id)
         );
         CREATE INDEX IF NOT EXISTS idx_unified_sage_changes
           ON smartquote_sage_price_changes(snapshot_id,change_kind,sku);
     """)
+    # Support existing local pilots created before the source-group columns.
+    fields = {row[1] for row in con.execute(
+        "PRAGMA table_info(smartquote_sage_price_changes)"
+    )}
+    for column in ("previous_group", "current_group"):
+        if column not in fields:
+            con.execute(
+                "ALTER TABLE smartquote_sage_price_changes "
+                f"ADD COLUMN {column} TEXT"
+            )
 
 
 def _packed(prices):
@@ -278,6 +289,8 @@ def difference(previous, current):
                 "current_price": newer.get("sales_price") if newer else None,
                 "previous_name": older.get("name") if older else None,
                 "current_name": newer.get("name") if newer else None,
+                "previous_group": older.get("group") if older else None,
+                "current_group": newer.get("group") if newer else None,
             })
     for kind in ("added", "removed", "price_changed", "details_changed", "unchanged"):
         counts.setdefault(kind, 0)
@@ -411,10 +424,12 @@ def activate_preview(payload):
             con.executemany(
                 "INSERT INTO smartquote_sage_price_changes "
                 "(snapshot_id,sku,change_kind,previous_price,current_price,"
-                "previous_name,current_name) VALUES(?,?,?,?,?,?,?)",
+                "previous_name,current_name,previous_group,current_group) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
                 ((cur.lastrowid, item["sku"], item["kind"],
                   item["previous_price"], item["current_price"],
-                  item["previous_name"], item["current_name"])
+                  item["previous_name"], item["current_name"],
+                  item["previous_group"], item["current_group"])
                  for item in change_rows),
             )
         con.execute("DELETE FROM smartquote_sage_import_previews WHERE token=?", (token,))
@@ -507,7 +522,7 @@ def sage_refresh_changes(
         ).fetchone()[0]
         rows = con.execute(
             "SELECT sku,change_kind,previous_price,current_price,"
-            "previous_name,current_name "
+            "previous_name,current_name,previous_group,current_group "
             f"FROM smartquote_sage_price_changes WHERE {where} "
             "ORDER BY sku LIMIT ? OFFSET ?", (*params, limit, offset)
         ).fetchall()
