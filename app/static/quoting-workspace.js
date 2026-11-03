@@ -60,6 +60,11 @@ async function quotingWorkspacePage() {
     'Pricing administrators can make audited corrections without altering the source files.</p>' +
     '<button type="button" class="button button-outline" id="rrpPriorityStatusLoad">Check source coverage</button>' +
     '<div id="rrpPriorityStatus" aria-live="polite"></div></section>' +
+    '<section class="panel" id="quoteSageRefreshPanel" hidden>' +
+    '<h3>Sage Price List Refresh</h3>' +
+    '<p>Upload a complete Sage Sales Price export, review price changes and activate ' +
+    'a new dated snapshot. No existing quotations or Sage records will be changed.</p>' +
+    '<div id="quoteSageRefreshHost"></div></section>' +
     '<section class="panel" id="quoteAdminPricePanel" hidden>' +
     '<h3>Administrator price corrections</h3>' +
     '<p>Edit the effective equipment price for an exact item code. ' +
@@ -567,6 +572,14 @@ async function showQuotePriceEditorIfAdmin() {
   const panel=document.querySelector('#quoteAdminPricePanel');
   if(panel && view==='quoting' && session?.pilot && session.role==='Admin') {
     panel.hidden=false;
+    const refreshPanel=document.querySelector('#quoteSageRefreshPanel');
+    if(refreshPanel && typeof initQuoteSageRefresh === 'function'){
+      refreshPanel.hidden=false;
+      initQuoteSageRefresh().catch(error=>{
+        const host=document.querySelector('#quoteSageRefreshHost');
+        if(host)host.textContent=error.message;
+      });
+    }
   }
 }
 
