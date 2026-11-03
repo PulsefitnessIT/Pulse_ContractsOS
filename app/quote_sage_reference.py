@@ -78,9 +78,13 @@ def snapshot():
     )
     if row is None:
         from .quote_workspace import _source
-        if _source() is None:
-            return None
-        with closing(_connect()) as db:
+        try:
+            original = _connect()
+        except HTTPException:
+            if _source() is None:
+                return None
+            raise
+        with closing(original) as db:
             try:
                 row = db.execute(
                     "SELECT source_date,review_due,file_sha256,payload,usable_rows "
