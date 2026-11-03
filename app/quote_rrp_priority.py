@@ -1,0 +1,155 @@
+"""2026 Master List Price is first; Sage Sales Price is an exact-code fallback.
+
+Original workbook/sanitised extracted rows are never bundled in Contracts OS.
+This module reads a protected, pinned extract. No quote or catalogue write,
+and neither a source List Price nor a Sage Sales Price is tariff approval.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import zlib
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from pathlib import Path
+
+from fastapi import HTTPException
+
+SOURCE_ENV = "PULSE_SMARTQUOTE_RRP_2026_SOURCE"
+MASTER_FILE = "Full Master Price List 24-08-2026.xlsx"
+MASTER_DATE = "2026-08-24"
+MASTER_ORIGINAL_SHA256 = "fbc544db9365f6b47cd37fb3e085e5c75acc03042eff5d6f820ffa55f80b3433"
+MAX_COMPRESSED = 8 * 1024 * 1024
+MAX_DECOMPRESSED = 32 * 1024 * 1024
+CODE = re.compile(r"^[A-Z0-9][A-Z0-9._/-]{0,99}$")
+
+
+def _code(value):
+    return str(value or "").strip().upper()
+
+
+def _amount(value):
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        money = Decimal(str(value))
+        if not money.is_finite() or not Decimal("0") < money <= Decimal("100000000"):
+            return None
+        return money.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def source_snapshot():
+    """Read exact original sanitized List Price evidence, fail closed if absent."""
+    file = os.environ.get(SOURCE_ENV, "").strip()
+    if not file:
+        raise HTTPException(503, "IT must stage the 24 August 2026 RRP evidence snapshot.")
+    path = Path(file).expanduser().resolve()
+    try:
+        if path.suffix.lower() != ".gz" or not path.is_file():
+            raise ValueError("Incorrect source format")
+        if not 2 <= path.stat().st_size <= MAX_COMPRESSED:
+            raise ValueError("Invalid source size")
+        raw = path.read_bytes()
+        decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        decoded = decoder.decompress(raw, MAX_DECOMPRESSED + 1)
+        if (len(decoded) > MAX_DECOMPRESSED or not decoder.eof
+                or decoder.unused_data or decoder.unconsumed_tail):
+            raise ValueError("Incomplete source payload")
+        payload = json.loads(decoded.decode("utf-8"))
+        if (not isinstance(payload, dict)
+                or payload.get("source_file") != MASTER_FILE
+                or payload.get("source_date") != MASTER_DATE
+                or str(payload.get("source_sha256", "")).lower() != MASTER_ORIGINAL_SHA256
+                or not isinstance(payload.get("rows"), list)
+                or not 1 <= len(payload["rows"]) <= 20000):
+            raise ValueError("Incorrect original August 2026 master evidence")
+        if not all(isinstance(row, dict) for row in payload["rows"]):
+            raise ValueError("Invalid original source row")
+        digest = hashlib.sha256(raw).hexdigest()
+        # The private IT manifest must pin this original sanitized snapshot
+        # against the three exact V10 engine source files.
+        from .quote_pricing import source_manifest_status, source_snapshot as v10_sources
+        _, _, _, hashes = v10_sources()
+        status = source_manifest_status({**hashes, "august_2026_rrp": digest})
+        if not (status["pinned"] and status["matches"]):
+            raise ValueError("The August master evidence is not pinned")
+        return {
+            "rows": payload["rows"],
+            "source_date": MASTER_DATE,
+            "source_file_sha256": MASTER_ORIGINAL_SHA256,
+            "snapshot_sha256": digest,
+        }
+    except (OSError, ValueError, UnicodeError, zlib.error, json.JSONDecodeError) as exc:
+        raise HTTPException(503, "Verified 24 August 2026 master List Price snapshot is unavailable.") from exc
+
+
+def index(source):
+    by_code = defaultdict(list)
+    for row in source["rows"]:
+        code = _code(row.get("sku"))
+        if CODE.fullmatch(code):
+            by_code[code].append(row)
+    return by_code
+
+
+def resolve(sku, by_code, sage_source=None):
+    """Always prefer August master presence, even when its rows conflict.
+
+    Sage is consulted only when there are ZERO master rows for the exact SKU.
+    Sage stores Sales Price, not certified RRP; that is a staff review item.
+    """
+    code = _code(sku)
+    if not CODE.fullmatch(code):
+        return {"basis": "invalid_sku", "rrp": None, "review_required": True}
+    rows = by_code.get(code, ())
+    if rows:
+        prices = {_amount(row.get("rrp")) for row in rows}
+        variants = {
+            (str(row.get("name") or "").strip().casefold(),
+             str(row.get("console") or "").strip().casefold())
+            for row in rows
+        }
+        evidence = [{
+            "sheet": str(row.get("sheet") or "")[:100],
+            "row": row.get("row"),
+            "rrp_column": str(row.get("rrp_column") or "")[:20],
+        } for row in rows[:12]]
+        if None in prices or len(prices) != 1:
+            return {
+                "basis": "master_price_conflict",
+                "rrp": None, "master_rows": evidence,
+                "review_required": True,
+            }
+        if len(variants) != 1:
+            return {
+                "basis": "master_variant_conflict",
+                "rrp": None, "master_rows": evidence,
+                "review_required": True,
+            }
+        return {
+            "basis": "august_2026_master_list_price",
+            "rrp": float(next(iter(prices))),
+            "master_rows": evidence,
+            "master_console": str(rows[0].get("console") or "")[:120],
+            "review_required": True,  # Valid source evidence is not tariff approval.
+        }
+
+    sage = None
+    if sage_source is not None:
+        # Import here to avoid circular dependencies with the quote routes.
+        from .quote_sage_reference import reference
+        sage = reference(code, sage_source)
+    if sage:
+        return {
+            "basis": "sage_sales_price_fallback_review",
+            "rrp": None, "sage_reference": sage,
+            "review_required": True,
+        }
+    return {
+        "basis": "not_on_august_master_or_usable_sage_export",
+        "rrp": None, "review_required": True,
+    }
