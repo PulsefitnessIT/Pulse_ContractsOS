@@ -53,6 +53,12 @@ async function quotingWorkspacePage() {
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
     '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
+    '<section class="panel"><h3>Equipment RRP source priority</h3>' +
+    '<p>The 24 August 2026 Master List Price is the primary source. ' +
+    'Only product codes absent from that master are referred to the Sage Sales Price list. ' +
+    'Sage fallback figures require manager confirmation before use as RRP.</p>' +
+    '<button type="button" class="button button-outline" id="rrpPriorityStatusLoad">Check source coverage</button>' +
+    '<div id="rrpPriorityStatus" aria-live="polite"></div></section>' +
     '<section class="panel"><h3>Equipment Master Price List &amp; Catalogue — source reconciliation</h3>' +
     '<p>Check current SKU duplicates, missing source RRPs, console/configuration issues and legacy mappings before quoting.</p>' +
     '<button type="button" class="button button-outline" id="quoteSourceAuditLoad">Review source catalogue</button>' +
@@ -74,6 +80,7 @@ async function quotingWorkspacePage() {
   document.querySelector('#unifiedDraftNew').addEventListener('click', unifiedNewDraft);
   document.querySelector('#unifiedDraftPrice').addEventListener('click', unifiedPricePreview);
   document.querySelector('#quoteSourceAuditLoad').addEventListener('click', loadQuoteSourceAudit);
+  document.querySelector('#rrpPriorityStatusLoad').addEventListener('click', loadRrpPriorityStatus);
   document.querySelector('#unifiedDraftForm').addEventListener('input', unifiedClearPrice);
   document.querySelector('#unifiedDraftForm').addEventListener('change', unifiedClearPrice);
   // A renewal from Action Centre may pass only a source site label and its
@@ -428,6 +435,7 @@ async function unifiedPricePreview() {
       '<tr><td>' + esc(line.line) + '</td><td>' + esc(line.item_code) +
       '</td><td>' + esc(line.quantity) + '</td><td>' +
       (line.priced ? money(line.rrp) : '—') + '</td><td>' +
+      esc((line.rrp_source || '').replaceAll('_',' ')) + '</td><td>' +
       (line.priced ? money(line.unit_annual) : '—') + '</td><td>' +
       (line.priced ? money(line.annual) : 'Not priced') + '</td><td>' +
       (line.sage_reference ? money(line.sage_reference.sage_sales_price) +
@@ -437,7 +445,8 @@ async function unifiedPricePreview() {
       '</td></tr>').join('');
     host.innerHTML =
       '<section class="panel"><h3>INTERNAL tariff preview · Not an approved quotation</h3>' +
-      '<p>Source: ' + esc(preview.source_pricing_status) + ' · Snapshot ' +
+      '<p><strong>RRP precedence:</strong> ' + esc(preview.rrp_source_priority) +
+      '</p><p>Source tariff policy: ' + esc(preview.source_pricing_status) + ' · Snapshot ' +
       esc(preview.source_snapshot || 'not specified') + '</p>' +
       '<p><strong>' + esc(preview.priced_count) + ' of ' + esc(preview.line_count) +
       '</strong> lines priced from exact SKUs. ' +
@@ -451,7 +460,7 @@ async function unifiedPricePreview() {
         preview.staged.stages.map(stage => '<tr><td>' + esc(stage.start) + '</td><td>' + esc(stage.count) + '</td><td>' + money(stage.amount) + '</td></tr>').join('') +
         '</tbody></table></div>' : '') +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>Line</th><th>SKU</th><th>Qty</th><th>RRP</th><th>Annual/unit</th><th>Annual/line</th><th>Sage reference (not RRP)</th><th>Review</th>' +
+      '<th>Line</th><th>SKU</th><th>Qty</th><th>August List Price</th><th>RRP source/status</th><th>Annual/unit</th><th>Annual/line</th><th>Sage reference (not RRP)</th><th>Review</th>' +
       '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
       '<h4>Commercial controls and exceptions</h4><ul>' +
       preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
@@ -503,5 +512,39 @@ async function unifiedSearchSites(event) {
   } catch (error) {
     host.textContent = 'Source site lookup unavailable: ' + error.message +
       '. Do not substitute fictional customer data.';
+  }
+}
+
+async function loadRrpPriorityStatus() {
+  const host=document.querySelector('#rrpPriorityStatus');
+  if (!host || view!=='quoting')return;
+  host.textContent='Checking private August master and Sage source coverage…';
+  try {
+    const data=await api('/api/quoting/rrp-source/status');
+    if(view!=='quoting'||!document.querySelector('#rrpPriorityStatus'))return;
+    const labels={
+      original_v10_catalogue_distinct_skus:'Original V10 distinct SKUs',
+      august_2026_master_source_rows:'August 2026 master List Price rows',
+      august_2026_master_distinct_skus:'August 2026 distinct SKUs',
+      august_master_skus_not_in_v10:'August master SKUs not in V10',
+      v10_skus_with_master_reference:'V10 SKUs covered by August List Price',
+      v10_skus_with_conflicting_master_rows:'V10 SKUs with August conflicts',
+      v10_skus_referred_to_sage:'V10 SKUs referred to Sage',
+      v10_skus_absent_from_both_lists:'V10 SKUs absent from both sources'
+    };
+    const rows=Object.entries(labels).map(([key,label])=>
+      '<tr><td>'+esc(label)+'</td><td>'+esc(data.counts[key]??'Not checked')+
+      '</td></tr>').join('');
+    host.innerHTML='<p>Verified master: '+esc(data.august_source_date)+
+      ' · Sage snapshot '+(data.sage_loaded?'loaded':'not staged')+
+      (data.sage_review_overdue?' · Sage review overdue':'')+'</p>'+
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+      '<th>Source coverage</th><th>SKUs / rows</th></tr></thead><tbody>'+
+      rows+'</tbody></table></div>'+
+      '<p class="fine-print">The source precedence is confirmed. '+
+      'Neither Sage Sales Price nor the V10 tariff is commercially approved for customer issue by this report.</p>';
+  } catch(error) {
+    host.textContent='Source coverage unavailable: '+error.message+
+      '. Stage and pin the original August 2026 source before relying on RRP prices.';
   }
 }
