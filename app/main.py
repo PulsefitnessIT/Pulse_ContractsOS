@@ -37,6 +37,7 @@ from .quote_reconciliation import router as quote_reconciliation_router
 from .native_quote_handover import router as native_quote_handover_router
 from .quote_pricing import router as quote_pricing_router
 from .quote_sage_reference import router as sage_reference_router
+from .quote_price_overrides import router as price_overrides_router
 from .source_integrity import router as source_integrity_router
 from .action_centre import router as action_centre_router
 from .master_sync import router as working_master_sync_router
@@ -122,6 +123,7 @@ app.include_router(quote_reconciliation_router)
 app.include_router(native_quote_handover_router)
 app.include_router(quote_pricing_router)
 app.include_router(sage_reference_router)
+app.include_router(price_overrides_router)
 app.include_router(source_integrity_router)
 app.include_router(action_centre_router)
 app.include_router(working_master_sync_router)
