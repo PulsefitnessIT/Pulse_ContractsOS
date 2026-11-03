@@ -80,8 +80,13 @@ def select_source_coverage(catalog, configs, pricing, maximum):
             continue
         config = matches[0]
         if (
-            config.get("eligible") != "Yes"
+            config.get("eligible") == "No"
             or product.get("coverage_override") == "Not eligible"
+        ):
+            excluded["explicitly_excluded_from_cover"] += 1
+            continue
+        if (
+            config.get("eligible") != "Yes"
             or product.get("match") == "Price list only - review"
         ):
             excluded["coverage_needs_approval"] += 1
@@ -148,6 +153,12 @@ def select_source_coverage(catalog, configs, pricing, maximum):
         "unsampled_rate_console_families": len(all_families - sampled_families),
         "all_eligible_rate_console_families_sampled": bool(all_families) and sampled_families == all_families,
         "source_exclusions_require_separate_reconciliation": bool(excluded or unidentified_rows),
+        # Explicitly excluded equipment has no valid maintenance price to compare.
+        # Every other skipped group requires review before calling parity clean.
+        "unresolved_numeric_source_exclusions": sum(
+            number for reason, number in excluded.items()
+            if reason != "explicitly_excluded_from_cover"
+        ),
         "source_rule_identity_conflicts": any(rule_errors.values()),
     }
     return samples, summary
