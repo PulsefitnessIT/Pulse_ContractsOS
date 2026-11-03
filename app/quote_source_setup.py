@@ -150,16 +150,21 @@ def _schema(con):
 
 def active_source():
     """Return verified original bytes from the protected source store, or None."""
-    with closing(connect()) as db:
-        try:
-            row=db.execute(
-                "SELECT payload,zip_sha256,hashes_json FROM quote_source_bundles "
-                "WHERE active=1 ORDER BY id DESC LIMIT 1"
-            ).fetchone()
-        except sqlite3.OperationalError as exc:
-            if "no such table" in str(exc).lower():
-                return None
-            raise
+    try:
+        with closing(connect()) as db:
+            try:
+                row=db.execute(
+                    "SELECT payload,zip_sha256,hashes_json FROM quote_source_bundles "
+                    "WHERE active=1 ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            except sqlite3.OperationalError as exc:
+                if "no such table" in str(exc).lower():
+                    return None
+                raise
+    except sqlite3.OperationalError as exc:
+        if "unable to open database file" in str(exc).lower():
+            return None  # No local pilot database: retain legacy source behaviour.
+        raise
     if row is None:
         return None
     binary=bytes(row["payload"])
