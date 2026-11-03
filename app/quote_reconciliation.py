@@ -241,6 +241,12 @@ def source_report():
     catalog, configs, pricing, fingerprints = source_snapshot()
     legacy, legacy_sha = _private_optional_source("legacy_crosswalk")
     history, history_sha = _private_optional_source("historical_identity")
+    # All four reconciliation endpoints must be protected against staging
+    # changes after IT signs off an exact source snapshot.
+    source_manifest_status({
+        **fingerprints, "legacy_crosswalk": legacy_sha,
+        "historical_identity": history_sha,
+    })
     return reconcile(catalog, configs, pricing, fingerprints, legacy, legacy_sha,
                      history, history_sha)
 
@@ -327,6 +333,14 @@ def historical_search(q: str = Query(..., min_length=2, max_length=100),
     if len(key) < 2:
         raise HTTPException(422, "Enter at least two characters.")
     history, sha = _private_optional_source("historical_identity")
+    if os.environ.get("PULSE_SMARTQUOTE_SOURCE_MANIFEST", "").strip():
+        # Historical search must not bypass a pinned source-manifest check.
+        _, _, _, fingerprints = source_snapshot()
+        _, legacy_sha = _private_optional_source("legacy_crosswalk")
+        source_manifest_status({
+            **fingerprints, "legacy_crosswalk": legacy_sha,
+            "historical_identity": sha,
+        })
     if history is None:
         raise HTTPException(
             503, "The protected original V10 historical identity index has not been staged."
