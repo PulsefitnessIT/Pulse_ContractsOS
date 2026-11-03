@@ -85,44 +85,104 @@ def _review_reasons(item, configs, pricing):
         reasons.append("missing_or_invalid_current_rrp")
     service_key = _code(item.get("service_key"))
     matches = configs.get(service_key, ())
-    if not service_key or len(matches) != 1:
+    config = matches[0] if len(matches) == 1 else None
+    if not service_key or config is None:
         reasons.append("missing_or_ambiguous_service_configuration")
-        return reasons
-    config = matches[0]
-    if (item.get("coverage_override") == "Not eligible" or
-            config.get("eligible") == "No"):
-        reasons.append("excluded_from_cover")
-    elif config.get("eligible") != "Yes":
-        reasons.append("service_eligibility_not_confirmed")
+    if config is not None:
+        if (item.get("coverage_override") == "Not eligible" or
+                config.get("eligible") == "No"):
+            reasons.append("excluded_from_cover")
+        elif config.get("eligible") != "Yes":
+            reasons.append("service_eligibility_not_confirmed")
     if item.get("match") == "Price list only - review":
         reasons.append("price_list_only_coverage_review")
-    group = str(item.get("rate_group_override") or config.get("rate_group") or "")
-    rates = {str(r.get("group")): r for r in pricing.get("rates", []) if isinstance(r, dict)}
-    if group not in rates or group == "Manual Review":
+    # Never collapse multiple competing policy rows into a last-wins dict.
+    group = str(item.get("rate_group_override") or
+                ((config or {}).get("rate_group")) or "")
+    rate_matches = [
+        r for r in pricing.get("rates", []) if isinstance(r, dict)
+        and str(r.get("group") or "") == group
+    ]
+    if group == "Manual Review" or not group or not rate_matches:
         reasons.append("rate_group_unmapped")
-    elif rates[group].get("status") != "Active":
+    elif len(rate_matches) > 1:
+        reasons.append("ambiguous_maintenance_rate_group")
+    elif rate_matches[0].get("status") != "Active":
         reasons.append("source_rate_requires_review")
-    rules = {str(r.get("name")) for r in pricing.get("console_rules", []) if isinstance(r, dict)}
-    if not item.get("console") or str(item["console"]) not in rules:
+    console = str(item.get("console") or "")
+    console_matches = [
+        r for r in pricing.get("console_rules", []) if isinstance(r, dict)
+        and str(r.get("name") or "") == console
+    ]
+    if not console or not console_matches:
         reasons.append("console_rule_unverified")
+    elif len(console_matches) > 1:
+        reasons.append("ambiguous_console_rule")
     return reasons
+
+
+def policy_reconciliation(pricing):
+    """Read-only tariff identity audit: rule names and positions, never rates."""
+    worklist = []
+    flags = Counter()
+    for section, identity_key, duplicate_reason, missing_reason in (
+        ("rates", "group", "duplicate_rate_group", "missing_rate_group_name"),
+        ("console_rules", "name", "duplicate_console_rule", "missing_console_rule_name"),
+    ):
+        rows = pricing.get(section, [])
+        counts = Counter(
+            str(row.get(identity_key) or "").strip()
+            for row in rows if isinstance(row, dict)
+            and str(row.get(identity_key) or "").strip()
+        )
+        for position, row in enumerate(rows, start=1):
+            key = str(row.get(identity_key) or "").strip() if isinstance(row, dict) else ""
+            issues = []
+            if not isinstance(row, dict):
+                issues.append("invalid_policy_source_row")
+            elif not key:
+                issues.append(missing_reason)
+            elif counts[key] > 1:
+                issues.append(duplicate_reason)
+            if issues:
+                for issue in issues:
+                    flags[issue] += 1
+                worklist.append({
+                    "source_section": section,
+                    "source_row": position,
+                    "rule_name": key[:120],
+                    "issues": issues,
+                    "review_only": True,
+                    "price_approved": False,
+                })
+    return {
+        "worklist": worklist,
+        "flag_counts": dict(sorted(flags.items())),
+        "source_rows": {
+            "rates": len(pricing.get("rates", [])),
+            "console_rules": len(pricing.get("console_rules", [])),
+        },
+    }
 
 
 def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
               legacy_sha=None, history=None, history_sha=None):
     """Deterministic source-only audit; no database writes and no implicit approvals."""
     sku_rows = defaultdict(list)
+    sku_source_positions = defaultdict(list)
     config_rows = defaultdict(list)
     for config in configs:
         if isinstance(config, dict):
             key = _code(config.get("key"))
             if key:
                 config_rows[key].append(config)
-    for product in catalog:
+    for position, product in enumerate(catalog, start=1):
         if isinstance(product, dict):
             code = _code(product.get("sku"))
             if code:
                 sku_rows[code].append(product)
+                sku_source_positions[code].append(position)
+    policy_audit = policy_reconciliation(pricing)
     buckets = Counter()
     worklist = []
     # Rows without an SKU must be visible to reviewers. Previously these
@@ -170,6 +230,7 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
                 "description": str(representative.get("name") or "")[:250],
                 "console": str(representative.get("console") or "")[:150],
                 "source_rows": len(rows),
+                "catalogue_source_rows": sku_source_positions[code],
                 "issues": reasons,
                 "price_approved": False,
                 "verified_master_rrp": False,
@@ -261,6 +322,9 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
         "source_skus_without_flagged_identity_issues": len(sku_rows)-(len(worklist)-len(missing_sku_rows)),
         "catalogue_rows_requiring_review": len(worklist),
         "flag_counts": dict(sorted(buckets.items())),
+        "pricing_policy_source_rows": policy_audit["source_rows"],
+        "policy_rule_rows_requiring_review": len(policy_audit["worklist"]),
+        "policy_flag_counts": policy_audit["flag_counts"],
         "legacy_source_rows": len(legacy) if legacy is not None else None,
         "legacy_codes_mapped": len(legacy_keys) if legacy is not None else None,
         "ambiguous_legacy_codes": len(multi_target_codes) if legacy is not None else None,
@@ -282,6 +346,7 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
     return {
         "summary": summary,
         "worklist": worklist,
+        "policy_worklist": policy_audit["worklist"],
         "legacy_worklist": legacy_review,
         "legacy_targets": legacy_keys,
         "legacy_ambiguous": legacy_ambiguous,
@@ -354,6 +419,24 @@ def reconciliation_worklist(q: str = Query("", max_length=100),
         "review_only": True, "price_approved": False,
     }
 
+
+
+@router.get("/reconciliation/policy-worklist")
+def reconciliation_policy_worklist(
+        issue: str = Query("", max_length=100),
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0)):
+    """Read-only conflicting tariff/console rule identities and source rows."""
+    actor()
+    report = source_report()
+    items = report["policy_worklist"]
+    if issue:
+        items = [item for item in items if issue in item["issues"]]
+    return {
+        "total": len(items), "offset": offset, "limit": limit,
+        "items": items[offset:offset + limit],
+        "review_only": True, "price_approved": False,
+    }
 
 
 @router.get("/reconciliation/legacy-worklist")
