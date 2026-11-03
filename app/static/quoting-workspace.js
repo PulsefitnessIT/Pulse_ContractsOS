@@ -60,6 +60,9 @@ async function quotingWorkspacePage() {
     'Pricing administrators can make audited corrections without altering the source files.</p>' +
     '<button type="button" class="button button-outline" id="rrpPriorityStatusLoad">Check source coverage</button>' +
     '<div id="rrpPriorityStatus" aria-live="polite"></div></section>' +
+    '<section class="panel" id="quoteCommercialSetupPanel" hidden>' +
+    '<h3>Customer Quotation — Commercial Setup</h3>' +
+    '<div id="quoteCommercialSetupHost"></div></section>' +
     '<section class="panel" id="quoteSageRefreshPanel" hidden>' +
     '<h3>Sage Price List Refresh</h3>' +
     '<p>Upload a complete Sage Sales Price export, review price changes and activate ' +
@@ -573,6 +576,14 @@ async function showQuotePriceEditorIfAdmin() {
   const panel=document.querySelector('#quoteAdminPricePanel');
   if(panel && view==='quoting' && session?.pilot && session.role==='Admin') {
     panel.hidden=false;
+    const commercialPanel=document.querySelector('#quoteCommercialSetupPanel');
+    if(commercialPanel && typeof initQuoteCommercialSetup==='function'){
+      commercialPanel.hidden=false;
+      initQuoteCommercialSetup().catch(error=>{
+        const host=document.querySelector('#quoteCommercialSetupHost');
+        if(host)host.textContent=error.message;
+      });
+    }
     const refreshPanel=document.querySelector('#quoteSageRefreshPanel');
     if(refreshPanel && typeof initQuoteSageRefresh === 'function'){
       refreshPanel.hidden=false;
