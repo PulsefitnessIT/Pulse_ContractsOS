@@ -73,6 +73,21 @@ def source_manifest_status(proofs):
                 any(c not in "0123456789abcdef" for c in expected.lower())
                 or expected.lower() != proofs[name]):
                 raise ValueError("Source fingerprint does not match the pinned manifest")
+        # Reconciliation callers supply optional source fingerprints too.
+        # A staged legacy/history file must match the *same* private manifest;
+        # a previously pinned optional file must not quietly disappear.
+        for name in ("legacy_crosswalk", "historical_identity"):
+            if name not in proofs:
+                continue  # Pricing-only preview verifies the three core files.
+            observed = proofs[name]
+            expected = hashes.get(name)
+            if observed is None and expected is None:
+                continue
+            if (not isinstance(observed, str) or not isinstance(expected, str)
+                or len(expected) != 64 or len(observed) != 64
+                or any(c not in "0123456789abcdef" for c in expected.lower())
+                or expected.lower() != observed.lower()):
+                raise ValueError("Optional identity source is missing or changed")
         return {
             "pinned": True, "matches": True,
             "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
