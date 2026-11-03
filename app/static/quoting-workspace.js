@@ -71,6 +71,21 @@ async function quotingWorkspacePage() {
   document.querySelector('#unifiedDraftPrice').addEventListener('click', unifiedPricePreview);
   document.querySelector('#unifiedDraftForm').addEventListener('input', unifiedClearPrice);
   document.querySelector('#unifiedDraftForm').addEventListener('change', unifiedClearPrice);
+  // A renewal from Action Centre may pass only a source site label and its
+  // existing record ID. Legal customer name, equipment and prices are NEVER
+  // inferred; saveDraft verifies that the linked site still matches exactly.
+  if (window.unifiedSourceFromAction) {
+    const selected=window.unifiedSourceFromAction;
+    window.unifiedSourceFromAction=null;
+    const form=document.querySelector('#unifiedDraftForm');
+    if (form && Number.isSafeInteger(selected.contract_id) && selected.contract_id>0) {
+      form.elements.site.value=String(selected.site_label||'');
+      form.elements.source_contract_id.value=String(selected.contract_id);
+      document.querySelector('#unifiedSiteResults').textContent=
+        'Source site selected from a renewal task. Confirm the legal customer, equipment, cover and price independently.';
+      form.elements.customer.focus();
+    }
+  }
   renderUnifiedEquipment();
   // Independent requests: a disconnected original SmartQuote must never hide draft creation.
   await Promise.allSettled([loadUnifiedDrafts(), loadUnifiedLegacyQuotes()]);
