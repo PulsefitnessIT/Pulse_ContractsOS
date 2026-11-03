@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os,json,sqlite3,datetime as dt,collections,datetime,uuid
 from pathlib import Path
-from .excel_io import ExcelSource,REGISTER_SHEETS
+from .excel_io import ExcelSource,REGISTER_SHEETS,register_sheets
 
 BASE=os.path.dirname(os.path.dirname(__file__))
 DATA=os.environ.get('PULSE_DATA_DIR',os.path.join(BASE,'data'))
@@ -149,7 +149,7 @@ def init_db():
         try:
             register_data={}
             id_counts=collections.Counter()
-            for sheet in REGISTER_SHEETS:
+            for sheet in register_sheets(src):
                 headers,rows=src.records(sheet)
                 valid=[item for item in rows if str(
                     item['fields'].get('Customer / site') or '').strip()]
@@ -176,7 +176,7 @@ def init_db():
                         con.execute('''INSERT INTO contracts(
                             row_key,status,source_sheet,source_row,fields,fill,created_at,updated_at
                         ) VALUES (?,?,?,?,?,?,?,?)''',
-                            (key,'Active' if sheet=='Maintenance Database' else 'Expired',
+                            (key,'Expired' if sheet=='Expired' else 'Active',
                              sheet,item['row'],json.dumps(obj,ensure_ascii=False),
                              item['fill'],now(),now()))
                 for sheet in ('Weekly Values','Invoices','Quotes'):
@@ -190,7 +190,7 @@ def init_db():
                     duplicate_source_id_rows,recorded_at,note
                 ) VALUES(?,?,?,?,?,?)''',(
                     source_report['workbook_sha256'],
-                    len(register_data['Maintenance Database']),
+                    len(register_data['Maintenance Database']) + len(register_data.get('MOD', [])),
                     len(register_data['Expired']),
                     source_report['source_id_duplicates']['extra_duplicate_rows'],
                     now(),
@@ -206,7 +206,7 @@ def parse_row(row,summary=False):
     output={'id':row['id'],'row_key':row['row_key'],'status':row['status'],'source_sheet':row['source_sheet'],'fill':row['fill'],'updated_at':row['updated_at'],'revision':row['revision']}
     if not summary:output['fields']=fields
     else:
-        keys=('Customer / site','Contract number','Contract / warranty type','Invoice Code','Start date','Expiry date','Contract amount (£)','Sales region','Sales manager','Contract coordinator','Renewal status','Sage Checked and Updated','Site notes')
+        keys=('Customer / site','Contract number','Contract / warranty type','Invoice Code','Start date','Expiry date','Contract amount (£)','Sales region','Sales manager','Next action date','Next action','Renewal status','Sage Checked and Updated','Site notes')
         output['fields']={k:fields.get(k,'') for k in keys}
     return output
 
@@ -232,6 +232,7 @@ def stats():
     exp=con.execute('SELECT count(*) FROM contracts WHERE status="Expired"').fetchone()[0]
     types=collections.Counter();raw_cover_labels=collections.Counter()
     statuses=collections.Counter();sales=collections.Counter();mgrs=set();regions=set()
+    mod_records=con.execute("SELECT COUNT(*) FROM contracts WHERE status='Active' AND source_sheet='MOD'").fetchone()[0]
     for r in active:
         f=json.loads(r['fields'])
         recorded=str(f.get('Contract / warranty type') or '').strip()
@@ -250,7 +251,9 @@ def stats():
         except (ValueError,TypeError):val=0
         if mon:inv2026[mon]+=val
     con.close()
-    return {'active':len(active),'expired':exp,'types':types,
+    return {'active':len(active),'mod':mod_records,'non_mod':len(active)-mod_records,
+            'active_registers_are_workbook_rows_not_verified_live_contracts':True,
+            'expired':exp,'types':types,
             'types_are_heuristic_not_verified':True,
             'recorded_cover_labels':dict(raw_cover_labels.most_common()),
             'recorded_cover_labels_source':'Exact label saved on each current contract record',
