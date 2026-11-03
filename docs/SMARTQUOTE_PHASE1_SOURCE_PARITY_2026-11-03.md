@@ -217,6 +217,64 @@ PDFs belong in GitHub. A passing numerical parity result is **not** commercial
 tariff authorisation, and it does not enable customer quote issuance. The
 original V10 engine must be run only in a controlled disposable environment.
 
+## Updated commercial instruction — Sage is the historical price authority
+
+Pulse Fitness confirmed on 3 November 2026 that the **Sage equipment price
+list contains all item codes**, whereas the **August 2026 Master Price List
+covers current equipment**. The current operational hierarchy is therefore:
+
+- **Current code on August 2026 master:** the master List Price is the
+  primary current-equipment RRP source (as previously agreed).
+- **Code absent from that master:** use the **exact SKU's Sage Sales Price**
+  as the working RRP **for internal maintenance tariff calculations**.
+  This is not an unpriced placeholder requiring an individual manager
+  decision for every legacy SKU. The dated Sage file and source fingerprint
+  remain attached as price provenance.
+- **August duplicate/conflicting record:** stop and review the source; Sage
+  does not quietly override a conflicting master record.
+- **Item code with no unique V10 service configuration or maintenance
+  eligibility:** stop the automated quote even if Sage contains a price.
+  Source price is not equipment coverage approval.
+
+The original V10 `price_line` arithmetic is unchanged. Unified SmartQuote
+now prices exact Sage fallback SKUs internally only when the historical
+V10 product and service configuration are unambiguous, including the
+source-specific annual/unit rounding.
+
+### Price updates without overwriting master, Sage or historic quotations
+
+An authenticated **pilot Administrator** can open **SmartQuote → Administrator
+price corrections** and enter an exact item code. The system displays the
+current August/Sage source price, effective revised price and earlier local
+adjustments.
+
+An administrator can set a corrected effective equipment price with a
+reason, or revert to the source price. The update:
+- Creates a sequential revision and append-only audit event recording
+  original and updated values, actor, date/time and reason.
+- Uses optimistic concurrency; a stale browser revision returns HTTP 409.
+- Is bound to the SHA-256 of the source master or Sage snapshot inspected
+  when the correction was entered. If that source changes after a later
+  export/refresh, the prior local amendment is **not silently applied**;
+  affected internal quote lines are blocked for re-verification.
+- Changes only Contracts OS's price revision table, not the original
+  August workbook, Sage database/export, original V10 catalogue, or any
+  previously issued quotation/PDF.
+- Continues to block customer-ready quotations until maintenance policy,
+  document terms, and approval gates have been separately completed.
+
+Local prices **do not write back into Sage 200**. The administrator feature
+must run only within the authenticated pilot environment, pending
+production RBAC/SSO and release security review.
+
+Implementation:
+`app/quote_rrp_priority.py`, `app/quote_price_overrides.py`,
+`app/quote_pricing.py`, `app/static/quoting-workspace.js`.
+Fictional pricing and authorization tests:
+`tests/test_quote_rrp_priority.py`,
+`tests/test_quote_price_overrides.py`,
+`tests/test_quote_sage_reference.py`.
+
 ## Commercial source precedence confirmed — 3 November 2026
 
 Pulse Fitness's pricing instruction confirms **Full Master Price List
