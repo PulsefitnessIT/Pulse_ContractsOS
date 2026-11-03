@@ -68,6 +68,45 @@
      real-source complete parity report does **not** yet exist. CI exercises
      synthetic cases only.
 
+## Continued development — provenance and exception integrity
+
+- The reconciliation summary now counts SKU-less source rows explicitly and
+  includes them in the read-only catalogue exception worklist, retaining the
+  original one-based source-row position rather than silently omitting them.
+- The new read-only endpoint
+  `GET /api/quoting/catalogue/reconciliation/legacy-worklist` shows the
+  original crosswalk source-row position, old codes, recorded target SKU and
+  factual mapping issues **without any RRP or proposed approved price**.
+  Issues include missing/invalid old identifiers, invalid original rows,
+  missing/invalid current SKU targets, duplicate target SKUs and crosswalks
+  that point the same historical code to multiple products.
+- A historical code with one real target **and** one missing/invalid target
+  is now explicitly ambiguous: a coordinator must not auto-select the single
+  remaining candidate.
+- Missing-target counts are source **row** counts, not double-counted where
+  a row contains both `old_code` and `old_sku`. Distinct ambiguous mappings
+  and unresolved target references are reported separately.
+- The SmartQuote reconciliation UI now includes the legacy worklist and
+  missing-SKU source lines. The legacy list is read-only.
+- New private manifests pin the optional `legacy.json` and
+  `historical_catalogue_index.json` / `.json.gz` files when present.
+  The manifest script refuses ambiguous dual historical index files.
+  When source fingerprints are pinned, reconciliation and historical lookup
+  fail closed if these evidence files change, disappear, or are added without
+  a matching hash. The pricing-only preview continues to verify the three
+  original V10 pricing sources.
+- All these changes are **engineering safeguards**. They do not approve a
+  tariff or enable customer quotation issuance.
+
+### Source custodian note
+
+After the verified private legacy/history evidence is staged, IT should
+generate a **new** protected manifest rather than editing the old one or
+committing evidence files to GitHub. The original manifest creation command
+below now records optional evidence where present. When source evidence is
+changed legitimately, it must be re-verified and pinned through a new,
+recorded IT source-signoff operation; simply replacing a hash is not approval.
+
 ## How IT stages the source evidence
 
 Never copy real customer files, catalogue price lists or signed PDFs into
