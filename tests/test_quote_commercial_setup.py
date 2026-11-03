@@ -254,3 +254,81 @@ def test_zero_price_or_unresolved_equipment_still_blocks_customer_issue(tmp_path
     with pytest.raises(HTTPException) as err:
         issue.issue_customer_quotation(draft["id"],approval)
     assert err.value.status_code==409
+
+
+def test_complete_self_service_commercial_setup_issues_real_pdf_to_archive(tmp_path,monkeypatch):
+    """No environment flags needed once the Admin signs off real-source gates.
+
+    All values and terms in this test are obviously fictional.
+    """
+    db,_=_setup(tmp_path,monkeypatch)
+    settings.approve_tariff(_tariff())
+    settings.save_issuer(_issuer())
+    _upload_terms()
+    settings.set_issuance(_enable())
+    draft={
+        "id":"d"*32,"revision":1,"customer":"Fictional Active Leisure Ltd",
+        "site":"Synthetic Training Centre","tier":"Gold",
+        "term_years":1,"discount_percent":0,
+        "contract_start":"","contract_end":"",
+        "equipment":[{
+            "item_code":"SYNTHETIC-5000",
+            "description":"Synthetic pulse treadmill",
+            "quantity":2,"serial":"DEMO-SERIAL-100","cover_start":"",
+        }],
+    }
+    with db() as conn:
+        quote_drafts._init(conn)
+        conn.execute(
+            "INSERT INTO unified_quote_drafts(id,created_at,updated_at,"
+            "created_by,revision,payload_json) VALUES(?,?,?,?,?,?)",
+            (draft["id"],"2026-11-03","2026-11-03","fictional-director",
+             1,json.dumps({k:v for k,v in draft.items() if k not in ("id","revision")})),
+        )
+    def synthetic_price(record):
+        price={
+            "draft_id":draft["id"],"revision":1,
+            "complete_price":True,"priced_count":1,"line_count":1,
+            "annual_partial":225.00,"term_partial":225.00,
+            "staged":{"issues":[]},
+            "rrp_master":{"original_sha256":"d"*64,"staged_sha256":"e"*64},
+            "sage_sha256":"f"*64,
+            "lines":[{
+                "priced":True,"line":1,"item_code":"SYNTHETIC-5000",
+                "sku":"SYNTHETIC-5000","description":"Synthetic pulse treadmill",
+                "quantity":2,"rrp":3000,"annual":225,"unit_annual":112.50,
+                "minimum_annual":200.00,"source_eligibility":"Yes",
+                "rate_status":"Active","rrp_source":"august_2026_master_list_price",
+                "coverage_review":[
+                    "August 2026 source List Price used; commercial maintenance tariff approval remains separate."
+                ],
+            }],
+        }
+        return price,{"pricing":"a"*64,"catalog":"b"*64,"configs":"c"*64}
+    monkeypatch.setattr(issue,"_price",synthetic_price)
+    expiry=(dt.date.today()+dt.timedelta(days=30)).isoformat()
+    approved=issue.QuoteApproval(
+        expected_revision=1,valid_until=expiry,
+        commercial_approval_ref="FICTITIOUS-DIRECTOR-SIGNOFF",
+        confirm_customer_and_site=True,
+        confirm_equipment_and_serials=True,
+        confirm_package_price_and_discount=True,
+        confirm_maintenance_scope_and_terms=True,
+        confirm_vat_basis=True,
+    )
+    result=issue.issue_customer_quotation(draft["id"],approved)
+    assert result["issued"]
+    assert result["quote_no"].startswith("PFQ-")
+    assert result["customer_email_sent"] is False
+    downloaded=issue.download_issued_customer_quote(result["quote_no"])
+    with fitz.open(stream=downloaded.body,filetype="pdf") as doc:
+        txt=" ".join(page.get_text() for page in doc)
+        assert doc.page_count>=2
+    assert "Fictional Active Leisure Ltd" in txt
+    assert "SYNTHETIC-5000" in txt
+    assert "GBP 225.00" in txt
+    assert "SYNTHETIC PULSE MAINTENANCE TERMS" in txt
+    assert "123 Fictional Road" in txt
+    assert "DEMO-SERIAL-100" in txt
+    with sqlite3.connect(tmp_path/"commercial-approvals.db") as conn:
+        assert conn.execute("SELECT COUNT(*) FROM unified_customer_quotes").fetchone()[0]==1
