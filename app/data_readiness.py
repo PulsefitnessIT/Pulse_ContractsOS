@@ -33,6 +33,8 @@ def workbook_check(path):
         return result
     try:
         with zipfile.ZipFile(path) as archive:
+            from .excel_io import check_excel_archive_limits
+            check_excel_archive_limits(archive)
             if archive.testzip() is not None:
                 raise ValueError("Workbook ZIP integrity check failed")
             required_parts = ["xl/workbook.xml", "xl/styles.xml",
