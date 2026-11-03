@@ -159,3 +159,61 @@ def sage_reference_status():
         "review_overdue": source["review_overdue"],
         "source_file_sha256": source["source_file_sha256"],
     }
+
+
+@router.get("/sage/search")
+def search_sage_items(q: str = Query(..., min_length=2, max_length=100),
+                      limit: int = Query(20, ge=1, le=50)):
+    """Search all exact Sage inventory codes, including legacy equipment.
+
+    Sage is a price/identity source, NOT an equipment service entitlement.
+    Equipment not in the V10 catalogue needs an approved mapping before any
+    quote may use its source price and maintenance rate.
+    """
+    actor()
+    phrase = str(q).strip().casefold()
+    if len(phrase) < 2:
+        raise HTTPException(422, "Enter at least two characters.")
+    source = snapshot()
+    if source is None:
+        raise HTTPException(503, "No active Sage price list. Import the current complete export.")
+    products = []
+    for sku, item in source["prices"].items():
+        if not isinstance(item, dict):
+            continue
+        code = str(sku).casefold()
+        description = str(item.get("name") or "").casefold()
+        if code == phrase:
+            priority = 1000
+        elif code.startswith(phrase):
+            priority = 800
+        elif phrase in code:
+            priority = 600
+        elif description.startswith(phrase):
+            priority = 400
+        elif phrase in description:
+            priority = 200
+        else:
+            continue
+        price = item.get("sales_price")
+        products.append((priority, str(sku), {
+            "sku": str(sku),
+            "name": str(item.get("name") or "")[:250],
+            "model": "",
+            "group": str(item.get("group") or "")[:120],
+            "manufacturer": str(item.get("manufacturer") or "")[:120],
+            "sage_sales_price": price,
+            "source_date": source["source_date"],
+            "source": "Sage item-price reference",
+            "duplicate_sku": False,
+            "requires_service_mapping": True,
+            "pricing_approved": False,
+            "source_price_is_not_maintenance_eligibility": True,
+        }))
+    products.sort(key=lambda row: (-row[0], row[1]))
+    return {
+        "results": [item for _,__,item in products[:limit]],
+        "total": len(products),
+        "read_only": True,
+        "requires_independent_maintenance_eligibility": True,
+    }
