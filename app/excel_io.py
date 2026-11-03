@@ -22,6 +22,36 @@ SHEET_INDEX={'Home':1,'Maintenance Database':2,'Weekly Values':3,'Invoices':4,'M
 REGISTER_SHEETS=('Maintenance Database','Expired')  # Legacy eight-tab fallback
 CURRENT_REGISTER_SHEETS=('Maintenance Database','MOD','Expired')
 
+# Bounds are deliberately above the current real Maintenance Master but
+# prevent tiny uploaded ZIPs from expanding to enormous server allocations.
+MAX_WORKBOOK_ENTRIES = 1000
+MAX_WORKBOOK_UNCOMPRESSED = 512 * 1024 * 1024
+MAX_WORKBOOK_PART = 160 * 1024 * 1024
+MAX_WORKBOOK_RATIO = 2000
+
+
+def check_excel_archive_limits(archive):
+    """Validate ZIP central-directory size claims BEFORE any decompression."""
+    entries=archive.infolist()
+    if len(entries)>MAX_WORKBOOK_ENTRIES:
+        raise ValueError('Workbook contains too many archive parts')
+    total=0
+    names=set()
+    for info in entries:
+        if info.filename in names:
+            raise ValueError('Workbook contains duplicate archive paths')
+        names.add(info.filename)
+        total+=info.file_size
+        if total>MAX_WORKBOOK_UNCOMPRESSED:
+            raise ValueError('Workbook uncompressed size exceeds the safe import limit')
+        if info.file_size>MAX_WORKBOOK_PART:
+            raise ValueError('A workbook component exceeds the safe import limit')
+        if info.file_size>1024*1024 and info.file_size/max(1,info.compress_size)>MAX_WORKBOOK_RATIO:
+            raise ValueError('Workbook has an implausible compression ratio')
+        if info.flag_bits & 0x1:
+            raise ValueError('Encrypted workbooks cannot be imported')
+
+
 def register_sheets(source):
     """Only factual contract registers, never calculated Action Centre rows."""
     return CURRENT_REGISTER_SHEETS if 'MOD' in getattr(source,'sheet_parts',{}) else REGISTER_SHEETS
@@ -61,6 +91,11 @@ def excel_day(value):
 class ExcelSource:
     def __init__(self,filepath):
         self.path=filepath;self.z=zipfile.ZipFile(filepath,'r')
+        try:
+            check_excel_archive_limits(self.z)
+        except Exception:
+            self.z.close()
+            raise
         # Match worksheet *names* to OOXML relationships, not historical positions.
         # The ten-tab working Master inserts Action Centre and MOD but retains
         # the original sheet XML part IDs; sheet position is not sheet identity.
