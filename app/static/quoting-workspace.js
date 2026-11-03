@@ -34,7 +34,7 @@ async function quotingWorkspacePage() {
     '</div></form>' +
     '<h4>Equipment lines</h4>' +
     '<form id="unifiedCatalogueSearch"><label>Find a SmartQuote product (SKU, model or name) ' +
-    '<input name="q" minlength="2" maxlength="100" required placeholder="Search approved product identity"></label> ' +
+    '<input name="q" minlength="2" maxlength="100" required placeholder="Search original product identity (not approval)"></label> ' +
     '<button type="submit" class="button button-outline">Find equipment</button></form>' +
     '<div id="unifiedCatalogueResults" aria-live="polite"></div>' +
     '<div id="unifiedEquipmentTable"></div>' +
@@ -53,6 +53,10 @@ async function quotingWorkspacePage() {
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
     '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
+    '<section class="panel"><h3>Equipment Master Price List &amp; Catalogue — source reconciliation</h3>' +
+    '<p>Check current SKU duplicates, missing source RRPs, console/configuration issues and legacy mappings before quoting.</p>' +
+    '<button type="button" class="button button-outline" id="quoteSourceAuditLoad">Review source catalogue</button>' +
+    '<div id="quoteSourceAudit" aria-live="polite"></div></section>' +
     '<section class="panel"><h3>Quotation drafts</h3><div id="unifiedDraftList">Loading saved drafts…</div></section>' +
     '<section class="panel"><h3>Existing SmartQuote quotations</h3>' +
     '<div id="unifiedLegacyList">Checking the original SmartQuote source…</div>' +
@@ -69,6 +73,7 @@ async function quotingWorkspacePage() {
   document.querySelector('#unifiedDraftSave').addEventListener('click', unifiedSaveDraft);
   document.querySelector('#unifiedDraftNew').addEventListener('click', unifiedNewDraft);
   document.querySelector('#unifiedDraftPrice').addEventListener('click', unifiedPricePreview);
+  document.querySelector('#quoteSourceAuditLoad').addEventListener('click', loadQuoteSourceAudit);
   document.querySelector('#unifiedDraftForm').addEventListener('input', unifiedClearPrice);
   document.querySelector('#unifiedDraftForm').addEventListener('change', unifiedClearPrice);
   // A renewal from Action Centre may pass only a source site label and its
