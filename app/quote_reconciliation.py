@@ -234,6 +234,9 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
         reasons = set(item["issues"])
         if any(code in multi_target_codes for code in item["old_codes"]):
             reasons.add("ambiguous_legacy_mapping")
+        if any(code in legacy_unresolved_codes for code in item["old_codes"]):
+            # Flag BOTH sides of a code that has a valid AND a dangling target.
+            reasons.add("incomplete_legacy_mapping")
         if reasons:
             for reason in reasons:
                 legacy_flags[reason] += 1
