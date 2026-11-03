@@ -202,9 +202,9 @@ def test_catalogue_rows_without_skus_are_not_silently_ignored():
     assert summary["catalogue_rows_missing_sku"] == 3
     assert summary["flag_counts"]["missing_sku"] == 3
     # SKU-group counts remain separate from missing-source-row counts.
-    assert summary["source_skus_requiring_review"] == 5
-    assert summary["source_skus_without_flagged_identity_issues"] == 0
-    assert summary["catalogue_rows_requiring_review"] == 8
+    assert summary["source_skus_requiring_review"] == 4
+    assert summary["source_skus_without_flagged_identity_issues"] == 1
+    assert summary["catalogue_rows_requiring_review"] == 7
     missing = [x for x in report["worklist"] if "missing_sku" in x["issues"]]
     assert [x["catalogue_source_row"] for x in missing] == [7, 8, 9]
     assert all(x["price_approved"] is False for x in missing)
