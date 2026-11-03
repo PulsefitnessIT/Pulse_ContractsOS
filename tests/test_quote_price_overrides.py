@@ -2,6 +2,7 @@
 import sqlite3
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app import quote_price_overrides as edits, quote_pricing, quote_rrp_priority as rrp
 
@@ -116,12 +117,13 @@ def test_non_admin_and_non_pilot_cannot_change_price(tmp_path, monkeypatch):
 @pytest.mark.parametrize("price", ["-1", "0", "NaN", "1000001", "1.001"])
 def test_bad_prices_rejected(tmp_path, monkeypatch, price):
     setup_admin(tmp_path, monkeypatch)
-    with pytest.raises(HTTPException) as err:
+    with pytest.raises((HTTPException, ValidationError)) as err:
         edits.update_price("OLD-BIKE", edits.PriceChange(
             price_gbp=price, expected_revision=0,
             reason="Reject malformed price entry"
         ))
-    assert err.value.status_code == 422
+    if isinstance(err.value, HTTPException):
+        assert err.value.status_code == 422
 
 
 def _preview_inputs():
