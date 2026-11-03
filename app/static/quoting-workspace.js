@@ -263,7 +263,7 @@ async function unifiedOpenDraft(id) {
     unifiedClearPrice();
     unifiedDraftSelected = {id:draft.id, revision:draft.revision};
     document.querySelector('#unifiedDraftTitle').textContent = 'Edit quotation draft';
-    feedback.textContent = 'Loaded draft revision ' + draft.revision + '. Pricing and approval are not enabled.';
+    feedback.textContent = 'Loaded draft revision ' + draft.revision + '. Recalculate prices before generating a customer quote.';
     renderUnifiedEquipment();
     document.querySelector('#unifiedDraftPanel').scrollIntoView({behavior:'smooth',block:'start'});
   } catch(error) {
@@ -481,7 +481,8 @@ async function unifiedPricePreview() {
       '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
       '<h4>Commercial controls and exceptions</h4><ul>' +
       preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
-      '</ul><p>Customer PDF issuance, tariff approval and contract activation are disabled for this preview.</p></section>';
+      '</ul><p>The preview is not itself customer-approved. Use the quotation controls below to check release readiness and obtain manager sign-off.</p></section>';
+    if (typeof showCustomerQuotePanel === 'function' && preview.complete_price) showCustomerQuotePanel(preview);
   } catch(error) {
     const current = document.querySelector('#unifiedPricePanel');
     if (current) current.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
