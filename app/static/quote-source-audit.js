@@ -37,7 +37,11 @@ async function loadQuoteSourceAudit() {
     const flags=Object.entries(counts.flag_counts||{}).sort((a,b)=>b[1]-a[1]);
     host.innerHTML=
       '<p><strong>Pricing policy as recorded:</strong> '+esc(r.commercial_policy_as_recorded)+
-      '</p><p>These are source-file findings, not approved prices or proof of current equipment eligibility.</p>'+
+      '</p><p><strong>Source manifest:</strong> '+
+      (r.manifest_status?.matches ? 'Source fingerprints match private IT manifest.' :
+        'Not pinned / source identity not yet verified.') +
+      ' This does not constitute commercial tariff approval.</p>'+
+      '<p>These are source-file findings, not approved prices or proof of current equipment eligibility.</p>'+
       '<table class="data-table"><thead><tr><th>Catalogue evidence</th><th>Source count</th></tr></thead><tbody>'+
       rows+'</tbody></table>'+
       '<p><strong>Source fingerprints:</strong> <code>'+esc(JSON.stringify(r.source_sha256))+'</code></p>'+
