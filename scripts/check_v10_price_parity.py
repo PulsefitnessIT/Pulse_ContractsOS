@@ -14,7 +14,12 @@ import importlib
 import inspect
 import json
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
+
+if __package__:
+    from .parity_source_coverage import select_source_coverage
+else:
+    from parity_source_coverage import select_source_coverage
 from decimal import Decimal
 from pathlib import Path
 
@@ -54,8 +59,19 @@ def run(source_root: Path, maximum: int = 300) -> dict:
     # into GitHub and without changing its local database.
     if str(source_root) not in sys.path:
         sys.path.insert(0,str(source_root))
-    from app.quote_pricing import _line_price
+    from app.quote_pricing import _line_price, source_manifest_status
     from app._smartquote_price_line_v10 import original_v10_price_line
+    # A comparison against unpinned, mutable source data cannot be treated as
+    # release evidence. The manifest authenticates bytes, not tariff approval.
+    fingerprints={
+        name:hashlib.sha256(path.read_bytes()).hexdigest()
+        for name,path in zip(("catalog","configs","pricing"),sources)
+    }
+    manifest=source_manifest_status(fingerprints)
+    if not manifest.get("pinned") or not manifest.get("matches"):
+        raise RuntimeError(
+            "Pin and verify the exact private original V10 source files before parity testing."
+        )
     original=importlib.import_module("engine")
     if Path(original.__file__).resolve() != (source_root/"engine.py").resolve():
         raise RuntimeError("Refusing to compare a cached or wrong V10 engine.")
@@ -65,66 +81,7 @@ def run(source_root: Path, maximum: int = 300) -> dict:
     pricing=json.loads(sources[2].read_text(encoding="utf-8"))
     if not all((isinstance(catalog,list),isinstance(configs,list),isinstance(pricing,dict))):
         raise RuntimeError("Original pricing source shape does not match V10.")
-    config_by_key=defaultdict(list)
-    for row in configs:
-        if isinstance(row,dict):
-            config_by_key[str(row.get("key") or "").strip().upper()].append(row)
-    sku_by_code=defaultdict(list)
-    for row in catalog:
-        if isinstance(row,dict) and row.get("sku"):
-            sku_by_code[str(row["sku"]).strip().upper()].append(row)
-    active_rates={
-        str(r.get("group")) for r in pricing.get("rates",[])
-        if isinstance(r,dict) and r.get("status")=="Active"
-    }
-    source_consoles={
-        str(r.get("name")) for r in pricing.get("console_rules",[])
-        if isinstance(r,dict)
-    }
-
-    eligible=[]
-    excluded=Counter()
-    for code,rows in sorted(sku_by_code.items()):
-        if len(rows)!=1:
-            excluded["duplicate_source_sku"]+=1
-            continue
-        p=rows[0]
-        config_key=str(p.get("service_key") or "").strip().upper()
-        matches=config_by_key.get(config_key,[])
-        if len(matches)!=1:
-            excluded["missing_or_ambiguous_config"]+=1
-            continue
-        c=matches[0]
-        if c.get("eligible")!="Yes" or p.get("coverage_override")=="Not eligible" or p.get("match")=="Price list only - review":
-            excluded["coverage_needs_approval"]+=1
-            continue
-        group=str(p.get("rate_group_override") or c.get("rate_group") or "")
-        if group not in active_rates:
-            excluded["rate_needs_approval"]+=1
-            continue
-        if p.get("console") not in source_consoles:
-            excluded["console_unverified"]+=1
-            continue
-        if type(p.get("rrp")) not in (int,float) or not 0 < float(p["rrp"]) <= 1e8:
-            excluded["rrp_missing_or_invalid"]+=1
-            continue
-        eligible.append((code,p,c,group,str(p.get("console") or "")))
-    # Round-robin across (rate group, console variant) to avoid sampling only
-    # the alphabetically first family of machines.
-    groups=defaultdict(list)
-    for item in eligible:
-        groups[(item[3],item[4])].append(item)
-    samples=[]
-    while len(samples)<maximum:
-        added=False
-        for group in sorted(groups):
-            if groups[group]:
-                samples.append(groups[group].pop(0))
-                added=True
-                if len(samples)>=maximum:
-                    break
-        if not added:
-            break
+    samples, coverage=select_source_coverage(catalog,configs,pricing,maximum)
 
     compared=0
     failures=Counter()
@@ -160,13 +117,9 @@ def run(source_root: Path, maximum: int = 300) -> dict:
                     compared+=1
     return {
         "original_engine_source_verified":True,
-        "authentic_source_sha256":{
-            name:hashlib.sha256(path.read_bytes()).hexdigest()
-            for name,path in zip(("catalog","configs","pricing"),sources)
-        },
-        "source_sku_groups":len(sku_by_code),
-        "source_skus_eligible_for_parity_sampling":len(eligible),
-        "skipped_source_sku_groups_by_reason":dict(excluded),
+        "authentic_source_sha256":fingerprints,
+        "private_source_manifest_verified":True,
+        **coverage,
         "sourced_skus_sampled":len(samples),
         "rate_groups_covered":sorted(covered_groups),
         "console_variants_covered":len(covered_consoles),
@@ -174,9 +127,21 @@ def run(source_root: Path, maximum: int = 300) -> dict:
         "calculations_expected":len(samples)*27,
         "blockers":dict(failures),
         "sample_blockers_without_customer_or_sku_data":exceptional,
-        "pass":bool(samples) and compared==len(samples)*27 and not failures,
+        "numeric_comparisons_match":bool(samples) and compared==len(samples)*27 and not failures,
+        "pass":(
+            bool(samples) and compared==len(samples)*27 and not failures
+            and coverage["all_eligible_rate_console_families_sampled"]
+            and not coverage["source_rule_identity_conflicts"]
+            and coverage["source_catalogue_rows_missing_sku"]==0
+        ),
         "tariff_commercially_approved":False,
-        "note":"Strict source numeric parity only. Tariff/RRP approval and full quoting release are separate.",
+        "customer_quote_issue_enabled":False,
+        "note":(
+            "Numeric parity checks only verified eligible sampled source SKUs. "
+            "Excluded source identities still require separate reconciliation. "
+            "Commercial approval, full source completeness, and customer quote "
+            "issuance are separate gates."
+        ),
     }
 
 
