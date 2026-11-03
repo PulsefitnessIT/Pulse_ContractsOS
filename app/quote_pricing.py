@@ -47,6 +47,44 @@ def _load_file(path: Path, maximum: int):
         raise HTTPException(503, "A required SmartQuote pricing source is missing or invalid.") from exc
 
 
+def source_manifest_status(proofs):
+    """Verify immutable V10 source fingerprints against a private IT manifest.
+
+    This proves file identity only. It never asserts RRP/tariff approval.
+    """
+    raw_path = os.environ.get("PULSE_SMARTQUOTE_SOURCE_MANIFEST", "").strip()
+    if not raw_path:
+        return {
+            "pinned": False, "matches": False,
+            "message": "Source fingerprints are not pinned to an IT-reviewed manifest.",
+            "commercially_approved": False,
+        }
+    path = Path(raw_path).expanduser().resolve()
+    try:
+        if path.suffix.lower() != ".json" or not path.is_file() or not 2 <= path.stat().st_size <= 16384:
+            raise ValueError("Missing or oversized source manifest")
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or not isinstance(manifest.get("sha256"), dict):
+            raise ValueError("Expected a SHA-256 manifest")
+        hashes = manifest["sha256"]
+        for name in SOURCE_FILES:
+            expected = hashes.get(name)
+            if (not isinstance(expected, str) or len(expected) != 64 or
+                any(c not in "0123456789abcdef" for c in expected.lower())
+                or expected.lower() != proofs[name]):
+                raise ValueError("Source fingerprint does not match the pinned manifest")
+        return {
+            "pinned": True, "matches": True,
+            "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "effective_date_as_recorded": str(manifest.get("effective_date") or "")[:32],
+            "owner_as_recorded": str(manifest.get("owner") or "")[:120],
+            "commercially_approved": False,
+            "message": "Pricing source files match the privately pinned manifest; tariff approval is separate.",
+        }
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(503, "Staged SmartQuote pricing data does not match its required source manifest.") from exc
+
+
 @lru_cache(maxsize=2)
 def _parse_source(source_fingerprint, contents):
     # The cached source and fingerprint are deployment-controlled, never user input.
@@ -71,6 +109,7 @@ def source_snapshot():
         files[kind] = path
         contents.append(data)
         proofs.append(hashlib.sha256(data).hexdigest())
+    source_manifest_status(dict(zip(SOURCE_FILES, proofs)))
     catalog, configs, pricing = _parse_source(tuple(proofs), tuple(contents))
     if not isinstance(catalog, list) or len(catalog) > 30000 or not isinstance(configs, list):
         raise HTTPException(503, "Unexpected SmartQuote V10 catalogue format.")
@@ -277,6 +316,7 @@ def preview(draft, catalog, configs, pricing, hashes):
         "source_pricing_status": source_status,
         "source_snapshot": pricing.get("source_snapshot"),
         "source_sha256": hashes,
+        "source_manifest": source_manifest_status(hashes),
         "commercially_approved": False,
         "issue_quote_enabled": False,
         "contract_setup_enabled": False,
