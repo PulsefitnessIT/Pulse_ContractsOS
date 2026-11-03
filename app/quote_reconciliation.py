@@ -20,7 +20,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from .pilot_access import actor, current_role
-from .quote_pricing import source_snapshot, _positive_number
+from .quote_pricing import source_snapshot, _positive_number, source_manifest_status
 
 router = APIRouter(prefix="/api/quoting/catalogue", tags=["V10 equipment reconciliation"])
 
@@ -228,6 +228,7 @@ def reconciliation_status():
     return {
         "summary": r["summary"],
         "source_sha256": r["source_sha256"],
+        "manifest_status": source_manifest_status(r["source_sha256"]),
         "source_snapshot": r["source_snapshot"],
         "commercial_policy_as_recorded": r["commercial_policy_as_recorded"],
         "all_counts_source_derived": True,
