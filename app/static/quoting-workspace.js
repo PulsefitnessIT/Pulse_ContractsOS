@@ -5,6 +5,7 @@ let unifiedEquipment = [];
 let unifiedDraftRecords = [];
 let unifiedCatalogueMatches = [];
 let unifiedSiteMatches = [];
+let quotePriceEditorSelection = null;
 
 async function quotingWorkspacePage() {
   unifiedDraftSelected = null;
@@ -54,11 +55,20 @@ async function quotingWorkspacePage() {
     '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
     '<section class="panel"><h3>Equipment RRP source priority</h3>' +
-    '<p>The 24 August 2026 Master List Price is the primary source. ' +
-    'Only product codes absent from that master are referred to the Sage Sales Price list. ' +
-    'Sage fallback figures require manager confirmation before use as RRP.</p>' +
+    '<p>August 2026 List Price covers current equipment. ' +
+    'For exact codes absent from that master, the Sage price is the working pricing basis. ' +
+    'Pricing administrators can make audited corrections without altering the source files.</p>' +
     '<button type="button" class="button button-outline" id="rrpPriorityStatusLoad">Check source coverage</button>' +
     '<div id="rrpPriorityStatus" aria-live="polite"></div></section>' +
+    '<section class="panel" id="quoteAdminPricePanel" hidden>' +
+    '<h3>Administrator price corrections</h3>' +
+    '<p>Edit the effective equipment price for an exact item code. ' +
+    'All changes require a reason, keep their history and never update Sage or the original master directly. ' +
+    'New Sage/master snapshots require the amended price to be rechecked.</p>' +
+    '<form id="quotePriceLookupForm"><label>Exact equipment code ' +
+    '<input name="sku" required maxlength="100" placeholder="Enter item code"></label> ' +
+    '<button class="button button-outline" type="submit">Load price</button></form>' +
+    '<div id="quotePriceEditorDetail" aria-live="polite"></div></section>' +
     '<section class="panel"><h3>Equipment Master Price List &amp; Catalogue — source reconciliation</h3>' +
     '<p>Check current SKU duplicates, missing source RRPs, console/configuration issues and legacy mappings before quoting.</p>' +
     '<button type="button" class="button button-outline" id="quoteSourceAuditLoad">Review source catalogue</button>' +
@@ -81,6 +91,8 @@ async function quotingWorkspacePage() {
   document.querySelector('#unifiedDraftPrice').addEventListener('click', unifiedPricePreview);
   document.querySelector('#quoteSourceAuditLoad').addEventListener('click', loadQuoteSourceAudit);
   document.querySelector('#rrpPriorityStatusLoad').addEventListener('click', loadRrpPriorityStatus);
+  document.querySelector('#quotePriceLookupForm').addEventListener('submit', quotePriceLookup);
+  showQuotePriceEditorIfAdmin().catch(()=>{});
   document.querySelector('#unifiedDraftForm').addEventListener('input', unifiedClearPrice);
   document.querySelector('#unifiedDraftForm').addEventListener('change', unifiedClearPrice);
   // A renewal from Action Centre may pass only a source site label and its
@@ -439,7 +451,7 @@ async function unifiedPricePreview() {
       (line.priced ? money(line.unit_annual) : '—') + '</td><td>' +
       (line.priced ? money(line.annual) : 'Not priced') + '</td><td>' +
       (line.sage_reference ? money(line.sage_reference.sage_sales_price) +
-        ' · Sales Price only · ' + esc(line.sage_reference.source_date) +
+        ' · Sage source · ' + esc(line.sage_reference.source_date) +
         (line.sage_reference.review_overdue ? ' · Review overdue' : '') : '—') +
       '</td><td>' + esc(line.exception || (line.coverage_review || []).join('; ') || 'Review commercial terms') +
       '</td></tr>').join('');
@@ -460,7 +472,7 @@ async function unifiedPricePreview() {
         preview.staged.stages.map(stage => '<tr><td>' + esc(stage.start) + '</td><td>' + esc(stage.count) + '</td><td>' + money(stage.amount) + '</td></tr>').join('') +
         '</tbody></table></div>' : '') +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>Line</th><th>SKU</th><th>Qty</th><th>August List Price</th><th>RRP source/status</th><th>Annual/unit</th><th>Annual/line</th><th>Sage reference (not RRP)</th><th>Review</th>' +
+      '<th>Line</th><th>SKU</th><th>Qty</th><th>Equipment RRP</th><th>RRP source/status</th><th>Annual/unit</th><th>Annual/line</th><th>Sage source price</th><th>Review</th>' +
       '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
       '<h4>Commercial controls and exceptions</h4><ul>' +
       preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
@@ -542,9 +554,125 @@ async function loadRrpPriorityStatus() {
       '<th>Source coverage</th><th>SKUs / rows</th></tr></thead><tbody>'+
       rows+'</tbody></table></div>'+
       '<p class="fine-print">The source precedence is confirmed. '+
-      'Neither Sage Sales Price nor the V10 tariff is commercially approved for customer issue by this report.</p>';
+      'Sage prices may calculate internal previews for legacy equipment. '+
+      'Maintenance tariffs and customer quotation issuance are still separate release gates.</p>';
   } catch(error) {
     host.textContent='Source coverage unavailable: '+error.message+
       '. Stage and pin the original August 2026 source before relying on RRP prices.';
+  }
+}
+
+async function showQuotePriceEditorIfAdmin() {
+  const session=await api('/api/pilot/me');
+  const panel=document.querySelector('#quoteAdminPricePanel');
+  if(panel && view==='quoting' && session?.pilot && session.role==='Admin') {
+    panel.hidden=false;
+  }
+}
+
+async function quotePriceLookup(event) {
+  event.preventDefault();
+  const code=String(new FormData(event.currentTarget).get('sku')||'').trim().toUpperCase();
+  const host=document.querySelector('#quotePriceEditorDetail');
+  if(!host||!code)return;
+  host.textContent='Checking current source price and audit history…';
+  quotePriceEditorSelection=null;
+  try {
+    const record=await api('/api/quoting/prices/'+encodeURIComponent(code));
+    if(view!=='quoting'||!document.querySelector('#quotePriceEditorDetail'))return;
+    quotePriceEditorSelection=record;
+    renderQuotePriceEditor(record);
+  } catch(error) {host.textContent=error.message;}
+}
+
+function renderQuotePriceEditor(record) {
+  const host=document.querySelector('#quotePriceEditorDetail');
+  if(!host)return;
+  const history=(record.history||[]).map(event=>
+    '<tr><td>'+esc(event.at)+'</td><td>'+esc(event.actor)+
+    '</td><td>'+esc(event.action)+'</td><td>'+esc(
+      event.before_gbp===null?'—':money(event.before_gbp))+'</td><td>'+
+    esc(event.after_gbp===null?'—':money(event.after_gbp))+
+    '</td><td>'+esc(event.reason)+'</td></tr>').join('');
+  host.innerHTML=
+    '<p><strong>'+esc(record.sku)+'</strong> · Source: '+esc(record.source_kind)+
+    ' · Original: '+money(record.source_price_gbp)+
+    ' · Current effective price: '+money(record.effective_price_gbp)+
+    ' · Revision '+esc(record.revision)+
+    (record.override_status==='source_changed_review_required'?
+      ' · Source changed: reassess this amendment before quoting':'')+'</p>'+
+    '<form id="quotePriceChangeForm"><div class="form-grid">'+
+    '<label>New equipment price (£) <input name="price_gbp" type="number" '+
+      'min="0.01" max="1000000" step="0.01" required value="'+
+      esc(record.effective_price_gbp??record.source_price_gbp) +'"></label>'+
+    '<label>Change reason <input name="reason" minlength="12" maxlength="500" required '+
+      'placeholder="Why has the equipment price changed?"></label>'+
+    '</div><button class="button button-primary" type="submit">Save price revision</button>'+
+    (record.override_active?
+      ' <button class="button button-outline" id="quotePriceRevert" type="button">Revert to source price</button>':'')+
+    '</form><p class="fine-print">This is a local Contracts OS price revision only. '+
+    'The Sage export, August master and existing issued quotations remain unchanged.</p>'+
+    '<p id="quotePriceEditFeedback" role="status"></p>'+
+    '<h4>Price amendment history</h4><div style="overflow-x:auto"><table class="data-table">'+
+    '<thead><tr><th>Date</th><th>Admin</th><th>Action</th><th>Old price</th>'+
+    '<th>New price</th><th>Reason</th></tr></thead><tbody>'+
+    (history||'<tr><td colspan="6">No local amendments recorded.</td></tr>')+
+    '</tbody></table></div>';
+  host.querySelector('#quotePriceChangeForm').addEventListener('submit', quoteSavePriceRevision);
+  const revert=host.querySelector('#quotePriceRevert');
+  if(revert)revert.addEventListener('click', quoteRevertPriceRevision);
+}
+
+async function quoteSavePriceRevision(event) {
+  event.preventDefault();
+  const record=quotePriceEditorSelection;
+  if(!record)return;
+  const form=event.currentTarget;
+  if(!form.reportValidity())return;
+  const input=Object.fromEntries(new FormData(form).entries());
+  const feedback=document.querySelector('#quotePriceEditFeedback');
+  if(feedback)feedback.textContent='Recording price revision…';
+  try {
+    await api('/api/quoting/prices/'+encodeURIComponent(record.sku), {
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        price_gbp:input.price_gbp,
+        reason:input.reason,expected_revision:record.revision
+      })
+    });
+    const fresh=await api('/api/quoting/prices/'+encodeURIComponent(record.sku));
+    quotePriceEditorSelection=fresh;
+    renderQuotePriceEditor(fresh);
+    unifiedClearPrice();
+    const current=document.querySelector('#quotePriceEditFeedback');
+    if(current)current.textContent='Saved. Existing quote drafts must be repriced before use.';
+  } catch(error) {
+    if(feedback)feedback.textContent=error.message;
+  }
+}
+
+async function quoteRevertPriceRevision() {
+  const record=quotePriceEditorSelection;
+  if(!record)return;
+  const form=document.querySelector('#quotePriceChangeForm');
+  const reason=String(form?.elements.reason.value||'').trim();
+  const feedback=document.querySelector('#quotePriceEditFeedback');
+  if(reason.length<12) {
+    if(feedback)feedback.textContent='Enter a reason (at least 12 characters) before reverting.';
+    return;
+  }
+  try {
+    await api('/api/quoting/prices/'+encodeURIComponent(record.sku)+'/revert',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({expected_revision:record.revision,reason})
+    });
+    const fresh=await api('/api/quoting/prices/'+encodeURIComponent(record.sku));
+    quotePriceEditorSelection=fresh;
+    renderQuotePriceEditor(fresh);
+    unifiedClearPrice();
+    const current=document.querySelector('#quotePriceEditFeedback');
+    if(current)current.textContent='Price reverted to the current source. Audit history retained.';
+  } catch(error) {
+    if(feedback)feedback.textContent=error.message;
   }
 }
