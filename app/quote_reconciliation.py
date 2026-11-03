@@ -292,3 +292,66 @@ def resolve_legacy(code: str = Query(..., min_length=2, max_length=100)):
         "rrp_not_inferred_from_historical_code": True,
         "approved_price": None,
     }
+
+
+@router.get("/historical/search")
+def historical_search(q: str = Query(..., min_length=2, max_length=100),
+                      limit: int = Query(15, ge=1, le=50)):
+    """Search authentic 2020–2026 historical identity without supplying prices."""
+    actor()
+    key = _code(q)
+    if len(key) < 2:
+        raise HTTPException(422, "Enter at least two characters.")
+    history, sha = _private_optional_source("historical_identity")
+    if history is None:
+        raise HTTPException(
+            503, "The protected original V10 historical identity index has not been staged."
+        )
+    records = history.get("records", {})
+    aliases = history.get("aliases", {})
+    matched = []
+    alias_targets = aliases.get(key, [])
+    if not isinstance(alias_targets, list):
+        alias_targets = []
+    selected_aliases = set(str(x).strip().upper() for x in alias_targets)
+    for code, item in records.items():
+        if not isinstance(item, dict):
+            continue
+        sku = _code(code)
+        model = _code(item.get("model"))
+        name = str(item.get("name") or "")
+        if sku == key:
+            score = 1000
+        elif sku in selected_aliases:
+            score = 900
+        elif model == key:
+            score = 800
+        elif sku.startswith(key):
+            score = 700
+        elif key in sku or key in model:
+            score = 500
+        elif key.casefold() in name.casefold():
+            score = 200
+        else:
+            continue
+        matched.append((score,sku,{
+            "historical_sku":sku[:100],
+            "model":str(item.get("model") or "")[:120],
+            "name":name[:250],
+            "console":str(item.get("console") or "")[:150],
+            "year_as_recorded":str(item.get("year") or "")[:30],
+            "source_as_recorded":str(item.get("source") or "")[:150],
+            "status_as_recorded":str(item.get("status") or "")[:80],
+            "historical_identity_only":True,
+            "current_rrp":None,
+            "approved_replacement_sku":None,
+        }))
+    matched.sort(key=lambda x:(-x[0],x[1]))
+    return {
+        "query":key, "total":len(matched),
+        "results":[x[2] for x in matched[:limit]],
+        "source_sha256":sha,
+        "contains_price_information":False,
+        "ambiguous_or_multiple_variants":len(matched)>1,
+        "cannot_auto_select_for_current_pricing":True,
+    }
