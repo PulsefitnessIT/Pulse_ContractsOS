@@ -125,6 +125,27 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
                 sku_rows[code].append(product)
     buckets = Counter()
     worklist = []
+    # Rows without an SKU must be visible to reviewers. Previously these
+    # silently fell out of sku_rows and could make reconciliation look clean.
+    # Report their original one-based catalogue position, without a price.
+    missing_sku_rows = [
+        position for position, product in enumerate(catalog, start=1)
+        if not isinstance(product, dict) or not _code(product.get("sku"))
+    ]
+    for position in missing_sku_rows:
+        buckets["missing_sku"] += 1
+        worklist.append({
+            "sku": "",
+            "catalogue_source_row": position,
+            "model": "",
+            "description": "",
+            "console": "",
+            "source_rows": 1,
+            "issues": ["missing_sku"],
+            "price_approved": False,
+            "verified_master_rrp": False,
+            "source": "Exact staged V10 product catalogue",
+        })
     for code, rows in sorted(sku_rows.items()):
         reasons = []
         if len(rows) > 1:
@@ -177,12 +198,14 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
     summary = {
         "catalogue_source_rows": len(catalog),
         "catalogue_rows_with_sku": sum(map(len,sku_rows.values())),
+        "catalogue_rows_missing_sku": len(missing_sku_rows),
         "distinct_skus": len(sku_rows),
         "unique_skus": sum(len(rows)==1 for rows in sku_rows.values()),
         "duplicate_sku_groups": sum(len(rows)>1 for rows in sku_rows.values()),
         "excess_duplicate_rows": sum(max(0,len(rows)-1) for rows in sku_rows.values()),
-        "source_skus_requiring_review": len(worklist),
-        "source_skus_without_flagged_identity_issues": len(sku_rows)-len(worklist),
+        "source_skus_requiring_review": len(worklist)-len(missing_sku_rows),
+        "source_skus_without_flagged_identity_issues": len(sku_rows)-(len(worklist)-len(missing_sku_rows)),
+        "catalogue_rows_requiring_review": len(worklist),
         "flag_counts": dict(sorted(buckets.items())),
         "legacy_source_rows": len(legacy) if legacy is not None else None,
         "legacy_codes_mapped": len(legacy_keys) if legacy is not None else None,
