@@ -107,6 +107,31 @@ below now records optional evidence where present. When source evidence is
 changed legitimately, it must be re-verified and pinned through a new,
 recorded IT source-signoff operation; simply replacing a hash is not approval.
 
+## Next development slice — tariff identity conflicts and traceable source rows
+
+- The private reconciliation pass now records the original one-based catalogue
+  source-row positions for every SKU group (including duplicate current SKUs).
+  Coordinators can locate conflicting source rows without any exposed RRP.
+- Duplicate V10 maintenance `rates[].group` entries and duplicate
+  `console_rules[].name` entries are no longer silently accepted by the
+  unified pricing preview. For an affected exact SKU, pricing fails closed
+  with a source-conflict message. The verbatim original V10 arithmetic
+  function is unchanged.
+- Source-only `GET /api/quoting/catalogue/reconciliation/policy-worklist`
+  returns rule identity, source-section and source-row coordinates for
+  duplicate or incomplete original tariff/console identity rows. No rates,
+  RRPs, percentages or prices are returned. The SmartQuote reconciliation
+  screen displays this separate read-only worklist.
+- `GET /api/quoting/catalogue/reconciliation` now includes
+  `policy_rule_rows_requiring_review`, `policy_flag_counts` and
+  `pricing_policy_source_rows` derived from the staged source evidence.
+- These identity checks are distinct from commercial rate approval:
+  the absence of a duplicate is **not** authorisation to quote.
+- This round uses synthetic regression tests for duplicate pricing-policy
+  rows, missing rule names, console conflicts and original source coordinates.
+  No real price-master reconciliation, approved tariff or production migration
+  is asserted.
+
 ## How IT stages the source evidence
 
 Never copy real customer files, catalogue price lists or signed PDFs into
