@@ -206,6 +206,17 @@ def _public_origin_is_allowed(headers):
         return False
 
 
+def _sensitive_download_requires_staff(path,method):
+    """Prevent read-only viewers bulk-exporting files and source documents."""
+    if method not in ('GET','HEAD'):return False
+    return (path.startswith('/api/export/') or
+            path.startswith('/api/pilot/data-quality/') or
+            path.endswith(('.csv','.xlsx','.zip','.pdf')) or
+            path.endswith('/download') or
+            path.endswith('/source') or
+            path.endswith('/signed-agreement'))
+
+
 def _administrator_only(path,method):
     if method in ('GET','HEAD','OPTIONS'):return False
     return (path.startswith('/api/admin/') or
@@ -250,6 +261,8 @@ async def pilot_middleware(request:Request,call_next):
         if path.startswith('/api/'):
             return JSONResponse({'detail':'Sign in to the independent Contracts pilot'},status_code=401)
         return RedirectResponse('/pilot/login',status_code=303)
+    if path.startswith('/api/') and session['role']=='Viewer' and _sensitive_download_requires_staff(path,request.method):
+        return JSONResponse({'detail':'Document exports require a staff account'},status_code=403)
     if unsafe and path.startswith('/api/'):
         # Viewers can sign out, but cannot change any contract, quote or file.
         if session['role']=='Viewer' and path!='/api/pilot/logout':
