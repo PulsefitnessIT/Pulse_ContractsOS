@@ -1,0 +1,158 @@
+"""Canonical SmartQuote identity and provenance checks with fictional machines."""
+import gzip
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+from fastapi import HTTPException
+
+from app import quote_reconciliation
+
+
+def synthetic_sources():
+    products=[
+        {"sku":"EXAMPLE-001","name":"Fictional Bike","model":"EX-1",
+         "console":"No Console / N/A","rrp":2000,
+         "match":"Mapped","service_key":"EX-1 | No Console"},
+        {"sku":"EXAMPLE-002","name":"Fictional no RRP","model":"EX-2",
+         "console":"No Console / N/A","rrp":None,
+         "match":"Mapped","service_key":"EX-1 | No Console"},
+        {"sku":"EXAMPLE-TEXT","name":"Text RRP","model":"EX-3",
+         "console":"Unknown","rrp":"5000","service_key":"EX-1 | No Console"},
+        {"sku":"EXAMPLE-DUP","name":"First variant","rrp":1000,
+         "service_key":"EX-1 | No Console"},
+        {"sku":"EXAMPLE-DUP","name":"Second variant","rrp":1200,
+         "service_key":"EX-1 | No Console"},
+        {"sku":"EXAMPLE-STAIR","name":"Step mill","model":"ST",
+         "rrp":5000,"console":"No Console / N/A",
+         "service_key":"ST | No Console"},
+    ]
+    configs=[
+        {"key":"EX-1 | No Console", "rate_group":"Standard Equipment",
+         "eligible":"Yes"},
+        {"key":"ST | No Console", "rate_group":"Stepmill",
+         "eligible":"Review"},
+    ]
+    pricing={
+        "source_snapshot":"2026-10-15",
+        "pricing_status":"Provisional; not approved",
+        "rates":[
+            {"group":"Standard Equipment","standard":.03,
+             "minimum":.025,"status":"Active"},
+            {"group":"Stepmill","standard":.038,"minimum":.038,
+             "status":"Review"},
+        ],
+        "console_rules":[{"name":"No Console / N/A","multiplier":1,"uplift":0}],
+        "tiers":{"Silver":.8,"Gold":1,"Platinum":1.3},
+    }
+    legacy=[
+        {"old_code":"LEGACY-EX","old_sku":"LEGACY-EX",
+         "new_sku":"EXAMPLE-001"},
+        {"old_code":"LEGACY-MULTI","old_sku":"",
+         "new_sku":"EXAMPLE-001"},
+        {"old_code":"LEGACY-MULTI","old_sku":"",
+         "new_sku":"EXAMPLE-002"},
+        {"old_code":"LEGACY-MISSING","old_sku":"",
+         "new_sku":"NOT-IN-SOURCE"},
+        {"old_code":"","old_sku":"6","new_sku":"EXAMPLE-001"},
+    ]
+    history={"records":{"OLD-EXAMPLE":{"model":"EX-1"}},"aliases":{}}
+    return products,configs,pricing,legacy,history
+
+
+def build():
+    p,c,r,l,h=synthetic_sources()
+    return quote_reconciliation.reconcile(
+        p,c,r,{"catalog":"a"*64,"configs":"b"*64,"pricing":"c"*64},
+        legacy=l,legacy_sha="d"*64,history=h,history_sha="e"*64
+    )
+
+
+def test_counts_are_source_factual_and_do_not_claim_approval():
+    result=build()
+    summary=result["summary"]
+    assert summary["catalogue_source_rows"]==6
+    assert summary["distinct_skus"]==5
+    assert summary["unique_skus"]==4
+    assert summary["duplicate_sku_groups"]==1
+    assert summary["excess_duplicate_rows"]==1
+    assert summary["flag_counts"]["missing_or_invalid_current_rrp"]==2
+    assert summary["flag_counts"]["source_rate_requires_review"]==1
+    assert summary["historical_source_variants"]==1
+    assert summary["legacy_source_rows"]==5
+    assert summary["legacy_codes_mapped"]==2
+    assert summary["ambiguous_legacy_codes"]==1
+    assert summary["legacy_missing_target_mappings"]==1
+    assert result["commercially_approved"] is False
+    assert result["customer_quote_issue_enabled"] is False
+
+
+def test_matching_does_not_auto_promote_duplicate_or_legacy_records():
+    result=build()
+    assert len(result["sku_rows"]["EXAMPLE-DUP"])==2
+    found=next(x for x in result["worklist"] if x["sku"]=="EXAMPLE-DUP")
+    assert found["issues"].count("duplicate_sku")==1
+    assert found["verified_master_rrp"] is False
+    assert "LEGACY-MULTI" in result["legacy_ambiguous"]
+    assert "LEGACY-EX" not in result["legacy_ambiguous"]
+
+
+def test_missing_unstaged_history_is_not_misrepresented_as_empty_complete():
+    p,c,r,_,_=synthetic_sources()
+    result=quote_reconciliation.reconcile(
+        p,c,r,{"catalog":"fictional"},legacy=None,history=None
+    )
+    assert result["summary"]["legacy_source_rows"] is None
+    assert result["summary"]["historical_source_variants"] is None
+    assert result["summary"]["historical_source_staged"] is False
+
+
+def test_private_sources_are_hash_verified_not_written_to_repository(tmp_path,monkeypatch):
+    _,_,_,legacy,history=synthetic_sources()
+    p=tmp_path/"private_legacy.json"
+    p.write_text(json.dumps(legacy),encoding="utf-8")
+    h=tmp_path/"private_historical.json.gz"
+    h.write_bytes(gzip.compress(json.dumps(history).encode("utf-8")))
+    monkeypatch.setenv("PULSE_SMARTQUOTE_LEGACY_JSON",str(p))
+    monkeypatch.setenv("PULSE_SMARTQUOTE_HISTORICAL_INDEX",str(h))
+    raw,checksum=quote_reconciliation._private_optional_source("legacy_crosswalk")
+    previous,older=quote_reconciliation._private_optional_source("historical_identity")
+    assert raw==legacy and previous==history
+    assert checksum==hashlib.sha256(p.read_bytes()).hexdigest()
+    assert older==hashlib.sha256(h.read_bytes()).hexdigest()
+
+
+def test_corrupt_optional_history_fails_closed(tmp_path,monkeypatch):
+    p=tmp_path/"invalid.gz"
+    p.write_bytes(b"not compressed")
+    monkeypatch.setenv("PULSE_SMARTQUOTE_HISTORICAL_INDEX",str(p))
+    with pytest.raises(HTTPException) as err:
+        quote_reconciliation._private_optional_source("historical_identity")
+    assert err.value.status_code==503
+
+
+def test_legacy_lookup_never_returns_replacement_rrp(monkeypatch):
+    monkeypatch.setattr(quote_reconciliation,"actor",lambda: "fictional-staff")
+    monkeypatch.setattr(quote_reconciliation,"source_report",build)
+    result=quote_reconciliation.resolve_legacy("legacy-multi")
+    assert result["match_count"]==2
+    assert result["ambiguous"] is True
+    assert result["approved_price"] is None
+    assert all("rrp" not in x for x in result["candidates"])
+    clear=quote_reconciliation.resolve_legacy("legacy-ex")
+    assert clear["match_count"]==1
+    assert clear["ambiguous"] is False
+    assert clear["requires_explicit_staff_match_confirmation"] is True
+
+
+def test_reconciliation_worklist_is_read_only(monkeypatch):
+    monkeypatch.setattr(quote_reconciliation,"actor",lambda: "fictional-staff")
+    monkeypatch.setattr(quote_reconciliation,"source_report",build)
+    results=quote_reconciliation.reconciliation_worklist(
+        q="example",issue="duplicate_sku",limit=30,offset=0
+    )
+    assert results["total"]==1
+    assert results["items"][0]["sku"]=="EXAMPLE-DUP"
+    assert results["price_approved"] is False
+    assert not any("rrp" in p for p in results["items"][0] if p != "verified_master_rrp")
