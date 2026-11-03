@@ -65,6 +65,7 @@ def _private_optional_source(kind):
         if kind == "historical_identity" and (
             not isinstance(payload, dict) or not isinstance(payload.get("records"), dict)
             or len(payload["records"]) > 150000
+            or not isinstance(payload.get("aliases", {}), dict)
         ):
             raise ValueError("Unexpected original historical identity index.")
         return payload, digest
