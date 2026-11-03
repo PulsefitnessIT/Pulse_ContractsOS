@@ -52,7 +52,18 @@ def build_readiness(report, manifest_status):
         isinstance(count[name], int) and count[name] == 0
         for name in issue_groups
     )
-    ready = bool(staged and pinned and no_open_issues)
+    core_policy_rows = summary.get("pricing_policy_source_rows") or {}
+    nonempty = bool(
+        all(isinstance(count.get(name), int) and count[name] > 0 for name in (
+            "catalogue_source_rows", "distinct_skus", "legacy_source_rows",
+            "historical_source_variants",
+        ))
+        and isinstance(core_policy_rows, dict)
+        and all(isinstance(core_policy_rows.get(name), int)
+                and core_policy_rows[name] > 0
+                for name in ("rates", "console_rules"))
+    )
+    ready = bool(staged and pinned and no_open_issues and nonempty)
     return {
         "schema_version": 1,
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -68,6 +79,7 @@ def build_readiness(report, manifest_status):
         "source_manifest_hash_verified": pinned,
         "complete_original_identity_sources_staged": staged,
         "all_recorded_identity_exceptions_resolved": no_open_issues,
+        "required_identity_evidence_nonempty": nonempty,
         "ready_to_run_private_numeric_parity": ready,
         "actual_v10_numeric_parity_completed": False,
         "commercial_tariff_approved": False,
