@@ -214,29 +214,43 @@ def test_explicit_it_disable_overrides_approved_in_app_release(tmp_path,monkeypa
 
 
 def test_zero_price_or_unresolved_equipment_still_blocks_customer_issue(tmp_path,monkeypatch):
-    from tests.test_quote_customer_issuance import fake_price, fake_draft
     db,_=_setup(tmp_path,monkeypatch)
     settings.approve_tariff(_tariff())
     settings.save_issuer(_issuer())
     _upload_terms()
     settings.set_issuance(_enable())
+    draft={
+        "id":"c"*32,"revision":1,"customer":"Fictional Customer",
+        "site":"Fictional Site","tier":"Gold","term_years":1,
+        "equipment":[{"item_code":"OLD-MACHINE","description":"Test Item",
+                      "quantity":1,"serial":"TEST","cover_start":""}],
+        "contract_start":"","contract_end":"",
+    }
     with db() as conn:
         quote_drafts._init(conn)
-        draft=fake_draft()
         conn.execute(
             "INSERT INTO unified_quote_drafts(id,created_at,updated_at,"
             "created_by,revision,payload_json) VALUES(?,?,?,?,?,?)",
             (draft["id"],"2026-11-03","2026-11-03","fictional-director",
              1,json.dumps({k:v for k,v in draft.items() if k not in ("id","revision")})),
         )
-    incomplete=fake_price()
-    incomplete["complete_price"]=False
-    incomplete["priced_count"]=0
-    incomplete["lines"][0]["priced"]=False
-    incomplete["lines"][0]["rrp_source"]="sage_unpriced_exact_sku"
+    incomplete={
+        "complete_price":False,"priced_count":0,"line_count":1,
+        "term_partial":None,"staged":{"issues":[]},
+        "lines":[{"priced":False,"line":1,"rrp_source":"sage_unpriced_exact_sku"}],
+    }
     monkeypatch.setattr(issue,"_price",
         lambda draft:(incomplete,{"pricing":"a"*64,"catalog":"b"*64,"configs":"c"*64}))
-    from tests.test_quote_customer_issuance import approval
+    approval=issue.QuoteApproval(
+        expected_revision=1,
+        valid_until=(dt.date.today()+dt.timedelta(days=30)).isoformat(),
+        commercial_approval_ref="PF-TEST-QUOTE-APPROVAL",
+        confirm_customer_and_site=True,
+        confirm_equipment_and_serials=True,
+        confirm_package_price_and_discount=True,
+        confirm_maintenance_scope_and_terms=True,
+        confirm_vat_basis=True,
+    )
     with pytest.raises(HTTPException) as err:
-        issue.issue_customer_quotation(fake_draft()["id"],approval())
+        issue.issue_customer_quotation(draft["id"],approval)
     assert err.value.status_code==409
