@@ -81,8 +81,8 @@ def test_only_absent_master_sku_refers_to_exact_sage_sales_price():
     result = rrp.resolve("NOT-ON-MASTER", rrp.index(staged([
         line("MASTER-EXACT", 3200),
     ])), sage_source())
-    assert result["basis"] == "sage_sales_price_fallback_review"
-    assert result["rrp"] is None
+    assert result["basis"] == "sage_exact_sku_price"
+    assert result["rrp"] == 1550.0
     assert result["sage_reference"]["sage_sales_price"] == 1550
     assert result["sage_reference"]["approved_rrp"] is False
     assert result["sage_reference"]["quoted_annual_amount"] is None
@@ -161,11 +161,13 @@ def test_preview_never_uses_old_catalogue_price_when_master_absent():
         example_draft(), catalog, configs, pricing, hashes,
         master_by_sku=rrp.index(staged([])), sage_source=sage,
     )
-    assert result["priced_count"] == 0
-    assert result["lines"][0]["priced"] is False
+    assert result["priced_count"] == 1
+    assert result["lines"][0]["priced"] is True
+    assert result["lines"][0]["rrp"] == 2500
+    assert result["annual_partial"] == 75.0
     assert result["lines"][0]["sage_reference"]["sage_sales_price"] == 2500
-    assert result["lines"][0]["rrp_source"] == "sage_sales_price_fallback_review"
-    assert result["complete_price"] is False
+    assert result["lines"][0]["rrp_source"] == "sage_exact_sku_price"
+    assert result["complete_price"] is True
     assert result["issue_quote_enabled"] is False
 
 
@@ -187,7 +189,7 @@ def test_source_priority_summary_counts_are_aggregate_only():
     assert counts["v10_skus_referred_to_sage"] == 1
     assert counts["v10_skus_absent_from_both_lists"] == 1
     assert counts["august_master_skus_not_in_v10"] == 1
-    assert result["sage_sales_price_is_not_an_approved_rrp"] is True
+    assert result["sage_exact_price_used_as_internal_rrp_basis"] is True
     assert result["customer_quote_issue_enabled"] is False
     assert "EXAMPLE-SKU" not in json.dumps(result)
     assert "3000" not in json.dumps(result)
