@@ -146,3 +146,32 @@ def test_sage_references_cannot_supersede_master_rrp_or_change_totals(monkeypatc
     assert result["lines"][2]["sage_reference"]["quoted_annual_amount"] is None
     assert result["commercially_approved"] is False
     assert result["sage_reference_status"]["used_for_quotation"] is False
+
+
+def test_full_sage_search_returns_legacy_identity_without_false_maintenance_approval(monkeypatch):
+    monkeypatch.setattr(sage,"actor",lambda: "fictional-staff")
+    monkeypatch.setattr(sage,"snapshot",lambda:{
+        "prices":{
+            "LEGACY 101/2":{"sku":"LEGACY 101/2","name":"Fictional old treadmill",
+                            "group":"Cardiovascular Equipment","manufacturer":"Demo",
+                            "sales_price":2350},
+            "REPAIR-101":{"sku":"REPAIR-101","name":"Fictional treadmill motor",
+                          "group":"CV Parts","manufacturer":"Demo","sales_price":175},
+            "ZERO-102":{"sku":"ZERO-102","name":"Fictional old zero-price bike",
+                        "group":"Cardiovascular Equipment","manufacturer":"Demo",
+                        "sales_price":0},
+        },
+        "source_date":"2026-11-03",
+    })
+    old=sage.search_sage_items(q="legacy",limit=20)
+    assert old["total"]==1
+    assert old["results"][0]["sku"]=="LEGACY 101/2"
+    assert old["results"][0]["sage_sales_price"]==2350
+    assert old["results"][0]["pricing_approved"] is False
+    assert old["results"][0]["requires_service_mapping"] is True
+    parts=sage.search_sage_items(q="motor",limit=20)
+    assert parts["total"]==1
+    assert parts["results"][0]["group"]=="CV Parts"
+    assert parts["results"][0]["source_price_is_not_maintenance_eligibility"] is True
+    zeros=sage.search_sage_items(q="zero",limit=20)
+    assert zeros["results"][0]["sage_sales_price"]==0
