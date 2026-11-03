@@ -150,10 +150,15 @@ def _line_price(product, config, pricing, tier, discount, qty):
     """V10 price_line standard-level arithmetic, including unit-first rounding."""
     sku = str(product.get("sku") or "").strip().upper()
     group = str(product.get("rate_group_override") or config.get("rate_group") or "")
-    rates = {str(item.get("group")): item for item in pricing["rates"] if isinstance(item, dict)}
-    rate = rates.get(group)
-    if not rate or group == "Manual Review":
+    rate_matches = [
+        row for row in pricing["rates"]
+        if isinstance(row, dict) and str(row.get("group") or "") == group
+    ]
+    if group == "Manual Review" or not rate_matches:
         return None, "No verified source maintenance rate group."
+    if len(rate_matches) != 1:
+        return None, "Conflicting original V10 maintenance rate group; resolve source duplicates."
+    rate = rate_matches[0]
     if product.get("coverage_override") == "Not eligible":
         return None, "Product is excluded from maintenance cover."
     if config.get("eligible") == "No":
@@ -169,8 +174,13 @@ def _line_price(product, config, pricing, tier, discount, qty):
     if coefficient is None or multiplier is None:
         return None, "Unknown tariff or maintenance package rate."
     console_name = str(product.get("console") or "")
-    rules = {str(c.get("name")): c for c in pricing.get("console_rules", []) if isinstance(c, dict)}
-    console = rules.get(console_name, {"multiplier": 1, "uplift": 0})
+    console_matches = [
+        row for row in pricing.get("console_rules", [])
+        if isinstance(row, dict) and str(row.get("name") or "") == console_name
+    ]
+    if console_name and len(console_matches) > 1:
+        return None, "Conflicting original V10 console rules; resolve source duplicates."
+    known_console = bool(console_matches)
     override = product.get("console_multiplier_override")
     # V10 live_catalogue_option sets console_pricing = override or 1, which
     # takes precedence over the console rule's configured multiplier.
@@ -211,7 +221,7 @@ def _line_price(product, config, pricing, tier, discount, qty):
         reasons.append("Source SKU is price-list-only; coverage not verified.")
     if rate.get("status") != "Active":
         reasons.append("Rate group is not marked Active in the source.")
-    if not console_name or console_name not in rules:
+    if not console_name or not known_console:
         reasons.append("Console configuration is unverified in the source rules.")
     if annual < minimum_total - 0.01:
         reasons.append("Discount makes this line fall below its source minimum.")
