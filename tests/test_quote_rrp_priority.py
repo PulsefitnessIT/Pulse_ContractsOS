@@ -246,3 +246,18 @@ def test_sage_extended_code_characters_match_exactly_with_no_surrogate_id():
     assert decision["basis"]=="sage_exact_sku_price"
     assert decision["rrp"]==320.64
 
+
+
+def test_current_master_console_variant_mismatch_blocks_customer_approval():
+    from app import quote_pricing
+    from app.quote_customer_issuance import _errors
+    catalogue, configs, pricing, hashes = example_sources()
+    master = staged([line("EXAMPLE-SKU", 3000, console="Different Console")])
+    result = quote_pricing.preview(
+        example_draft(), catalogue, configs, pricing, hashes,
+        master_by_sku=rrp.index(master), sage_source=None,
+    )
+    assert result["priced_count"] == 1
+    assert any("console variant" in reason for reason in result["lines"][0]["coverage_review"])
+    assert any("commercial or equipment coverage" in issue
+               for issue in _errors(example_draft(), result))
