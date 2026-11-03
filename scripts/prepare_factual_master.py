@@ -74,14 +74,20 @@ def stage(source, destination, *, explicitly_approved=False):
                 fields = json.loads(payload)
                 if not str(fields.get("Contract amount (£)") or "").strip():
                     missing_current += 1
-        expected_active = report["registers"]["Maintenance Database"]["populated_site_rows"]
+        expected_active = sum(
+            report["registers"][name]["populated_site_rows"]
+            for name in ("Maintenance Database", "MOD")
+            if name in report["registers"]
+        )
         expected_expired = report["registers"]["Expired"]["populated_site_rows"]
         if (integrity != "ok" or counts.get("Active") != expected_active
             or counts.get("Expired") != expected_expired
             or not load or load[0] != report["workbook_sha256"]
             or load[1] != expected_active or load[2] != expected_expired
             or missing_current !=
-                report["registers"]["Maintenance Database"]["amounts_as_recorded"]["missing"]):
+                sum(report["registers"][name]["amounts_as_recorded"]["missing"]
+                    for name in ("Maintenance Database", "MOD")
+                    if name in report["registers"])):
             raise ValueError("Factual Master import failed source/database reconciliation.")
 
         # Only aggregate provenance is written. Customer/contract details stay
@@ -89,6 +95,8 @@ def stage(source, destination, *, explicitly_approved=False):
         summary = {
             "workbook_sha256": report["workbook_sha256"],
             "register_records_active": expected_active,
+            "register_records_mod": report["registers"].get("MOD",{}).get("populated_site_rows",0),
+            "source_workbook_profile": report["workbook_profile"],
             "register_records_expired": expected_expired,
             "missing_current_contract_amounts": missing_current,
             "repeated_source_id_rows": report["source_id_duplicates"]["extra_duplicate_rows"],
