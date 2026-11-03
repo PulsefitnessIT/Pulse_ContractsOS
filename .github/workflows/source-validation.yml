@@ -28,7 +28,7 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q app scripts tests
       - name: Check coordinator JavaScript syntax
-        run: node --check app/static/app.js && node --check app/static/accepted-quotes.js && node --check app/static/quoting-workspace.js && node --check app/static/source-audit.js && node --check app/static/action-centre.js
+        run: node --check app/static/app.js && node --check app/static/accepted-quotes.js && node --check app/static/quoting-workspace.js && node --check app/static/quote-source-audit.js && node --check app/static/source-audit.js && node --check app/static/action-centre.js
       - name: Unified SmartQuote draft and register regression tests
         run: python -m pytest -q tests/test_quote_drafts.py tests/test_quote_workspace.py tests/test_quote_catalogue.py tests/test_native_quote_handover.py tests/test_quote_pricing.py tests/test_quote_reconciliation.py tests/test_v10_exact_price_kernel.py tests/test_quote_staging.py tests/test_quote_sage_reference.py tests/test_master_source_integrity.py tests/test_quote_site_lookup.py tests/test_master_sync.py tests/test_action_centre.py tests/test_ten_tab_master.py tests/test_deployment_guards.py tests/test_pilot_sessions.py tests/test_excel_upload_security.py
       - name: Synthetic pilot data safety tests (no customer records)
