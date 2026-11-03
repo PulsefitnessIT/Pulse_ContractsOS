@@ -63,15 +63,33 @@ def _admin():
 
 
 def _approved_tariff(fingerprint):
-    expected = os.environ.get(APPROVAL_SOURCE_ENV, "").strip().lower()
-    return (len(expected) == 64 and all(c in "0123456789abcdef" for c in expected)
-            and fingerprint.lower() == expected)
+    pinned = os.environ.get(APPROVAL_SOURCE_ENV, "").strip().lower()
+    if pinned:  # IT deployment override remains the highest authority.
+        return (len(pinned) == 64 and all(c in "0123456789abcdef" for c in pinned)
+                and fingerprint.lower() == pinned)
+    from .quote_commercial_setup import tariff_is_approved
+    return tariff_is_approved(fingerprint)
+
+
+def _issuance_enabled():
+    # Explicit IT disable overrides an in-app approval.
+    override = os.environ.get(ISSUE_ENV)
+    if override is not None:
+        return override == "1"
+    from .quote_commercial_setup import enabled
+    return enabled()
 
 
 def _terms():
     """IT-provisioned commercial terms; cannot be supplied by quote client."""
     configured = os.environ.get(TERMS_FILE_ENV, "").strip()
     expected = os.environ.get(TERMS_SHA_ENV, "").strip().lower()
+    if not configured and not expected:
+        from .quote_commercial_setup import verified_terms
+        recorded = verified_terms()
+        if recorded is None:
+            raise HTTPException(503, "No approved maintenance terms PDF has been uploaded.")
+        return recorded
     if not configured or not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise HTTPException(503, "Approved maintenance terms PDF has not been staged and fingerprinted.")
     path = Path(configured).expanduser().resolve()
@@ -94,6 +112,12 @@ def _issuer():
     """Verify factual Pulse legal/company details, never guess them in code."""
     configured = os.environ.get(ISSUER_FILE_ENV, "").strip()
     expected = os.environ.get(ISSUER_SHA_ENV, "").strip().lower()
+    if not configured and not expected:
+        from .quote_commercial_setup import verified_issuer
+        recorded = verified_issuer()
+        if recorded is None:
+            raise HTTPException(503, "Verified company issuer details have not been configured.")
+        return recorded
     if not configured or not re.fullmatch(r"[0-9a-f]{64}", expected):
         raise HTTPException(503, "Verified Pulse Fitness issuer details have not been staged.")
     path = Path(configured).expanduser().resolve()
@@ -180,7 +204,7 @@ def _quote_flags(fingerprints, errors, terms_ready):
         "all_equipment_priced_and_unambiguous": not errors,
         "approved_tariff_fingerprint_matches": _approved_tariff(fingerprints["pricing"]),
         "approved_terms_available": terms_ready,
-        "live_issuance_opted_in_by_it": os.environ.get(ISSUE_ENV) == "1",
+        "live_issuance_opted_in_by_it": _issuance_enabled(),
         "commercial_approval_required": True,
         "customer_email_not_sent": True,
     }
@@ -295,8 +319,8 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
     """Issue exactly once per draft revision, atomically with archived PDF."""
     admin = _admin()
     quote_drafts._validate_id(draft_id)
-    if os.environ.get(ISSUE_ENV) != "1":
-        raise HTTPException(503, "Customer PDF issuance is not enabled by IT in this environment.")
+    if not _issuance_enabled():
+        raise HTTPException(503, "Customer PDF issuance requires explicit release approval in Commercial Setup.")
     terms, terms_sha = _terms()
     issuer, issuer_sha = _issuer()
 
@@ -377,6 +401,11 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
         )
         # Reverify immutable V10/August source after building the PDF.
         next_preview, next_fingerprints = _price(draft)
+        if (not _issuance_enabled()
+                or not _approved_tariff(fingerprints["pricing"])
+                or _terms()[1] != terms_sha
+                or _issuer()[1] != issuer_sha):
+            raise HTTPException(409, "Commercial release, terms or issuer changed during issue. Recheck the quotation.")
         if (next_fingerprints != fingerprints
                 or next_preview["rrp_master"] != preview["rrp_master"]
                 or next_preview["sage_sha256"] != preview["sage_sha256"]
