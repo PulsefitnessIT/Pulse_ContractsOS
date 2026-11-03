@@ -270,3 +270,51 @@ def test_only_admin_in_authenticated_pilot_can_issue(tmp_path,monkeypatch):
     with pytest.raises(HTTPException) as err:
         issues.issue_customer_quotation(fake_draft()["id"],approval())
     assert err.value.status_code==403
+
+
+def test_source_changed_during_pdf_creation_rolls_back_fully(tmp_path,monkeypatch):
+    db=setup_database(tmp_path,monkeypatch)
+    steps={"n":0}
+    def price_state(draft):
+        steps["n"]+=1
+        quote=fake_price()
+        if steps["n"]==2:
+            quote["sage_sha256"]="9"*64
+        return quote,{"pricing":"a"*64,"catalog":"b"*64,"configs":"c"*64}
+    monkeypatch.setattr(issues,"_price",price_state)
+    with pytest.raises(HTTPException) as exc:
+        issues.issue_customer_quotation(fake_draft()["id"],approval())
+    assert exc.value.status_code==409
+    with sqlite3.connect(db) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM unified_customer_quotes").fetchone()[0]==0
+
+
+def test_verified_issuer_source_requires_real_file_and_matching_digest(tmp_path,monkeypatch):
+    values=fake_issuer()
+    path=tmp_path/"verified-issuer.json"
+    content=json.dumps(values).encode("utf-8")
+    path.write_bytes(content)
+    monkeypatch.setenv(issues.ISSUER_FILE_ENV,str(path))
+    monkeypatch.setenv(issues.ISSUER_SHA_ENV,hashlib.sha256(content).hexdigest())
+    company,digest=issues._issuer()
+    assert company["company_number"]=="12345678"
+    assert digest==hashlib.sha256(content).hexdigest()
+    path.write_bytes(b'{"legal_name":"unverified changed company"}')
+    with pytest.raises(HTTPException) as exc:
+        issues._issuer()
+    assert exc.value.status_code==503
+
+
+def test_verified_customer_terms_require_exact_pdf_hash(tmp_path,monkeypatch):
+    source=fake_terms()
+    path=tmp_path/"approved-terms.pdf"
+    path.write_bytes(source)
+    monkeypatch.setenv(issues.TERMS_FILE_ENV,str(path))
+    monkeypatch.setenv(issues.TERMS_SHA_ENV,hashlib.sha256(source).hexdigest())
+    actual,digest=issues._terms()
+    assert actual==source
+    assert digest==hashlib.sha256(source).hexdigest()
+    path.write_bytes(source+b"\nINVALID-APPENDIX")
+    with pytest.raises(HTTPException) as exc:
+        issues._terms()
+    assert exc.value.status_code==503
