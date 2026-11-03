@@ -28,6 +28,23 @@ def _pennies(value):
     return Decimal(str(value)).quantize(Decimal(".01"))
 
 
+def source_fingerprints(sources):
+    """Hash exact source bytes without exposing any source rows or prices."""
+    return {
+        name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for name, path in zip(("catalog", "configs", "pricing"), sources)
+    }
+
+
+def require_source_unchanged(sources, pinned_hashes):
+    """Fail if the original runtime files were altered during a parity run."""
+    if source_fingerprints(sources) != pinned_hashes:
+        raise RuntimeError(
+            "Original V10 pricing source files changed during parity testing; "
+            "discard results and verify a new private source snapshot."
+        )
+
+
 def verify_original_function(original):
     """Source text must remain exactly the original V10 price_line function."""
     from app._smartquote_price_line_v10 import price_line as vendored
@@ -55,30 +72,32 @@ def run(source_root: Path, maximum: int = 300) -> dict:
             "Complete original V10 engine and genuine catalog/config/pricing JSON "
             "must be staged privately; empty or fictional source is not accepted."
         )
-    # import the complete original source runtime, without copying its data
-    # into GitHub and without changing its local database.
-    if str(source_root) not in sys.path:
-        sys.path.insert(0,str(source_root))
+    # Original source files are untrusted until matched to a private manifest.
+    # Load once and hash the SAME bytes used by the numerical comparison.
     from app.quote_pricing import _line_price, source_manifest_status
     from app._smartquote_price_line_v10 import original_v10_price_line
-    # A comparison against unpinned, mutable source data cannot be treated as
-    # release evidence. The manifest authenticates bytes, not tariff approval.
+    source_bytes=[path.read_bytes() for path in sources]
     fingerprints={
-        name:hashlib.sha256(path.read_bytes()).hexdigest()
-        for name,path in zip(("catalog","configs","pricing"),sources)
+        name: hashlib.sha256(raw).hexdigest()
+        for name,raw in zip(("catalog","configs","pricing"),source_bytes)
     }
     manifest=source_manifest_status(fingerprints)
     if not manifest.get("pinned") or not manifest.get("matches"):
         raise RuntimeError(
             "Pin and verify the exact private original V10 source files before parity testing."
         )
+    # The original runtime is only imported after its input-file hashes match.
+    # It must run on an isolated machine, not the staff-facing service host.
+    if str(source_root) not in sys.path:
+        sys.path.insert(0,str(source_root))
     original=importlib.import_module("engine")
     if Path(original.__file__).resolve() != (source_root/"engine.py").resolve():
         raise RuntimeError("Refusing to compare a cached or wrong V10 engine.")
     verify_original_function(original)
-    catalog=json.loads(sources[0].read_text(encoding="utf-8"))
-    configs=json.loads(sources[1].read_text(encoding="utf-8"))
-    pricing=json.loads(sources[2].read_text(encoding="utf-8"))
+    require_source_unchanged(sources, fingerprints)
+    catalog=json.loads(source_bytes[0].decode("utf-8"))
+    configs=json.loads(source_bytes[1].decode("utf-8"))
+    pricing=json.loads(source_bytes[2].decode("utf-8"))
     if not all((isinstance(catalog,list),isinstance(configs,list),isinstance(pricing,dict))):
         raise RuntimeError("Original pricing source shape does not match V10.")
     samples, coverage=select_source_coverage(catalog,configs,pricing,maximum)
@@ -115,6 +134,8 @@ def run(source_root: Path, maximum: int = 300) -> dict:
                         if _pennies(baseline[old])!=_pennies(isolated[old]):
                             failures["source_kernel_divergence"]+=1
                     compared+=1
+    # A source file swapped mid-check invalidates every comparison result.
+    require_source_unchanged(sources, fingerprints)
     return {
         "original_engine_source_verified":True,
         "authentic_source_sha256":fingerprints,
