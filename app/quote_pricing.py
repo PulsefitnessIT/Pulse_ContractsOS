@@ -318,6 +318,14 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                         line["source_list_price_review_required"] = bool(
                             decision["basis"] == "august_2026_master_list_price"
                         )
+                        if decision["basis"] == "august_2026_master_list_price":
+                            verified_console = str(decision.get("master_console") or "").strip()
+                            catalogue_console = str(product.get("console") or "").strip()
+                            if (verified_console and catalogue_console and
+                                    verified_console.casefold() != catalogue_console.casefold()):
+                                line["coverage_review"].append(
+                                    "August master console variant does not exactly match the V10 equipment record."
+                                )
                         if decision["basis"] == "sage_exact_sku_price":
                             line["coverage_review"].append(
                                 "Price taken from exact Sage item code; maintenance tariff approval remains separate."
