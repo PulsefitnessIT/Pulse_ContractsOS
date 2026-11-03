@@ -76,7 +76,7 @@ def source_manifest_status(proofs):
         # Reconciliation callers supply optional source fingerprints too.
         # A staged legacy/history file must match the *same* private manifest;
         # a previously pinned optional file must not quietly disappear.
-        for name in ("legacy_crosswalk", "historical_identity"):
+        for name in ("legacy_crosswalk", "historical_identity", "august_2026_rrp"):
             if name not in proofs:
                 continue  # Pricing-only preview verifies the three core files.
             observed = proofs[name]
@@ -243,7 +243,7 @@ def _line_price(product, config, pricing, tier, discount, qty):
     }, None
 
 
-def preview(draft, catalog, configs, pricing, hashes):
+def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_source=None):
     tier = draft["tier"]
     term = int(draft.get("term_years", 1))
     discount = float(draft.get("discount_percent", 0))
@@ -265,12 +265,29 @@ def preview(draft, catalog, configs, pricing, hashes):
     for index, asset in enumerate(draft.get("equipment", []), 1):
         code = str(asset.get("item_code") or "").strip().upper()
         line = {"line": index, "item_code": code, "quantity": asset.get("quantity"), "priced": False}
+        decision = None
+        if master_by_sku is not None:
+            from .quote_rrp_priority import resolve
+            decision = resolve(code, master_by_sku, sage_source)
+            line["rrp_source"] = decision["basis"]
+            line["master_rows"] = decision.get("master_rows", [])
+            if "sage_reference" in decision:
+                line["sage_reference"] = decision["sage_reference"]
         if not code:
             line["exception"] = "No exact source SKU entered."
         elif len(by_sku.get(code, [])) != 1:
             line["exception"] = "SKU absent from catalogue or conflicts with duplicate records."
+        elif decision is not None and decision["rrp"] is None:
+            line["exception"] = {
+                "master_price_conflict": "The August 2026 master has conflicting or invalid List Prices; Sage must not override it.",
+                "master_variant_conflict": "The August 2026 master has conflicting equipment variants; confirm the exact configuration.",
+                "sage_sales_price_fallback_review": "Not on August 2026 master. Sage Sales Price found; manager must confirm RRP and equipment cover.",
+            }.get(decision["basis"], "No verified August 2026 master List Price or usable Sage price reference.")
         else:
             product = by_sku[code][0]
+            if decision is not None:
+                # Never mutate the original historical V10 source catalogue.
+                product = {**product, "rrp": decision["rrp"]}
             key = str(product.get("service_key") or "").strip().upper()
             if len(by_config.get(key, [])) != 1:
                 line["exception"] = "No unambiguous original V10 service configuration."
@@ -282,6 +299,14 @@ def preview(draft, catalog, configs, pricing, hashes):
                     line["exception"] = reason
                 else:
                     line.update(amount)
+                    if decision is not None:
+                        line["rrp_source"] = decision["basis"]
+                        line["rrp_source_approved"] = False
+                        line["source_list_price_review_required"] = True
+                        line["coverage_review"].append(
+                            "August 2026 source List Price is the primary RRP evidence; commercial approval remains outstanding."
+                        )
+                        line["review_required"] = True
                     line["priced"] = True
                     total += Decimal(str(amount["annual"]))
                     if amount["review_required"]:
@@ -342,6 +367,10 @@ def preview(draft, catalog, configs, pricing, hashes):
         "source_snapshot": pricing.get("source_snapshot"),
         "source_sha256": hashes,
         "source_manifest": source_manifest_status(hashes),
+        "rrp_source_priority": (
+            "24 August 2026 Master List Price > Sage Sales Price exact SKU fallback (review only)"
+            if master_by_sku is not None else "Original V10 synthetic/source-only price preview"
+        ),
         "commercially_approved": False,
         "issue_quote_enabled": False,
         "contract_setup_enabled": False,
@@ -354,35 +383,34 @@ def draft_price_preview(draft_id: str):
     actor()
     draft = get_draft(draft_id)
     catalog, configs, pricing, fingerprints = source_snapshot()
-    result = preview(draft, catalog, configs, pricing, fingerprints)
-    # Sage Sales Price is advisory ONLY, not a verified Master Price List RRP.
-    # Never use this source to replace an existing/conflicting master SKU or
-    # increase approved/partial quotation totals.
-    missing = [line for line in result["lines"] if not line["priced"]]
-    if missing:
-        catalogue_codes = {
-            str(p.get("sku") or "").strip().upper()
-            for p in catalog if isinstance(p, dict)
-        }
-        try:
-            source = sage_snapshot()
-        except HTTPException:
-            source = None
-            result["issues"].append("The original Sage reference source could not be verified.")
-        if source is not None:
-            for line in missing:
-                if line["item_code"] in catalogue_codes:
-                    continue
-                info = sage_reference(line["item_code"], source)
-                if info:
-                    line["sage_reference"] = info
-                    result["issues"].append(
-                        f"Line {line['line']}: dated Sage Sales Price reference exists but "
-                        "is excluded from maintenance quote totals until a verified Master RRP is approved."
-                    )
-            result["sage_reference_status"] = {
-                "source_date": source["source_date"],
-                "review_overdue": source["review_overdue"],
-                "used_for_quotation": False,
-            }
+    from .quote_rrp_priority import source_snapshot as august_snapshot, index
+    # The customer-facing route must never silently revert to the older V10
+    # catalogue's embedded RRP when the current source has not been staged.
+    master = august_snapshot()
+    try:
+        sage = sage_snapshot()
+    except HTTPException:
+        sage = None  # Report missing Sage without contaminating any RRP.
+    result = preview(
+        draft, catalog, configs, pricing, fingerprints,
+        master_by_sku=index(master), sage_source=sage
+    )
+    result["rrp_master"] = {
+        "source": "Full Master Price List 24-08-2026.xlsx — List Price",
+        "source_date": master["source_date"],
+        "original_file_sha256": master["source_file_sha256"],
+        "staged_snapshot_sha256": master["snapshot_sha256"],
+        "commercially_approved": False,
+    }
+    result["sage_reference_status"] = {
+        "loaded": sage is not None,
+        "source_date": sage["source_date"] if sage else None,
+        "review_overdue": sage["review_overdue"] if sage else None,
+        "used_as_automatic_rrp": False,
+        "used_for_quotation": False,
+    }
+    result["rrp_source_priority"] = (
+        "August 2026 Master List Price first; Sage Sales Price only when SKU absent; "
+        "Sage fallback requires commercial review."
+    )
     return result
