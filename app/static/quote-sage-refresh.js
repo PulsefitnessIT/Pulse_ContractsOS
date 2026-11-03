@@ -84,9 +84,14 @@ async function quoteStageSageList(event){
     area.innerHTML=
       '<h4>Price-list comparison — pending activation</h4>'+
       '<p>File: '+esc(preview.filename)+' · Export date: '+esc(preview.source_date)+
-      ' · Usable item codes: '+esc(preview.usable_rows)+
-      ' · Excluded groups: '+esc(preview.excluded_group_rows)+
-      ' · Invalid equipment rows: '+esc(preview.invalid_equipment_rows)+'</p>'+
+      ' · Retained Sage codes: '+esc(preview.usable_rows)+
+      ' · Positive prices: '+esc(preview.positive_price_rows)+
+      ' · £0 source prices: '+esc(preview.zero_price_rows)+
+      ' · Non-equipment item codes also retained: '+esc(preview.non_equipment_reference_rows)+
+      ' · Invalid source rows: '+esc(preview.invalid_equipment_rows)+'</p>'+
+      '<p class="fine-print">All valid source item codes are retained, including '+
+      'parts and £0 stock records. Only products with independently verified '+
+      'maintenance configurations may be priced as equipment.</p>'+
       sageRefreshSummaryTable(preview.change_counts)+
       '<h5>Sample of detected differences ('+esc(preview.changes_total)+' total)</h5>'+
       sageRefreshRows(preview.changes_preview)+
@@ -157,7 +162,7 @@ async function quoteLoadSageHistory(){
       '<p>'+(active?'Active snapshot '+esc(active.id)+
         ' · Effective '+esc(active.source_date)+
         ' · Imported '+esc(active.imported_at)+
-        ' · '+esc(active.usable_rows)+' equipment codes':
+        ' · '+esc(active.usable_rows)+' item codes':
         'No local Sage refresh activated yet. The original read-only V10 Sage '+
         'snapshot may still provide the current starting source.')+'</p>'+
       '<div style="overflow-x:auto"><table class="data-table"><thead>'+
