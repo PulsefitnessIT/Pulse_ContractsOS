@@ -58,17 +58,10 @@ async function quoteCheckCustomerReadiness(){
       ['All equipment prices and configurations',gates.all_equipment_priced_and_unambiguous],
       ['V10 tariff fingerprint commercially approved',gates.approved_tariff_fingerprint_matches],
       ['Verified maintenance terms PDF staged',gates.approved_terms_available],
+      ['Verified Pulse Fitness legal/company details staged',gates.verified_company_issuer_details],
       ['Customer issuance enabled by IT',gates.live_issuance_opted_in_by_it]
     ].map(([label,ready])=>'<tr><td>'+esc(label)+'</td><td>'+
       esc(ready?'Ready':'Required')+'</td></tr>').join('');
-    details.innerHTML='<h4>Quotation release checks</h4>'+
-      '<div style="overflow-x:auto"><table class="data-table">'+
-      '<thead><tr><th>Requirement</th><th>Status</th></tr></thead><tbody>'+
-      rows+'</tbody></table></div>'+
-      (data.issues||[]).length?'<ul>'+
-      (data.issues||[]).map(message=>'<li>'+esc(message)+'</li>').join('')+
-      '</ul>':'';
-    // Fix grouping explicitly: issues should always be independent of table.
     details.innerHTML='<h4>Quotation release checks</h4>'+
       '<div style="overflow-x:auto"><table class="data-table">'+
       '<thead><tr><th>Requirement</th><th>Status</th></tr></thead><tbody>'+
