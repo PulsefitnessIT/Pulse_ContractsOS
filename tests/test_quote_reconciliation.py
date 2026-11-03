@@ -156,3 +156,31 @@ def test_reconciliation_worklist_is_read_only(monkeypatch):
     assert results["items"][0]["sku"]=="EXAMPLE-DUP"
     assert results["price_approved"] is False
     assert not any("rrp" in p for p in results["items"][0] if p != "verified_master_rrp")
+
+
+def test_historical_identity_search_does_not_promote_old_rrp(monkeypatch):
+    historical={
+        "records":{
+            "OLD-BIKE-A":{"sku":"OLD-BIKE-A","model":"200K",
+                          "name":"Fictional older bike","console":"Console 5",
+                          "year":2021,"rrp":9999},
+            "OLD-BIKE-B":{"sku":"OLD-BIKE-B","model":"200K",
+                          "name":"Fictional another variant","console":"Console 6",
+                          "year":2023,"rrp":8888}
+        },
+        "aliases":{"R200K":["OLD-BIKE-A","OLD-BIKE-B"]}
+    }
+    monkeypatch.setattr(quote_reconciliation,"actor",lambda: "fictional-coordinator")
+    monkeypatch.setattr(quote_reconciliation,"_private_optional_source",
+        lambda kind:(historical,"c"*64))
+    found=quote_reconciliation.historical_search("R200K",20)
+    assert found["total"]==2
+    assert found["ambiguous_or_multiple_variants"] is True
+    assert found["cannot_auto_select_for_current_pricing"] is True
+    assert {r["console"] for r in found["results"]}=={"Console 5","Console 6"}
+    assert all(r["current_rrp"] is None for r in found["results"])
+    assert all("rrp" not in r or r["current_rrp"] is None for r in found["results"])
+    exact=quote_reconciliation.historical_search("OLD-BIKE-A",20)
+    assert exact["total"]==1
+    assert exact["results"][0]["historical_sku"]=="OLD-BIKE-A"
+    assert exact["results"][0]["approved_replacement_sku"] is None
