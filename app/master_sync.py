@@ -33,7 +33,13 @@ MAX_UPLOAD = 35_000_000
 MAX_ACTIONS = 250
 REVIEW_HOURS = 24
 EXCLUDED = set(DERIVED) | {"Record ID", "Original source", "Renewal status"}
-SHEETS = {"Maintenance Database": "Active", "Expired": "Expired"}
+SHEETS = {"Maintenance Database": "Active", "MOD": "Active", "Expired": "Expired"}
+
+
+def present_registers(source):
+    """Allow legacy 8-tab and current 10-tab Masters. Never parse Action Centre."""
+    has_mod = "MOD" in getattr(source, "sheet_parts", {})
+    return tuple(s for s in SHEETS if has_mod or s != "MOD")
 
 
 class ApplyRequest(BaseModel):
@@ -72,7 +78,7 @@ def _tables(db):
 def _records(source):
     result = {}
     ids = Counter()
-    for sheet in SHEETS:
+    for sheet in present_registers(source):
         headers, rows = source.records(sheet)
         if not {"Customer / site", "Record ID", "Contract number", "Contract / warranty type"}.issubset(set(headers)):
             raise ValueError("The uploaded workbook has incompatible register headings.")
@@ -245,7 +251,8 @@ def plan(db, previous, incoming, sha256):
             # No removal/expiration is ever inferred from an absent source row.
     return {
         "source_sha256": sha256,
-        "registers": {sheet: len(new_rows[sheet]) for sheet in SHEETS},
+        "registers": {sheet: len(new_rows.get(sheet, [])) for sheet in SHEETS},
+        "action_centre_rows_are_derived_only": True,
         "summary": {key: int(totals.get(key, 0)) for key in (
             "safe_updates","unchanged_or_already_current","new_or_unmatched",
             "ambiguous_rows","moves_requiring_review","identity_conflicts",
