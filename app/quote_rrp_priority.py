@@ -1,4 +1,4 @@
-"""2026 Master List Price is first; Sage Sales Price is an exact-code fallback.
+"""August 2026 current list first; Sage exact-code price is the legacy fallback.
 
 Original workbook/sanitised extracted rows are never bundled in Contracts OS.
 This module reads a protected, pinned extract. No quote or catalogue write,
@@ -100,7 +100,9 @@ def resolve(sku, by_code, sage_source=None):
     """Always prefer August master presence, even when its rows conflict.
 
     Sage is consulted only when there are ZERO master rows for the exact SKU.
-    Sage stores Sales Price, not certified RRP; that is a staff review item.
+    Pulse has designated Sage Sales Price as the indicative price basis for
+    machines absent from the current August master. The maintenance tariff
+    and equipment eligibility remain separate from this source price.
     """
     code = _code(sku)
     if not CODE.fullmatch(code):
@@ -145,9 +147,13 @@ def resolve(sku, by_code, sage_source=None):
         sage = reference(code, sage_source)
     if sage:
         return {
-            "basis": "sage_sales_price_fallback_review",
-            "rrp": None, "sage_reference": sage,
-            "review_required": True,
+            "basis": "sage_exact_sku_price",
+            "rrp": sage["sage_sales_price"],
+            "sage_reference": sage,
+            "sage_source_date": sage["source_date"],
+            "sage_source_file_sha256": sage["source_file_sha256"],
+            "review_required": bool(sage["review_overdue"]),
+            "source_price_policy": "Sage exact SKU is the adopted price basis for legacy equipment",
         }
     return {
         "basis": "not_on_august_master_or_usable_sage_export",
@@ -161,7 +167,6 @@ def summarize_priority(master, catalog, sage_source=None):
         _code(row.get("sku")) for row in catalog
         if isinstance(row, dict) and CODE.fullmatch(_code(row.get("sku")))
     }
-    all_sage = sage_source.get("prices", {}) if sage_source else {}
     counts = {
         "original_v10_catalogue_distinct_skus": len(catalogue_codes),
         "august_2026_master_source_rows": len(master["rows"]),
@@ -178,7 +183,7 @@ def summarize_priority(master, catalog, sage_source=None):
             counts["v10_skus_with_master_reference"] += 1
         elif match["basis"] in ("master_price_conflict", "master_variant_conflict"):
             counts["v10_skus_with_conflicting_master_rows"] += 1
-        elif match["basis"] == "sage_sales_price_fallback_review":
+        elif match["basis"] == "sage_exact_sku_price":
             counts["v10_skus_referred_to_sage"] += 1
         else:
             counts["v10_skus_absent_from_both_lists"] += 1
@@ -191,7 +196,8 @@ def summarize_priority(master, catalog, sage_source=None):
         "sage_loaded": bool(sage_source),
         "sage_review_overdue": sage_source["review_overdue"] if sage_source else None,
         "master_list_price_is_primary": True,
-        "sage_sales_price_is_not_an_approved_rrp": True,
+        "sage_exact_price_used_as_internal_rrp_basis": True,
+        "sage_snapshot_remains_subject_to_refresh": True,
         "commercially_approved": False,
         "customer_quote_issue_enabled": False,
     }
