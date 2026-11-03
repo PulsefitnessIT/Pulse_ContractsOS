@@ -60,6 +60,11 @@ async function loadQuoteSourceAudit() {
         '<input name="code" maxlength="100" minlength="2" required placeholder="Enter entire old SKU"></label> '+
         '<button class="button button-outline" type="submit">Verify legacy mapping</button></form>'+
       '<div id="quoteLegacyEvidence" aria-live="polite"></div>'+
+      '<h4>Historical equipment identities (2020–2026 evidence)</h4>'+
+      '<form id="quoteHistoryLookupForm"><label>Old SKU, model or equipment description '+
+        '<input name="q" maxlength="100" minlength="2" required placeholder="Search historical equipment"></label> '+
+        '<button class="button button-outline" type="submit">Search historical index</button></form>'+
+      '<div id="quoteHistoricalEvidence" aria-live="polite"></div>'+
       '<p class="fine-print">No customer name, quote or new RRP is inferred from a legacy code. '+
         'A missing historical source is not a complete historical reconciliation.</p>';
     host.querySelector('#quoteAuditIssue').value=quoteAuditSearchState.issue;
@@ -84,6 +89,27 @@ async function loadQuoteSourceAudit() {
             esc(c.model)+' / '+esc(c.console)+'</div>').join('')+
           '<p class="fine-print">Historical evidence only. No current RRP or pricing approved.</p>';
       } catch(error){output.textContent=error.message}
+    });
+    host.querySelector('#quoteHistoryLookupForm').addEventListener('submit',async event=>{
+      event.preventDefault();
+      const output=host.querySelector('#quoteHistoricalEvidence');
+      output.textContent='Searching the original historical identity index…';
+      try {
+        const query=String(new FormData(event.currentTarget).get('q')||'').trim();
+        const result=await api('/api/quoting/catalogue/historical/search?q='+
+          encodeURIComponent(query)+'&limit=30');
+        output.innerHTML='<p>'+esc(result.total)+' historical variant(s) recorded. '+
+          (result.ambiguous_or_multiple_variants ?
+            'Multiple variants: confirm identity and console manually.' :
+            'Historical identity only; no current price confirmed.')+'</p>'+
+          '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+          '<th>Recorded SKU</th><th>Model</th><th>Console</th><th>Recorded year</th>'+
+          '</tr></thead><tbody>'+
+          (result.results||[]).map(row=>'<tr><td>'+esc(row.historical_sku)+
+            '</td><td>'+esc(row.model)+'</td><td>'+esc(row.console)+
+            '</td><td>'+esc(row.year_as_recorded)+'</td></tr>').join('')+
+          '</tbody></table></div><p class="fine-print">Historical identity never authorises a new maintenance RRP.</p>';
+      } catch(error){output.textContent=error.message;}
     });
     await loadQuoteAuditExceptions();
   } catch(error) {
