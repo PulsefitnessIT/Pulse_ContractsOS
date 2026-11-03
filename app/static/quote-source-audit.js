@@ -3,6 +3,7 @@
 let quoteAuditSearchState={q:'',issue:'',offset:0,limit:30};
 let quoteAuditIssues=[];
 let quoteLegacyAuditState={offset:0,limit:30};
+let quotePolicyAuditState={offset:0,limit:30};
 
 async function loadQuoteSourceAudit() {
   const host=document.querySelector('#quoteSourceAudit');
@@ -25,6 +26,8 @@ async function loadQuoteSourceAudit() {
       service_eligibility_not_confirmed:'Service eligibility not confirmed',
       price_list_only_coverage_review:'Price-list-only coverage review',
       invalid_sku:'Invalid SKU',
+      ambiguous_maintenance_rate_group:'Conflicting tariff rules',
+      ambiguous_console_rule:'Conflicting console rules',
     };
     const rows=[
       ['Catalogue source rows',counts.catalogue_source_rows],
@@ -33,6 +36,7 @@ async function loadQuoteSourceAudit() {
       ['Distinct current SKUs',counts.distinct_skus],
       ['Duplicate SKU groups',counts.duplicate_sku_groups],
       ['SKUs requiring review',counts.source_skus_requiring_review],
+      ['Tariff or console policy rows requiring review',counts.policy_rule_rows_requiring_review],
       ['Legacy source rows',counts.legacy_source_rows],
       ['Legacy crosswalk rows requiring review',counts.legacy_source_rows_requiring_review],
       ['Legacy target references missing from current catalogue',counts.legacy_missing_target_mappings],
@@ -60,7 +64,8 @@ async function loadQuoteSourceAudit() {
             esc(flagDescription[id]||id)+' ('+esc(n)+')</option>').join('')+
         '</select></label>'+
         '<button class="button button-outline" id="quoteAuditSearch">Review exceptions</button>'+
-      '</div><div id="quoteAuditRows"></div>'+
+      '</div><div id="quoteAuditRows"></div>'+ 
+      '<h4>Pricing and console source conflicts</h4><div id="quotePolicyAuditRows"></div>'+
       '<h4>Legacy crosswalk exceptions</h4><div id="quoteLegacyAuditRows"></div>'+
       '<h4>Exact historical-code check</h4>'+
       '<form id="quoteLegacyLookupForm"><label>Previously recorded code '+
@@ -119,6 +124,7 @@ async function loadQuoteSourceAudit() {
       } catch(error){output.textContent=error.message;}
     });
     await loadQuoteAuditExceptions();
+    await loadQuotePolicyAuditExceptions();
     await loadQuoteLegacyAuditExceptions();
   } catch(error) {
     host.textContent='Source reconciliation unavailable. '+error.message+
@@ -140,13 +146,15 @@ async function loadQuoteAuditExceptions() {
         'Missing SKU — source row '+esc(item.catalogue_source_row))+
       '</strong><div class="fine-print">'+
       esc(item.model)+' · '+esc(item.console)+'</div></td><td>'+esc(item.description)+
-    '</td><td>'+esc(item.source_rows)+'</td><td>'+esc(item.issues.join(', '))+
-    '</td></tr>').join('');
+    '</td><td>'+esc(item.source_rows)+'</td><td>'+
+      esc((item.catalogue_source_rows||[item.catalogue_source_row]).filter(
+        row=>row!==null && row!==undefined).join(', '))+'</td><td>'+
+      esc(item.issues.join(', '))+'</td></tr>').join('');
   container.innerHTML='<p>'+esc(response.total)+' catalogue exceptions require review.</p>'+
     '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
-      '<th>SKU/model</th><th>Product description</th><th>Rows</th><th>Unresolved issues</th>'+
+      '<th>SKU/model</th><th>Product description</th><th>Rows</th><th>Source row(s)</th><th>Unresolved issues</th>'+
       '</tr></thead><tbody>'+
-      (listed||'<tr><td colspan="4">No records match these filters.</td></tr>')+
+      (listed||'<tr><td colspan="5">No records match these filters.</td></tr>')+
       '</tbody></table></div>'+
     '<div style="display:flex;gap:0.5rem;align-items:center">'+
       '<button class="button button-outline" id="quoteAuditPrevious" '+
@@ -203,5 +211,47 @@ async function loadQuoteLegacyAuditExceptions() {
   } catch(error) {
     container.textContent='Legacy source reconciliation unavailable: '+error.message+
       '. Do not assume any historical mapping is approved.';
+  }
+}
+
+async function loadQuotePolicyAuditExceptions() {
+  const container=document.querySelector('#quotePolicyAuditRows');
+  if(!container)return;
+  try {
+    const response=await api('/api/quoting/catalogue/reconciliation/policy-worklist?'+
+      new URLSearchParams(quotePolicyAuditState));
+    if(view!=='quoting'||!document.querySelector('#quotePolicyAuditRows'))return;
+    const items=response.items||[];
+    const listed=items.map(item=>
+      '<tr><td>'+esc(item.source_section)+'</td><td>'+esc(item.source_row)+
+      '</td><td>'+esc(item.rule_name||'(missing source rule name)')+
+      '</td><td>'+esc((item.issues||[]).join(', '))+'</td></tr>').join('');
+    const from=response.total ? response.offset+1 : 0;
+    container.innerHTML='<p>'+esc(response.total)+
+      ' original pricing/console identity rows require review. Pricing values are never shown here.</p>'+
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+      '<th>Source section</th><th>Source row</th><th>Rule name</th><th>Issue</th>'+
+      '</tr></thead><tbody>'+
+      (listed||'<tr><td colspan="4">No policy identity conflicts detected in this staged file.</td></tr>')+
+      '</tbody></table></div>'+
+      '<div style="display:flex;gap:0.5rem;align-items:center">'+
+      '<button class="button button-outline" id="policyAuditPrevious" '+
+      (response.offset?'':'disabled')+'>Previous</button>'+
+      '<button class="button button-outline" id="policyAuditNext" '+
+      (response.offset+items.length<response.total?'':'disabled')+'>Next</button>'+
+      '<span>'+esc(from)+'–'+esc(Math.min(response.offset+items.length,response.total))+
+      ' of '+esc(response.total)+'</span></div>';
+    container.querySelector('#policyAuditPrevious').onclick=()=>{
+      quotePolicyAuditState.offset=Math.max(0,quotePolicyAuditState.offset-
+        quotePolicyAuditState.limit);
+      loadQuotePolicyAuditExceptions().catch(e=>{container.textContent=e.message;});
+    };
+    container.querySelector('#policyAuditNext').onclick=()=>{
+      quotePolicyAuditState.offset+=quotePolicyAuditState.limit;
+      loadQuotePolicyAuditExceptions().catch(e=>{container.textContent=e.message;});
+    };
+  } catch(error) {
+    container.textContent='Pricing source reconciliation unavailable: '+error.message+
+      '. Do not assume any tariff has been commercially approved.';
   }
 }
