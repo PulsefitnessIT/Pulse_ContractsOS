@@ -4,6 +4,7 @@ let quoteAuditSearchState={q:'',issue:'',offset:0,limit:30};
 let quoteAuditIssues=[];
 let quoteLegacyAuditState={offset:0,limit:30};
 let quotePolicyAuditState={offset:0,limit:30};
+let quoteHistoryAuditState={offset:0,limit:30};
 
 async function loadQuoteSourceAudit() {
   const host=document.querySelector('#quoteSourceAudit');
@@ -41,7 +42,9 @@ async function loadQuoteSourceAudit() {
       ['Legacy crosswalk rows requiring review',counts.legacy_source_rows_requiring_review],
       ['Legacy target references missing from current catalogue',counts.legacy_missing_target_mappings],
       ['Ambiguous legacy codes',counts.ambiguous_legacy_codes],
-      ['Historical variants staged',counts.historical_source_variants]
+      ['Historical variants staged',counts.historical_source_variants],
+      ['Historical identity aliases',counts.historical_alias_source_entries],
+      ['Historical identities needing review',counts.historical_identity_rows_requiring_review]
     ].map(([label,value])=>'<tr><td>'+esc(label)+'</td><td>'+
       (value===null||value===undefined?'Source not staged':esc(value))+'</td></tr>').join('');
     const flags=Object.entries(counts.flag_counts||{}).sort((a,b)=>b[1]-a[1]);
@@ -72,6 +75,7 @@ async function loadQuoteSourceAudit() {
         '<input name="code" maxlength="100" minlength="2" required placeholder="Enter entire old SKU"></label> '+
         '<button class="button button-outline" type="submit">Verify legacy mapping</button></form>'+
       '<div id="quoteLegacyEvidence" aria-live="polite"></div>'+
+      '<h4>Historical identity and alias source exceptions</h4><div id="quoteHistoryAuditRows"></div>'+ 
       '<h4>Historical equipment identities (2020–2026 evidence)</h4>'+
       '<form id="quoteHistoryLookupForm"><label>Old SKU, model or equipment description '+
         '<input name="q" maxlength="100" minlength="2" required placeholder="Search historical equipment"></label> '+
@@ -126,6 +130,7 @@ async function loadQuoteSourceAudit() {
     await loadQuoteAuditExceptions();
     await loadQuotePolicyAuditExceptions();
     await loadQuoteLegacyAuditExceptions();
+    await loadQuoteHistoryAuditExceptions();
   } catch(error) {
     host.textContent='Source reconciliation unavailable. '+error.message+
       ' Do not assume the equipment catalogue or price list has been approved.';
@@ -253,5 +258,47 @@ async function loadQuotePolicyAuditExceptions() {
   } catch(error) {
     container.textContent='Pricing source reconciliation unavailable: '+error.message+
       '. Do not assume any tariff has been commercially approved.';
+  }
+}
+
+async function loadQuoteHistoryAuditExceptions() {
+  const container=document.querySelector('#quoteHistoryAuditRows');
+  if(!container)return;
+  try {
+    const response=await api('/api/quoting/catalogue/reconciliation/historical-worklist?'+
+      new URLSearchParams(quoteHistoryAuditState));
+    if(view!=='quoting'||!document.querySelector('#quoteHistoryAuditRows'))return;
+    const items=response.items||[];
+    const listed=items.map(item=>
+      '<tr><td>'+esc(item.source_type)+'</td><td>'+esc(item.source_key)+
+      '</td><td>'+esc((item.issues||[]).join(', '))+'</td></tr>').join('');
+    const from=response.total ? response.offset+1 : 0;
+    container.innerHTML='<p>'+esc(response.total)+
+      ' recorded historical source keys or aliases require review. '+
+      'This is identity evidence only, not a current equipment price list.</p>'+
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+      '<th>Source type</th><th>Recorded key</th><th>Review reasons</th>'+
+      '</tr></thead><tbody>'+
+      (listed||'<tr><td colspan="3">No historical identity conflicts found in this staged index.</td></tr>')+
+      '</tbody></table></div>'+
+      '<div style="display:flex;gap:0.5rem;align-items:center">'+
+      '<button class="button button-outline" id="historyAuditPrevious" '+
+      (response.offset?'':'disabled')+'>Previous</button>'+
+      '<button class="button button-outline" id="historyAuditNext" '+
+      (response.offset+items.length<response.total?'':'disabled')+'>Next</button>'+
+      '<span>'+esc(from)+'–'+esc(Math.min(response.offset+items.length,response.total))+
+      ' of '+esc(response.total)+'</span></div>';
+    container.querySelector('#historyAuditPrevious').onclick=()=>{
+      quoteHistoryAuditState.offset=Math.max(0,quoteHistoryAuditState.offset-
+        quoteHistoryAuditState.limit);
+      loadQuoteHistoryAuditExceptions().catch(e=>{container.textContent=e.message;});
+    };
+    container.querySelector('#historyAuditNext').onclick=()=>{
+      quoteHistoryAuditState.offset+=quoteHistoryAuditState.limit;
+      loadQuoteHistoryAuditExceptions().catch(e=>{container.textContent=e.message;});
+    };
+  } catch(error) {
+    container.textContent='Historical identity reconciliation unavailable: '+error.message+
+      '. Unstaged or corrupt historical evidence cannot be treated as verified.';
   }
 }
