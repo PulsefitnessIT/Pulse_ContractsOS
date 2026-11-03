@@ -243,7 +243,8 @@ def _line_price(product, config, pricing, tier, discount, qty):
     }, None
 
 
-def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_source=None):
+def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_source=None,
+            overrides=None, august_source=None):
     tier = draft["tier"]
     term = int(draft.get("term_years", 1))
     discount = float(draft.get("discount_percent", 0))
@@ -269,6 +270,14 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
         if master_by_sku is not None:
             from .quote_rrp_priority import resolve
             decision = resolve(code, master_by_sku, sage_source)
+            if overrides and code in overrides:
+                from .quote_price_overrides import effective
+                decision = effective(decision, overrides[code], august_source or {}, sage_source)
+                line["price_override"] = {
+                    "revision": decision.get("override_revision"),
+                    "status": decision.get("override_status", "not_applied"),
+                    "source_price_updated_at": decision.get("source_price_updated_at"),
+                }
             line["rrp_source"] = decision["basis"]
             line["master_rows"] = decision.get("master_rows", [])
             if "sage_reference" in decision:
@@ -281,7 +290,8 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
             line["exception"] = {
                 "master_price_conflict": "The August 2026 master has conflicting or invalid List Prices; Sage must not override it.",
                 "master_variant_conflict": "The August 2026 master has conflicting equipment variants; confirm the exact configuration.",
-                "sage_sales_price_fallback_review": "Not on August 2026 master. Sage Sales Price found; manager must confirm RRP and equipment cover.",
+                "stale_price_override": "Source price list changed since the local price revision. Administrator must review and reapply it.",
+                "sage_exact_sku_price": "An exact Sage equipment price is available but cannot be used with this equipment configuration.",
             }.get(decision["basis"], "No verified August 2026 master List Price or usable Sage price reference.")
         else:
             product = by_sku[code][0]
@@ -301,11 +311,24 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                     line.update(amount)
                     if decision is not None:
                         line["rrp_source"] = decision["basis"]
-                        line["rrp_source_approved"] = False
-                        line["source_list_price_review_required"] = True
-                        line["coverage_review"].append(
-                            "August 2026 source List Price is the primary RRP evidence; commercial approval remains outstanding."
+                        line["rrp_source_approved"] = (
+                            decision["basis"] == "managed_price_override"
                         )
+                        line["source_list_price_review_required"] = bool(
+                            decision["basis"] == "august_2026_master_list_price"
+                        )
+                        if decision["basis"] == "sage_exact_sku_price":
+                            line["coverage_review"].append(
+                                "Price taken from exact Sage item code; maintenance tariff approval remains separate."
+                            )
+                        elif decision["basis"] == "managed_price_override":
+                            line["coverage_review"].append(
+                                "Administrator-adjusted equipment price; source revision recorded in price audit."
+                            )
+                        else:
+                            line["coverage_review"].append(
+                                "August 2026 source List Price used; commercial maintenance tariff approval remains separate."
+                            )
                         line["review_required"] = True
                     line["priced"] = True
                     total += Decimal(str(amount["annual"]))
@@ -368,7 +391,7 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
         "source_sha256": hashes,
         "source_manifest": source_manifest_status(hashes),
         "rrp_source_priority": (
-            "24 August 2026 Master List Price > Sage Sales Price exact SKU fallback (review only)"
+            "24 August 2026 Master List Price > exact Sage price for other equipment; administrator revisions are audited"
             if master_by_sku is not None else "Original V10 synthetic/source-only price preview"
         ),
         "commercially_approved": False,
@@ -407,9 +430,12 @@ def draft_price_preview(draft_id: str):
         sage = sage_snapshot()
     except HTTPException:
         sage = None  # Report missing Sage without contaminating any RRP.
+    from .quote_price_overrides import active_overrides
+    codes = [str(item.get("item_code") or "") for item in draft.get("equipment", [])]
     result = preview(
         draft, catalog, configs, pricing, fingerprints,
-        master_by_sku=index(master), sage_source=sage
+        master_by_sku=index(master), sage_source=sage,
+        overrides=active_overrides(codes), august_source=master,
     )
     result["rrp_master"] = {
         "source": "Full Master Price List 24-08-2026.xlsx — List Price",
@@ -422,11 +448,12 @@ def draft_price_preview(draft_id: str):
         "loaded": sage is not None,
         "source_date": sage["source_date"] if sage else None,
         "review_overdue": sage["review_overdue"] if sage else None,
-        "used_as_automatic_rrp": False,
+        "used_as_automatic_rrp": sage is not None,
         "used_for_quotation": False,
     }
     result["rrp_source_priority"] = (
-        "August 2026 Master List Price first; Sage Sales Price only when SKU absent; "
-        "Sage fallback requires commercial review."
+        "August 2026 current List Price first; exact Sage item price for other machines. "
+        "Audited administrator revisions may update the internal equipment price, "
+        "but maintenance tariff and customer quote approval remain separate."
     )
     return result
