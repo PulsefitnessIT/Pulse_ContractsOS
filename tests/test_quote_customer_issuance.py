@@ -17,6 +17,17 @@ from app import quote_customer_pdf as pdf
 from app import quote_drafts
 
 
+def fake_issuer():
+    return {
+        "legal_name": "Pulse Fitness Ltd — FICTIONAL TEST DETAILS",
+        "registered_address": "123 Fictional Road, Test Town, EX1 1AA",
+        "contact_email": "example@fictional.invalid",
+        "company_number": "12345678",
+        "telephone": "00000 000 000",
+        "vat_number": "GB TEST ONLY",
+    }
+
+
 def fake_terms():
     terms = fitz.open()
     page = terms.new_page()
@@ -100,6 +111,7 @@ def setup_database(tmp_path, monkeypatch, draft=None):
     monkeypatch.setattr(issues.pilot_access,"actor",lambda fallback="":"fictional-admin")
     terms = fake_terms()
     monkeypatch.setattr(issues,"_terms",lambda:(terms,hashlib.sha256(terms).hexdigest()))
+    monkeypatch.setattr(issues,"_issuer",lambda:(fake_issuer(),"e"*64))
     monkeypatch.setattr(issues,"_price",lambda data:(fake_price(),{"pricing":"a"*64,"catalog":"b"*64,"configs":"c"*64}))
     monkeypatch.setenv(issues.ISSUE_ENV,"1")
     monkeypatch.setenv(issues.APPROVAL_SOURCE_ENV,"a"*64)
@@ -132,7 +144,7 @@ def test_customer_pdf_includes_actual_approved_terms_unmodified():
         quote_no="PFQ-2026-000001", prepared_date="2026-11-03",
         valid_until="2026-12-18",
         approval_ref="PF-COMMERCIAL-APPROVAL-TEST",
-        approved_by="fictional-admin", terms_pdf=terms,
+        approved_by="fictional-admin", terms_pdf=terms, issuer=fake_issuer(),
     )
     with fitz.open(stream=out,filetype="pdf") as document:
         assert document.page_count >= 2
@@ -141,6 +153,8 @@ def test_customer_pdf_includes_actual_approved_terms_unmodified():
     assert "PFQ-2026-000001" in customer
     assert "DRAFT - NOT FOR CUSTOMER" not in customer
     assert "GBP 450.00" in customer
+    assert "SUPPLIER DETAILS" in customer
+    assert "123 Fictional Road" in customer
 
 
 def test_issue_is_admin_approved_immutable_and_download_integrity_checked(tmp_path,monkeypatch):
