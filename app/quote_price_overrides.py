@@ -19,7 +19,7 @@ from . import pilot_access
 from .store import connect
 
 router = APIRouter(prefix="/api/quoting/prices", tags=["Controlled equipment price revisions"])
-SKU = re.compile(r"^[A-Z0-9][A-Z0-9._/-]{0,99}$")
+SKU = re.compile(r"^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$")
 ACTIVE_SOURCES = {"august_2026_master_list_price", "sage_exact_sku_price"}
 
 
