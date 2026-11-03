@@ -57,6 +57,8 @@ def fake_price():
         "tier": "Gold", "term_years": 2,
         "complete_price": True, "priced_count": 1, "line_count": 1,
         "annual_partial": 225.00, "term_partial": 450.00,
+        "rrp_master": {"original_sha256": "d"*64, "staged_sha256": "e"*64},
+        "sage_sha256": "f"*64,
         "staged": {"enabled": False, "issues": []},
         "lines": [{
             "line": 1, "item_code": "DEMO-TREAD", "sku": "DEMO-TREAD",
