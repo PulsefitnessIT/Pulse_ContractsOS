@@ -155,6 +155,20 @@ def resolve(sku, by_code, sage_source=None):
             "review_required": bool(sage["review_overdue"]),
             "source_price_policy": "Sage exact SKU is the adopted price basis for legacy equipment",
         }
+    # The user's real Sage export includes equipment SKUs priced at £0.
+    # Retain these exact codes so an administrator can set a corrected
+    # equipment price without creating a fictitious product record.
+    if sage_source and isinstance(sage_source.get("prices"), dict):
+        recorded = sage_source["prices"].get(code)
+        if (isinstance(recorded, dict)
+                and str(recorded.get("sku") or "").strip().upper() == code
+                and recorded.get("sales_price") == 0):
+            return {
+                "basis": "sage_unpriced_exact_sku",
+                "rrp": None, "review_required": True,
+                "sage_source_date": sage_source.get("source_date"),
+                "sage_source_file_sha256": sage_source.get("source_file_sha256"),
+            }
     return {
         "basis": "not_on_august_master_or_usable_sage_export",
         "rrp": None, "review_required": True,
