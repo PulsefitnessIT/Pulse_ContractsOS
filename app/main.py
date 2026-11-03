@@ -23,7 +23,7 @@ from .invoice_review import analyse_invoice_document, validate_review
 from .import_queue import build_review_queue, queue_csv
 from .excel_quality import inspect_excel,remaining_capacity
 from .invoice_quality import invoice_quality,invoice_quality_csv
-from .pilot_access import PILOT_MODE, SESSION_COOKIE, CSRF_COOKIE, COOKIE_SECURE, configure_users, secret, sign_session, login, actor, pilot_middleware
+from .pilot_access import PILOT_MODE, SESSION_COOKIE, CSRF_COOKIE, COOKIE_SECURE, configure_users, secret, sign_session, login, revoke_session, actor, pilot_middleware
 from .deployment_guards import check_deployment_environment
 from .matching import candidate_matches
 from .local_ocr import available as local_ocr_available, read_local_scanned_pdf, LocalOCRError
@@ -100,10 +100,14 @@ def pilot_me(request:Request):
     return {'pilot':True,'user':session.get('sub'),'role':session.get('role')}
 
 @app.post('/api/pilot/logout')
-def pilot_logout():
+def pilot_logout(request:Request):
+    if PILOT_MODE:
+        # A copied cookie must not remain valid after explicit sign-out.
+        revoke_session(request.cookies.get(SESSION_COOKIE))
     resp=JSONResponse({'ok':True})
     resp.delete_cookie(SESSION_COOKIE,path='/')
     resp.delete_cookie(CSRF_COOKIE,path='/')
+    resp.headers['Cache-Control']='no-store'
     return resp
 
 
