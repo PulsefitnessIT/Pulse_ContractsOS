@@ -177,24 +177,75 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
             })
     known_skus = set(sku_rows)
     legacy_keys = defaultdict(set)
+    legacy_review = []
+    legacy_row_data = []
+    legacy_unresolved_codes = set()
     legacy_missing, legacy_invalid = 0, 0
     if legacy is not None:
-        for entry in legacy:
+        for position, entry in enumerate(legacy, start=1):
+            reasons = []
             if not isinstance(entry, dict):
                 legacy_invalid += 1
-                continue
+                reasons.append("invalid_legacy_source_row")
+                entry = {}
             target = _code(entry.get("new_sku"))
-            for field in ("old_code", "old_sku"):
-                old = _code(entry.get(field))
-                if old not in LEGACY_IGNORE and SKU_REGEX.fullmatch(old):
-                    if target in known_skus:
-                        legacy_keys[old].add(target)
-                    else:
-                        legacy_missing += 1
-    legacy_ambiguous = {
+            old_values = [_code(entry.get(field)) for field in ("old_code", "old_sku")]
+            old_codes = set()
+            for old in old_values:
+                if old in LEGACY_IGNORE:
+                    continue
+                if SKU_REGEX.fullmatch(old):
+                    old_codes.add(old)
+                else:
+                    reasons.append("invalid_legacy_identifier")
+            if not old_codes:
+                reasons.append("missing_legacy_identifier")
+            if not target:
+                reasons.append("missing_current_target_sku")
+            elif not SKU_REGEX.fullmatch(target):
+                reasons.append("invalid_current_target_sku")
+            elif target not in known_skus:
+                reasons.append("target_missing_from_current_catalogue")
+                legacy_missing += 1  # Source ROW count, not old-code field count.
+            else:
+                if len(sku_rows[target]) != 1:
+                    reasons.append("duplicate_current_target_sku")
+                for old in old_codes:
+                    legacy_keys[old].add(target)
+            if any(reason in reasons for reason in (
+                "missing_current_target_sku", "invalid_current_target_sku",
+                "target_missing_from_current_catalogue", "duplicate_current_target_sku",
+            )):
+                legacy_unresolved_codes.update(old_codes)
+            legacy_row_data.append({
+                "row": position, "old_codes": old_codes,
+                "old_code": old_values[0][:100], "old_sku": old_values[1][:100],
+                "new_sku": target[:100], "issues": reasons,
+            })
+    multi_target_codes = {
         code for code, targets in legacy_keys.items()
         if len(targets) != 1 or any(len(sku_rows[target]) != 1 for target in targets)
     }
+    # A historical code pointing to one valid target AND one missing target
+    # is still unsafe to resolve as an unambiguous equipment identity.
+    legacy_ambiguous = multi_target_codes | legacy_unresolved_codes
+    legacy_flags = Counter()
+    for item in legacy_row_data:
+        reasons = set(item["issues"])
+        if any(code in multi_target_codes for code in item["old_codes"]):
+            reasons.add("ambiguous_legacy_mapping")
+        if reasons:
+            for reason in reasons:
+                legacy_flags[reason] += 1
+            legacy_review.append({
+                "source_row": item["row"],
+                "old_code": item["old_code"],
+                "old_sku": item["old_sku"],
+                "new_sku": item["new_sku"],
+                "issues": sorted(reasons),
+                "source_identity_only": True,
+                "approved_price": None,
+            })
     summary = {
         "catalogue_source_rows": len(catalog),
         "catalogue_rows_with_sku": sum(map(len,sku_rows.values())),
@@ -209,8 +260,16 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
         "flag_counts": dict(sorted(buckets.items())),
         "legacy_source_rows": len(legacy) if legacy is not None else None,
         "legacy_codes_mapped": len(legacy_keys) if legacy is not None else None,
-        "ambiguous_legacy_codes": len(legacy_ambiguous) if legacy is not None else None,
+        "ambiguous_legacy_codes": len(multi_target_codes) if legacy is not None else None,
         "legacy_missing_target_mappings": legacy_missing if legacy is not None else None,
+        "legacy_invalid_source_rows": legacy_invalid if legacy is not None else None,
+        "legacy_codes_with_unresolved_targets": (
+            len(legacy_unresolved_codes) if legacy is not None else None
+        ),
+        "legacy_source_rows_requiring_review": (
+            len(legacy_review) if legacy is not None else None
+        ),
+        "legacy_flag_counts": dict(sorted(legacy_flags.items())) if legacy is not None else None,
         "historical_source_variants": (
             len(history["records"]) if history is not None else None
         ),
@@ -220,6 +279,7 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
     return {
         "summary": summary,
         "worklist": worklist,
+        "legacy_worklist": legacy_review,
         "legacy_targets": legacy_keys,
         "legacy_ambiguous": legacy_ambiguous,
         "sku_rows": sku_rows,
@@ -288,6 +348,34 @@ def reconciliation_worklist(q: str = Query("", max_length=100),
     return {
         "total": len(items), "offset": offset, "limit": limit,
         "items": items[offset:offset+limit],
+        "review_only": True, "price_approved": False,
+    }
+
+
+
+@router.get("/reconciliation/legacy-worklist")
+def legacy_reconciliation_worklist(
+        q: str = Query("", max_length=100),
+        issue: str = Query("", max_length=100),
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0)):
+    """Original legacy crosswalk exceptions, never a proposed approved price."""
+    actor()
+    r = source_report()
+    if r["summary"]["legacy_source_rows"] is None:
+        raise HTTPException(503, "The authentic V10 legacy crosswalk is not staged.")
+    items = r["legacy_worklist"]
+    phrase = q.casefold().strip()
+    if phrase:
+        items = [item for item in items if any(
+            phrase in str(item[key]).casefold()
+            for key in ("old_code", "old_sku", "new_sku")
+        )]
+    if issue:
+        items = [item for item in items if issue in item["issues"]]
+    return {
+        "total": len(items), "offset": offset, "limit": limit,
+        "items": items[offset:offset + limit],
         "review_only": True, "price_approved": False,
     }
 
