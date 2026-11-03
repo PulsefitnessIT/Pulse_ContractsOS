@@ -80,7 +80,8 @@ def test_last_administrator_cannot_be_disabled(pilot):
 def test_unsigned_and_forged_sessions_fail(pilot):
     cookie,_=issue()
     assert pilot_access.read_session("tampered."+cookie.split(".")[-1]) is None
-    assert pilot_access.read_session(cookie[:-1]+"0") is None
+    flipped="0" if cookie[-1]!="0" else "1"
+    assert pilot_access.read_session(cookie[:-1]+flipped) is None
     assert pilot_access.read_session("x"*6000) is None
 
 
