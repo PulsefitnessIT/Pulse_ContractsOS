@@ -7,6 +7,48 @@ customer-ready PDF to send using the normal customer email process.
 **Status:** built into draft PR #5 for the next supervised pilot. Not yet
 merged, staged with live Pulse data, commercially signed off or deployed.
 
+## Source onboarding from the app — no Python setup for staff
+
+An authenticated pilot Administrator can now stage the complete original
+SmartQuote V10/August pricing source **from the SmartQuote screen**.
+IT environment variables are optional when the original source files are
+uploaded and approved through the protected admin interface.
+
+1. In the private `PulsefitnessIT/Pulse_SmartQuote` repository, retrieve the
+   original `data/catalog.json`, `data/configs.json`,
+   `data/pricing.json` and `data/rrp_2026_source.json.gz`.
+2. Zip **exactly those four files** (they can be under one `data/` folder).
+   Do not zip the customer database, invoices, archived quote files,
+   passwords, API credentials or unrelated source files.
+3. Open **Contracts OS → SmartQuote → Original V10 & August Price Source Setup**.
+   Upload the ZIP, check the displayed source counts, the August date and
+   the tariff SHA-256, record the reference and the original-source
+   attestation, then **Activate**.
+4. Open **Sage Price List Refresh** and upload the full genuine Sage export.
+   The provided **Sage Price List.xlsx** uses five columns including
+   Manufacturer and 21,120 item codes. Enter its actual confirmed
+   export date, preview changed prices and activate the latest snapshot.
+5. Complete **Customer Quotation — Commercial Setup**. Approve tariff
+   rates/packages/minimums, the real maintenance T&Cs, the correct Pulse
+   issuer details, and lastly the explicit customer-PDF issuance switch.
+6. Build a real quotation using an exact V10 equipment code, inspect the
+   internal PDF, obtain the quotation-specific manager authorisation and
+   download the final issued customer PDF.
+
+All original V10/August bytes and the Sage list are stored in the **private
+application database**, never in the source GitHub repository. The source
+import and every change are audited. A replacement V10 ZIP automatically
+disables the in-app customer-quote issuance setting until the revised sources
+have been reviewed. An original provisional tariff remains unapproved until
+commercially signed off.
+
+**Important limitation:** the Sage export is an item-code source, not proof
+of equipment maintenance coverage. A Sage-only SKU without a unique original
+V10 service configuration remains unpriced until an approved equipment
+mapping is provided. Only verified V10 equipment with valid pricing can reach
+the customer-PDF step. Full original-vs-unified real numeric parity still
+requires IT validation; synthetic test success does not prove it.
+
 ## In-app commercial onboarding (current build)
 
 The next protected pilot now has **SmartQuote → Customer Quotation — Commercial
