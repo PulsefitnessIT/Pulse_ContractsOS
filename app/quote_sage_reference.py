@@ -12,6 +12,9 @@ import re
 import sqlite3
 import zlib
 from contextlib import closing
+from pathlib import Path
+from urllib.parse import quote
+from .store import DB
 from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, HTTPException
 from .pilot_access import actor
@@ -39,21 +42,61 @@ def _unpack(raw: bytes) -> dict:
     return data
 
 
-def snapshot():
-    """Read the same active snapshot table as original SmartQuote, without writes."""
-    with closing(_connect()) as db:
-        try:
-            row = db.execute(
+def _local_active():
+    """Protected Contracts OS Sage replacement; never changes the original V10 DB."""
+    path = Path(DB).expanduser().resolve()
+    if not path.is_file():
+        return None
+    uri = "file:" + quote(str(path), safe="/:") + "?mode=ro"
+    try:
+        with closing(sqlite3.connect(uri, uri=True, timeout=5)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA query_only=ON")
+            return db.execute(
                 "SELECT source_date,review_due,file_sha256,payload,usable_rows "
-                "FROM sage_price_snapshots WHERE active=1 ORDER BY id DESC LIMIT 1"
+                "FROM smartquote_sage_snapshots WHERE active=1 "
+                "ORDER BY id DESC LIMIT 1"
             ).fetchone()
-        except sqlite3.Error:
-            return None  # Older installations have no manager-imported snapshot.
+    except sqlite3.Error as exc:
+        if "no such table" in str(exc).lower():
+            return None
+        raise HTTPException(503, "Contracts OS Sage price snapshot is unavailable.") from exc
+
+
+def snapshot():
+    """Prefer approved local Sage refresh; otherwise read original V10 snapshot.
+
+    Source records are read-only on every quote preview and price correction.
+    A damaged active local record is never silently replaced by the older V10
+    database or an embedded catalogue RRP.
+    """
+    row = _local_active()
+    origin = (
+        "Contracts OS administrator-imported Sage Sales Price — exact item-code equipment basis"
+        if row is not None else
+        "Dated Sage Sales Price export — exact item-code equipment price basis"
+    )
+    if row is None:
+        from .quote_workspace import _source
+        if _source() is None:
+            return None
+        with closing(_connect()) as db:
+            try:
+                row = db.execute(
+                    "SELECT source_date,review_due,file_sha256,payload,usable_rows "
+                    "FROM sage_price_snapshots WHERE active=1 ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            except sqlite3.Error as exc:
+                if "no such table" in str(exc).lower():
+                    return None
+                raise HTTPException(503, "Original Sage source snapshot could not be read.") from exc
     if row is None:
         return None
     try:
         source_date = dt.date.fromisoformat(row["source_date"])
         review_due = dt.date.fromisoformat(row["review_due"])
+        if review_due <= source_date:
+            raise ValueError("Invalid date range")
     except (TypeError, ValueError) as exc:
         raise HTTPException(503, "Sage price-source date cannot be verified.") from exc
     digest = str(row["file_sha256"] or "").lower()
@@ -66,7 +109,7 @@ def snapshot():
         "review_due": review_due.isoformat(),
         "review_overdue": review_due <= dt.date.today(),
         "source_file_sha256": digest,
-        "source": "Dated Sage Sales Price export — exact item-code equipment price basis",
+        "source": origin,
     }
 
 
