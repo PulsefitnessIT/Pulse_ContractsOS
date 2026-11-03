@@ -1,4 +1,4 @@
-"""Loss-minimising reviewed Excel round-trip for approved eight-sheet template.
+"""Loss-minimising reviewed Excel round-trip for approved 8/10-tab templates.
 
 The export identifier sits in standard OOXML core keywords, not an extra tab,
 so the approved visible layout stays unchanged. If metadata is removed by an
@@ -8,7 +8,8 @@ from __future__ import annotations
 import datetime as dt,io,json,os,tempfile,zipfile,re
 from pathlib import Path
 from lxml import etree as ET
-from .excel_io import ExcelSource,REGISTER_SHEETS
+from .excel_io import ExcelSource,REGISTER_SHEETS,register_sheets
+from .data_readiness import WORKSHEETS,CURRENT_WORKSHEETS
 
 CP='http://schemas.openxmlformats.org/package/2006/metadata/core-properties'
 DC='http://purl.org/dc/elements/1.1/'
@@ -56,16 +57,13 @@ def parse_workbook_records(content):
     try:
         src=ExcelSource(path)
         try:
-            sheets=['Maintenance Database','Expired','Weekly Values','Invoices','Quotes']
-            # Validate exact approved names/order, not merely worksheet indices.
-            root=ET.fromstring(src.z.read('xl/workbook.xml'))
-            names=[s.get('name') for s in root.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}sheet')]
-            if names!=['Home','Maintenance Database','Weekly Values','Invoices','Monthly Report','Sales Report','Quotes','Expired']:
-                raise ValueError('The uploaded workbook does not have the approved eight-tab layout.')
+            sheets=list(register_sheets(src))+['Weekly Values','Invoices','Quotes']
+            if src.sheet_names not in (WORKSHEETS,CURRENT_WORKSHEETS):
+                raise ValueError('The workbook does not match the supported eight/ten-tab Master layout.')
             data={}
             for sheet in sheets:
                 headers,rows=src.records(sheet)
-                if sheet in REGISTER_SHEETS and not {'Customer / site','Contract number','Record ID'}.issubset(set(headers)):
+                if sheet in register_sheets(src) and not {'Customer / site','Contract number','Record ID'}.issubset(set(headers)):
                     raise ValueError(f'{sheet} is missing essential column headings.')
                 if sheet in ('Weekly Values','Invoices','Quotes') and 'Original source' not in headers:
                     raise ValueError(f'{sheet} does not have the expected source identifier.')
@@ -149,7 +147,7 @@ def diff_workbook(baseline, current_records, uploaded):
                     warnings.append(f'{key} has changed status in the platform since export. Compare against a fresh download.')
                     continue
                 moved=sheet!=before['sheet']
-                if moved and sheet not in ('Maintenance Database','Expired'):
+                if moved and sheet not in ('Maintenance Database','MOD','Expired'):
                     warnings.append(f'{key} was moved to an unsupported tab.')
                     continue
                 edits=[];base_fields=before['fields'];live_fields=live['fields']
