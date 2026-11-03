@@ -184,3 +184,45 @@ def test_historical_identity_search_does_not_promote_old_rrp(monkeypatch):
     assert exact["total"]==1
     assert exact["results"][0]["historical_sku"]=="OLD-BIKE-A"
     assert exact["results"][0]["approved_replacement_sku"] is None
+
+
+def test_catalogue_rows_without_skus_are_not_silently_ignored():
+    products, configs, pricing, legacy, history = synthetic_sources()
+    products.extend([
+        {"sku": "", "name": "Unidentified fictional product", "rrp": 999},
+        {"model": "NO-SKU", "rrp": 250},
+        None,
+    ])
+    report = quote_reconciliation.reconcile(
+        products, configs, pricing, {"catalog": "fictional"}
+    )
+    summary = report["summary"]
+    assert summary["catalogue_source_rows"] == 9
+    assert summary["catalogue_rows_with_sku"] == 6
+    assert summary["catalogue_rows_missing_sku"] == 3
+    assert summary["flag_counts"]["missing_sku"] == 3
+    # SKU-group counts remain separate from missing-source-row counts.
+    assert summary["source_skus_requiring_review"] == 5
+    assert summary["source_skus_without_flagged_identity_issues"] == 0
+    assert summary["catalogue_rows_requiring_review"] == 8
+    missing = [x for x in report["worklist"] if "missing_sku" in x["issues"]]
+    assert [x["catalogue_source_row"] for x in missing] == [7, 8, 9]
+    assert all(x["price_approved"] is False for x in missing)
+    assert all(x["verified_master_rrp"] is False for x in missing)
+    assert all("rrp" not in x for x in missing if x != "verified_master_rrp")
+
+
+def test_missing_sku_rows_appear_in_filtered_read_only_worklist(monkeypatch):
+    products, configs, pricing, _, _ = synthetic_sources()
+    products.append({"sku": None, "name": "Unnamed source row", "rrp": 10})
+    report = quote_reconciliation.reconcile(
+        products, configs, pricing, {"catalog": "fictional"}
+    )
+    monkeypatch.setattr(quote_reconciliation, "actor", lambda: "fictional-reviewer")
+    monkeypatch.setattr(quote_reconciliation, "source_report", lambda: report)
+    response = quote_reconciliation.reconciliation_worklist(
+        q="", issue="missing_sku", limit=20, offset=0
+    )
+    assert response["total"] == 1
+    assert response["items"][0]["catalogue_source_row"] == 7
+    assert response["price_approved"] is False
