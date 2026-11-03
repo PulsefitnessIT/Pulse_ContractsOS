@@ -60,6 +60,9 @@ async function quotingWorkspacePage() {
     'Pricing administrators can make audited corrections without altering the source files.</p>' +
     '<button type="button" class="button button-outline" id="rrpPriorityStatusLoad">Check source coverage</button>' +
     '<div id="rrpPriorityStatus" aria-live="polite"></div></section>' +
+    '<section class="panel" id="quoteV10SourcePanel" hidden>' +
+    '<h3>Original V10 &amp; August Price Source Setup</h3>' +
+    '<div id="quoteV10SourceHost"></div></section>' +
     '<section class="panel" id="quoteCommercialSetupPanel" hidden>' +
     '<h3>Customer Quotation — Commercial Setup</h3>' +
     '<div id="quoteCommercialSetupHost"></div></section>' +
@@ -600,6 +603,14 @@ async function showQuotePriceEditorIfAdmin() {
   const panel=document.querySelector('#quoteAdminPricePanel');
   if(panel && view==='quoting' && session?.pilot && session.role==='Admin') {
     panel.hidden=false;
+    const v10Panel=document.querySelector('#quoteV10SourcePanel');
+    if(v10Panel && typeof initV10SourceSetup==='function'){
+      v10Panel.hidden=false;
+      initV10SourceSetup().catch(error=>{
+        const host=document.querySelector('#quoteV10SourceHost');
+        if(host)host.textContent=error.message;
+      });
+    }
     const commercialPanel=document.querySelector('#quoteCommercialSetupPanel');
     if(commercialPanel && typeof initQuoteCommercialSetup==='function'){
       commercialPanel.hidden=false;
