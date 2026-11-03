@@ -117,6 +117,23 @@ def test_sage_references_cannot_supersede_master_rrp_or_change_totals(monkeypatc
     monkeypatch.setattr(quote_pricing, "source_snapshot",
                         lambda: (catalog,configs,pricing,{"catalog":"fictional"}))
     monkeypatch.setattr(quote_pricing, "sage_snapshot", lambda: source)
+    from app import quote_rrp_priority
+    # The genuine route requires the authoritative August list to be pinned.
+    # Fictional fixture supplies one valid List Price and one invalid
+    # on-master SKU; only genuinely absent SKUs may use Sage reference.
+    monkeypatch.setattr(quote_rrp_priority, "source_snapshot", lambda: {
+        "rows": [
+            {"sku": code, "rrp": 2000, "name": "Test Bike",
+             "console": "No Console / N/A", "sheet": "Fictional",
+             "row": 4, "rrp_column": "List Price"},
+            {"sku": conflict, "rrp": None, "name": "Unpriced machine",
+             "console": "No Console / N/A", "sheet": "Fictional",
+             "row": 5, "rrp_column": "List Price"},
+        ],
+        "source_date": "2026-08-24",
+        "source_file_sha256": "f" * 64,
+        "snapshot_sha256": "a" * 64,
+    })
     result = quote_pricing.draft_price_preview(draft["id"])
     assert result["annual_partial"] == 60.0
     assert result["priced_count"] == 1
