@@ -16,9 +16,9 @@ The original V10 \`price_line\` formula, including one-unit rounding, still comp
 
 From Sage 200, export the **complete item-code Sales Price list**, not customer-specific invoice prices. The uploaded real-world Sage file contains **21,120 rows**. Supply CSV (UTF-8) or XLSX with these four required columns plus the optional fifth **Manufacturer** column, starting on the first worksheet:
 
-| A | B | C | D |
-|---|---|---|---|
-| Code | Name | Product Group Description | Sales Price |
+| A | B | C | D | E (optional) |
+|---|---|---|---|---|
+| Code | Name | Product Group Description | Sales Price | Manufacturer |
 
 **All** exact Sage item codes are retained in the source snapshot, including parts, accessories, non-maintenance groups and zero-price items. They remain accessible for reference but are **not automatically maintainable equipment**: the original V10 equipment and service configuration must separately validate coverage before pricing. Zero-price rows are held as unpriced; an authorised administrator can audit-correct the effective price of an exact code before any internal quote preview.
 
