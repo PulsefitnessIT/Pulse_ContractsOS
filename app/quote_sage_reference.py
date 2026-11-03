@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 from .store import DB
 from decimal import Decimal, InvalidOperation
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from .pilot_access import actor
 from .quote_workspace import _connect
 
