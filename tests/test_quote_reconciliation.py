@@ -226,3 +226,64 @@ def test_missing_sku_rows_appear_in_filtered_read_only_worklist(monkeypatch):
     assert response["total"] == 1
     assert response["items"][0]["catalogue_source_row"] == 7
     assert response["price_approved"] is False
+
+
+def test_legacy_review_records_source_rows_without_pricing(monkeypatch):
+    products, configs, pricing, legacy, history = synthetic_sources()
+    legacy.extend([
+        {"old_code": "LEGACY-MIXED", "new_sku": "EXAMPLE-001"},
+        {"old_code": "LEGACY-MIXED", "new_sku": "NO-SUCH-SKU"},
+        {"old_code": "LEGACY-DUP", "new_sku": "EXAMPLE-DUP"},
+        {"old_code": "LEGACY-INVALID", "new_sku": ""},
+        "not a dictionary",
+    ])
+    result = quote_reconciliation.reconcile(
+        products, configs, pricing, {"catalog": "fictional"},
+        legacy=legacy, legacy_sha="f" * 64,
+    )
+    summary = result["summary"]
+    assert summary["legacy_source_rows"] == 10
+    assert summary["legacy_missing_target_mappings"] == 2
+    assert summary["legacy_invalid_source_rows"] == 1
+    assert summary["legacy_codes_with_unresolved_targets"] >= 2
+    assert summary["legacy_source_rows_requiring_review"] >= 8
+    assert "LEGACY-MIXED" in result["legacy_ambiguous"]
+    assert "LEGACY-DUP" in result["legacy_ambiguous"]
+    assert all(row["approved_price"] is None for row in result["legacy_worklist"])
+    assert all("rrp" not in row for row in result["legacy_worklist"])
+
+    monkeypatch.setattr(quote_reconciliation, "actor", lambda: "fictional-reviewer")
+    monkeypatch.setattr(quote_reconciliation, "source_report", lambda: result)
+    response = quote_reconciliation.legacy_reconciliation_worklist(
+        q="LEGACY-MIXED", issue="", limit=20, offset=0
+    )
+    assert response["total"] == 2
+    assert response["price_approved"] is False
+    resolved = quote_reconciliation.resolve_legacy("LEGACY-MIXED")
+    assert resolved["match_count"] == 1
+    assert resolved["ambiguous"] is True  # Other source row had missing target.
+
+
+def test_unstaged_legacy_worklist_is_unavailable_not_an_empty_success(monkeypatch):
+    products, configs, pricing, _, _ = synthetic_sources()
+    result = quote_reconciliation.reconcile(
+        products, configs, pricing, {"catalog": "fictional"}
+    )
+    monkeypatch.setattr(quote_reconciliation, "actor", lambda: "fictional-staff")
+    monkeypatch.setattr(quote_reconciliation, "source_report", lambda: result)
+    with pytest.raises(HTTPException) as err:
+        quote_reconciliation.legacy_reconciliation_worklist(q="", issue="", limit=20, offset=0)
+    assert err.value.status_code == 503
+
+
+def test_legacy_two_old_fields_do_not_double_count_missing_target():
+    products, configs, pricing, _, _ = synthetic_sources()
+    result = quote_reconciliation.reconcile(
+        products, configs, pricing, {"catalog": "fictional"},
+        legacy=[{
+            "old_code": "OLD-ONE", "old_sku": "OLD-TWO",
+            "new_sku": "MISSING-NEW",
+        }],
+    )
+    assert result["summary"]["legacy_missing_target_mappings"] == 1
+    assert result["summary"]["legacy_source_rows_requiring_review"] == 1
