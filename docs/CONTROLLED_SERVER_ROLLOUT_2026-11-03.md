@@ -179,3 +179,53 @@ pricing; no claims of launch before acceptance evidence.
 
 These choices affect the actual runbook. The provided Compose file targets
 **Linux containers**, not native Windows IIS/Windows services.
+
+## November 3 security-hardening follow-up (development branch)
+
+**Changes implemented and under CI review:**
+
+- A login now creates an individually identified, server-recorded session.
+  Session IDs are **hashed** in SQLite, never stored in plaintext or printed.
+- Explicit logout immediately revokes the server session instead of just
+  asking the browser to erase its cookie. Password resets also invalidate
+  all prior sessions.
+- Session tickets still expire at eight hours; a session that is inactive
+  for one hour also expires, subject to the shared-server time settings.
+- IT can disable an individual pilot account, immediately revoking its
+  sessions, without disabling the last active administrator.
+- Protected staging checks the HTTPS `Origin` or `Referer` of mutating
+  requests against the configured `PULSE_PUBLIC_ORIGIN`. It also keeps
+  anti-CSRF token checks and denies privileged re-import actions to all
+  non-administrators, including in the **legacy** Excel re-import flow.
+- Read-only Viewer accounts cannot download full workbook exports, exported
+  raw documents, signed agreements or mass-export CSVs. Coordinators retain
+  the permitted operational reports and read/write actions.
+- The Excel reader now checks ZIP central-directory size, part counts,
+  inflated size and anomalous compression ratios **before** parsing.
+  This prevents small malformed uploads from exhausting the server.
+- The application validation job tests both Python 3.11 and 3.12.
+  A separate server-image job validates the Compose configuration and
+  builds/imports the Docker image with no customer records.
+- A separate dependency vulnerability review runs for pull requests,
+  weekly and manually. Its result must be reviewed before any deployment.
+
+For exceptional user-access actions, IT may run this **inside the protected
+staging container**, after establishing server administrator access:
+
+```bash
+python scripts/manage_pilot_accounts.py list
+python scripts/manage_pilot_accounts.py create staff.member --role Coordinator
+python scripts/manage_pilot_accounts.py reset-password staff.member
+python scripts/manage_pilot_accounts.py revoke-sessions staff.member
+python scripts/manage_pilot_accounts.py disable staff.member
+```
+
+Account creation and password resets prompt interactively and never accept a
+password on the command line. The staff account tool must not be exposed as
+an unauthenticated web endpoint. These local pilot controls are transitional,
+not substitutes for central company identity, MFA, and independent IT security
+review before full production.
+
+**Compatibility consequence:** server-side session checking deliberately
+invalidates old signed pilot cookies during rollout. Staff must sign in again;
+existing server records are not changed. Keep an approved rollback available.
