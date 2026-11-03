@@ -54,9 +54,13 @@ def source_manifest_status(proofs):
     """
     raw_path = os.environ.get("PULSE_SMARTQUOTE_SOURCE_MANIFEST", "").strip()
     if not raw_path:
+        from .quote_source_setup import manifest_status as in_app_source_status
+        local = in_app_source_status(proofs)
+        if local is not None:
+            return local
         return {
             "pinned": False, "matches": False,
-            "message": "Source fingerprints are not pinned to an IT-reviewed manifest.",
+            "message": "Source fingerprints are not pinned to an IT or Admin-reviewed manifest.",
             "commercially_approved": False,
         }
     path = Path(raw_path).expanduser().resolve()
@@ -110,20 +114,32 @@ def _parse_source(source_fingerprint, contents):
 
 
 def source_snapshot():
-    files = {}
     contents = []
     proofs = []
-    for kind, (environment, maximum) in SOURCE_FILES.items():
-        name = os.environ.get(environment, "").strip()
-        if not name:
-            raise HTTPException(503, f"Pricing preview unavailable: IT must stage {environment}.")
-        path = Path(name).expanduser().resolve()
-        if path.suffix.lower() != ".json":
-            raise HTTPException(503, f"Invalid staged SmartQuote {kind} file.")
-        data, _ = _load_file(path, maximum)
-        files[kind] = path
-        contents.append(data)
-        proofs.append(hashlib.sha256(data).hexdigest())
+    config = [os.environ.get(env, "").strip()
+              for env, _ in SOURCE_FILES.values()]
+    if not any(config):
+        # An authenticated pilot Admin may have staged the four exact V10
+        # source files in the private Contracts OS database.
+        from .quote_source_setup import active_source
+        bundle = active_source()
+        if bundle is None:
+            raise HTTPException(503,
+                "SmartQuote source is missing. Upload the four-file V10 ZIP in Source Setup.")
+        contents = [bundle["files"][kind] for kind in SOURCE_FILES]
+        proofs = [bundle["hashes"][kind] for kind in SOURCE_FILES]
+    else:
+        for kind, (environment, maximum) in SOURCE_FILES.items():
+            name = os.environ.get(environment, "").strip()
+            if not name:
+                raise HTTPException(503,
+                    f"Incomplete IT source staging: {environment} is missing.")
+            path = Path(name).expanduser().resolve()
+            if path.suffix.lower() != ".json":
+                raise HTTPException(503, f"Invalid staged SmartQuote {kind} file.")
+            data, _ = _load_file(path, maximum)
+            contents.append(data)
+            proofs.append(hashlib.sha256(data).hexdigest())
     source_manifest_status(dict(zip(SOURCE_FILES, proofs)))
     catalog, configs, pricing = _parse_source(tuple(proofs), tuple(contents))
     if not isinstance(catalog, list) or len(catalog) > 30000 or not isinstance(configs, list):
