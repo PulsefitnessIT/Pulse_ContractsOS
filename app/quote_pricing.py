@@ -292,6 +292,7 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                 "master_variant_conflict": "The August 2026 master has conflicting equipment variants; confirm the exact configuration.",
                 "stale_price_override": "Source price list changed since the local price revision. Administrator must review and reapply it.",
                 "sage_exact_sku_price": "An exact Sage equipment price is available but cannot be used with this equipment configuration.",
+                "sage_unpriced_exact_sku": "Exact Sage product exists but is priced at £0. An administrator must set a valid price before quotation preview.",
             }.get(decision["basis"], "No verified August 2026 master List Price or usable Sage price reference.")
         else:
             product = by_sku[code][0]
