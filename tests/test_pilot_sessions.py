@@ -151,3 +151,25 @@ def test_missing_csrf_blocks_write_even_from_admin(pilot,monkeypatch):
     cookie,_=issue()
     request=_request("/api/master/reimport/abc/apply","POST",cookie,"")
     assert asyncio.run(pilot_access.pilot_middleware(request,_accepted)).status_code==403
+
+
+@pytest.mark.parametrize("path",[
+    "/api/export/excel",
+    "/api/export/equipment",
+    "/api/pilot/data-quality/missing-amounts.csv",
+    "/api/reports/sales/all-managers/download",
+    "/api/imports/42/source",
+    "/api/smartquote/setups/1/signed-agreement",
+])
+def test_viewer_cannot_bulk_export_customer_or_document_data(pilot,path):
+    cookie,body=issue("fictionalviewer","Viewer")
+    request=_request(path,"GET",cookie,body["csrf"])
+    result=asyncio.run(pilot_access.pilot_middleware(request,_accepted))
+    assert result.status_code==403
+
+
+def test_coordinator_can_download_after_sign_in(pilot):
+    cookie,body=issue("fictionalstaff","Coordinator")
+    request=_request("/api/export/excel","GET",cookie,body["csrf"])
+    result=asyncio.run(pilot_access.pilot_middleware(request,_accepted))
+    assert result.status_code==202
