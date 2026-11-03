@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from .pilot_access import actor, current_role
 from .quote_pricing import source_snapshot, _positive_number, source_manifest_status
+from .quote_history_audit import analyze_historical_identity
 
 router = APIRouter(prefix="/api/quoting/catalogue", tags=["V10 equipment reconciliation"])
 
@@ -183,6 +184,7 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
                 sku_rows[code].append(product)
                 sku_source_positions[code].append(position)
     policy_audit = policy_reconciliation(pricing)
+    history_audit = analyze_historical_identity(history)
     buckets = Counter()
     worklist = []
     # Rows without an SKU must be visible to reviewers. Previously these
@@ -341,6 +343,7 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
             len(history["records"]) if history is not None else None
         ),
         "historical_source_staged": history is not None,
+        **history_audit["summary"],
         "not_a_master_price_list_approval": True,
     }
     return {
@@ -348,6 +351,7 @@ def reconcile(catalog, configs, pricing, fingerprint, legacy=None,
         "worklist": worklist,
         "policy_worklist": policy_audit["worklist"],
         "legacy_worklist": legacy_review,
+        "historical_worklist": history_audit["worklist"],
         "legacy_targets": legacy_keys,
         "legacy_ambiguous": legacy_ambiguous,
         "sku_rows": sku_rows,
@@ -436,6 +440,30 @@ def reconciliation_policy_worklist(
         "total": len(items), "offset": offset, "limit": limit,
         "items": items[offset:offset + limit],
         "review_only": True, "price_approved": False,
+    }
+
+
+@router.get("/reconciliation/historical-worklist")
+def reconciliation_historical_worklist(
+        q: str = Query("", max_length=100),
+        issue: str = Query("", max_length=100),
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0)):
+    """Read-only original history key/alias exceptions without pricing."""
+    actor()
+    report = source_report()
+    if not report["summary"]["historical_source_staged"]:
+        raise HTTPException(503, "The authentic historical equipment index is not staged.")
+    items = report["historical_worklist"]
+    phrase = q.casefold().strip()
+    if phrase:
+        items = [row for row in items if phrase in row["source_key"].casefold()]
+    if issue:
+        items = [row for row in items if issue in row["issues"]]
+    return {
+        "total": len(items), "offset": offset, "limit": limit,
+        "items": items[offset:offset + limit], "review_only": True,
+        "price_approved": False,
     }
 
 
