@@ -172,7 +172,8 @@ def test_concurrent_admin_previews_and_double_activation_are_blocked(tmp_path,mo
 
 def test_original_source_refresh_disables_commercial_issuance(tmp_path,monkeypatch):
     from app import quote_commercial_setup as setup
-    db,_=_setup(tmp_path,monkeypatch)
+    _setup(tmp_path,monkeypatch)
+    db=src.connect
     first=asyncio.run(src.preview_zip(UploadFile(
         file=io.BytesIO(_bundle()),filename="v10.zip"
     )))
