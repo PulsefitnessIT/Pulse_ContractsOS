@@ -45,15 +45,20 @@ def _amount(value):
 def source_snapshot():
     """Read exact original sanitized List Price evidence, fail closed if absent."""
     file = os.environ.get(SOURCE_ENV, "").strip()
-    if not file:
-        raise HTTPException(503, "IT must stage the 24 August 2026 RRP evidence snapshot.")
-    path = Path(file).expanduser().resolve()
     try:
-        if path.suffix.lower() != ".gz" or not path.is_file():
-            raise ValueError("Incorrect source format")
-        if not 2 <= path.stat().st_size <= MAX_COMPRESSED:
-            raise ValueError("Invalid source size")
-        raw = path.read_bytes()
+        if file:
+            path = Path(file).expanduser().resolve()
+            if path.suffix.lower() != ".gz" or not path.is_file():
+                raise ValueError("Incorrect source format")
+            if not 2 <= path.stat().st_size <= MAX_COMPRESSED:
+                raise ValueError("Invalid source size")
+            raw = path.read_bytes()
+        else:
+            from .quote_source_setup import active_source
+            bundle = active_source()
+            if bundle is None:
+                raise ValueError("Neither IT nor a pilot Admin has staged the August master.")
+            raw = bundle["files"]["august_2026_rrp"]
         decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
         decoded = decoder.decompress(raw, MAX_DECOMPRESSED + 1)
         if (len(decoded) > MAX_DECOMPRESSED or not decoder.eof
