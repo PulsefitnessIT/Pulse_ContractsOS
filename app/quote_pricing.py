@@ -1,7 +1,8 @@
 """V10-source, exact-SKU maintenance pricing PREVIEW inside Contracts OS.
 
-Uses privately provisioned SmartQuote catalog/config/pricing JSON files. Copies
-the arithmetic of V10 engine.price_line for the selected standard tariff only.
+Uses privately provisioned SmartQuote catalog/config/pricing JSON files.
+Executes the verbatim original V10 engine.price_line arithmetic with isolated
+source-specific globals for the exact selected source SKU and standard tier.
 No guesses from historic, Sage or approximate console models; no approvals or
 Sicon writes. NEVER use this response as an issued customer quotation.
 """
@@ -19,6 +20,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from .quote_drafts import get_draft
 from ._smartquote_staged_v10 import stage_summary
+from ._smartquote_price_line_v10 import original_v10_price_line
 from .quote_sage_reference import snapshot as sage_snapshot, reference as sage_reference
 from .pilot_access import actor
 
@@ -124,20 +126,27 @@ def _line_price(product, config, pricing, tier, discount, qty):
         return None, "Invalid source console multiplier."
     if not math.isfinite(console_factor) or console_factor <= 0:
         return None, "Invalid source console multiplier."
+    # Full numeric arithmetic is executed by the original V10 price_line
+    # function, copied verbatim. We control eligibility, SKU, source RRP,
+    # console identity and approval independently from the quoted amount.
+    # No global tariff state is mutated when two coordinators preview at once.
+    original_selected = {
+        "rrp": rrp, "rate_group": group, "console": console_name,
+        "console_pricing": console_factor, "eligible": config.get("eligible"),
+        "price_origin": "exact-v10-catalogue-preview",
+        "pricing_rule": "Original V10 exact source SKU tariff",
+    }
     try:
-        uplift = float(console.get("uplift", 0))
-        base_uplift = float(rate.get("uplift", 0))
-        minimum = float(rate["minimum"])
-        base = float(rrp) * float(coefficient)
-        annualunit = (base * console_factor + uplift + base_uplift) * multiplier
-        unit = _money(annualunit * (1 - discount / 100))
-        annual = _money(unit * qty)
-        minimum_total = (
-            (float(rrp) * minimum * console_factor + uplift + base_uplift)
-            * multiplier * qty
+        v10_amount = original_v10_price_line(
+            {"qty": qty, "selected": original_selected}, "Standard",
+            tier, discount, pricing
         )
-        minimum_total = _money(minimum_total)
-    except (ValueError, TypeError, ArithmeticError, KeyError):
+        if not v10_amount:
+            return None, "Original SmartQuote V10 engine did not price this source item."
+        unit = float(v10_amount["unit"])
+        annual = float(v10_amount["annual"])
+        minimum_total = float(v10_amount["minimum"])
+    except (ValueError, TypeError, ArithmeticError, KeyError, OverflowError, InvalidOperation):
         return None, "SmartQuote source tariff is not a valid numeric rule."
     if not all(math.isfinite(n) for n in (unit, annual, minimum_total)):
         return None, "Non-finite calculated amount."
@@ -165,7 +174,8 @@ def _line_price(product, config, pricing, tier, discount, qty):
         "coverage_review": reasons,
         "review_required": bool(reasons),
         "rate_status": str(rate.get("status") or ""),
-        "price_basis": "exact-v10-sku-standard-tariff-preview",
+        "price_basis": "original-v10-price_line-standard-tariff-preview",
+        "source_engine": "original SmartQuote V10 price_line arithmetic",
     }, None
 
 
