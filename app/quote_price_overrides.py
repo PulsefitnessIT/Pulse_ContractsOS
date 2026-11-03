@@ -20,7 +20,7 @@ from .store import connect
 
 router = APIRouter(prefix="/api/quoting/prices", tags=["Controlled equipment price revisions"])
 SKU = re.compile(r"^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$")
-ACTIVE_SOURCES = {"august_2026_master_list_price", "sage_exact_sku_price"}
+ACTIVE_SOURCES = {"august_2026_master_list_price", "sage_exact_sku_price", "sage_unpriced_exact_sku"}
 
 
 class PriceChange(BaseModel):
@@ -125,7 +125,7 @@ def active_overrides(codes=None):
 def _digest(decision, august, sage):
     if decision["basis"] == "august_2026_master_list_price":
         return august["snapshot_sha256"]
-    if decision["basis"] == "sage_exact_sku_price" and sage is not None:
+    if decision["basis"] in ("sage_exact_sku_price", "sage_unpriced_exact_sku") and sage is not None:
         return sage["source_file_sha256"]
     return None
 
@@ -272,7 +272,7 @@ def price_detail(sku: str):
     row = dict(current) if current else None
     applied = effective(decision, row, {
         "snapshot_sha256": digest if decision["basis"] == "august_2026_master_list_price" else "",
-    }, {"source_file_sha256": digest} if decision["basis"] == "sage_exact_sku_price" else None)
+    }, {"source_file_sha256": digest} if decision["basis"] in ("sage_exact_sku_price", "sage_unpriced_exact_sku") else None)
     return {
         "sku": code,
         "source_kind": decision["basis"],
