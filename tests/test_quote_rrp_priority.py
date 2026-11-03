@@ -130,3 +130,92 @@ def test_pinned_source_must_match_master_snapshot_bytes(tmp_path, monkeypatch):
     assert result["rows"][0]["sku"] == "MASTER-EXACT"
     assert captured[0]["august_2026_rrp"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert result["source_file_sha256"] == rrp.MASTER_ORIGINAL_SHA256
+
+
+def test_preview_uses_august_price_without_modifying_original_catalogue():
+    from app import quote_pricing
+    catalog, configs, pricing, hashes = example_sources()
+    original_value = catalog[0]["rrp"]
+    chosen = rrp.index(staged([line("EXAMPLE-SKU", 3000)]))
+    result = quote_pricing.preview(
+        example_draft(), catalog, configs, pricing, hashes,
+        master_by_sku=chosen, sage_source=sage_source(),
+    )
+    assert result["priced_count"] == 1
+    assert result["lines"][0]["rrp"] == 3000.0
+    assert result["lines"][0]["annual"] == 90.0
+    assert result["annual_partial"] == 90.0
+    assert result["lines"][0]["rrp_source"] == "august_2026_master_list_price"
+    assert result["lines"][0]["rrp_source_approved"] is False
+    assert result["lines"][0]["review_required"] is True
+    assert catalog[0]["rrp"] == original_value
+    assert result["customer_quote_issue_enabled"] is False if "customer_quote_issue_enabled" in result else result["issue_quote_enabled"] is False
+
+
+def test_preview_never_uses_old_catalogue_price_when_master_absent():
+    from app import quote_pricing
+    catalog, configs, pricing, hashes = example_sources()
+    sage = sage_source()
+    sage["prices"]["EXAMPLE-SKU"] = {"sku": "EXAMPLE-SKU", "sales_price": 2500}
+    result = quote_pricing.preview(
+        example_draft(), catalog, configs, pricing, hashes,
+        master_by_sku=rrp.index(staged([])), sage_source=sage,
+    )
+    assert result["priced_count"] == 0
+    assert result["lines"][0]["priced"] is False
+    assert result["lines"][0]["sage_reference"]["sage_sales_price"] == 2500
+    assert result["lines"][0]["rrp_source"] == "sage_sales_price_fallback_review"
+    assert result["complete_price"] is False
+    assert result["issue_quote_enabled"] is False
+
+
+def test_source_priority_summary_counts_are_aggregate_only():
+    master = staged([
+        line("EXAMPLE-SKU", 3000),
+        line("CONFLICT", 1000),
+        line("CONFLICT", 1400),
+        line("MASTER-NEW", 800),
+    ])
+    catalog = [
+        {"sku": "EXAMPLE-SKU"}, {"sku": "CONFLICT"},
+        {"sku": "NOT-ON-MASTER"}, {"sku": "ABSENT"},
+    ]
+    result = rrp.summarize_priority(master, catalog, sage_source())
+    counts = result["counts"]
+    assert counts["v10_skus_with_master_reference"] == 1
+    assert counts["v10_skus_with_conflicting_master_rows"] == 1
+    assert counts["v10_skus_referred_to_sage"] == 1
+    assert counts["v10_skus_absent_from_both_lists"] == 1
+    assert counts["august_master_skus_not_in_v10"] == 1
+    assert result["sage_sales_price_is_not_an_approved_rrp"] is True
+    assert result["customer_quote_issue_enabled"] is False
+    assert "EXAMPLE-SKU" not in json.dumps(result)
+    assert "3000" not in json.dumps(result)
+
+
+def example_sources():
+    return [
+        {
+            "sku": "EXAMPLE-SKU", "rrp": 1000,
+            "name": "Fictional equipment",
+            "model": "X", "service_key": "X | No Console / N/A",
+            "console": "No Console / N/A", "match": "Exact SKU",
+        },
+    ], [
+        {"key": "X | No Console / N/A", "eligible": "Yes",
+         "rate_group": "Standard Equipment"},
+    ], {
+        "tiers": {"Gold": 1.0}, "pricing_status": "Provisional",
+        "rates": [{"group": "Standard Equipment", "standard": .03,
+                   "minimum": .025, "uplift": 0, "status": "Active"}],
+        "console_rules": [{"name": "No Console / N/A",
+                           "multiplier": 1, "uplift": 0}],
+    }, {"catalog": "a"*64, "configs": "b"*64, "pricing": "c"*64}
+
+
+def example_draft():
+    return {
+        "id": "e"*32, "revision": 1, "tier": "Gold",
+        "term_years": 1, "discount_percent": 0,
+        "equipment": [{"item_code": "EXAMPLE-SKU", "quantity": 1}],
+    }
