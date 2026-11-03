@@ -221,3 +221,28 @@ def example_draft():
         "term_years": 1, "discount_percent": 0,
         "equipment": [{"item_code": "EXAMPLE-SKU", "quantity": 1}],
     }
+
+
+def test_sage_zero_price_code_retained_for_price_admin_but_not_automatically_priced():
+    source=sage_source()
+    source["prices"]["SPECIAL ITEM#2"]={
+        "sku":"SPECIAL ITEM#2",
+        "sales_price":0.0,
+        "name":"Legacy fictional equipment"
+    }
+    decision=rrp.resolve("SPECIAL ITEM#2",rrp.index(staged([])),source)
+    assert decision["basis"]=="sage_unpriced_exact_sku"
+    assert decision["rrp"] is None
+    assert decision["review_required"] is True
+
+
+def test_sage_extended_code_characters_match_exactly_with_no_surrogate_id():
+    source=sage_source()
+    source["prices"]["FS800-100(209)"]={
+        "sku":"FS800-100(209)","sales_price":320.64,
+        "name":"Fictional complex Sage code"
+    }
+    decision=rrp.resolve("fs800-100(209)",rrp.index(staged([])),source)
+    assert decision["basis"]=="sage_exact_sku_price"
+    assert decision["rrp"]==320.64
+
