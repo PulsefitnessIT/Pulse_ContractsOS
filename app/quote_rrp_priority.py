@@ -153,3 +153,45 @@ def resolve(sku, by_code, sage_source=None):
         "basis": "not_on_august_master_or_usable_sage_export",
         "rrp": None, "review_required": True,
     }
+
+def summarize_priority(master, catalog, sage_source=None):
+    """Aggregate-only mapping status for the coordinator's price-source panel."""
+    by_code = index(master)
+    catalogue_codes = {
+        _code(row.get("sku")) for row in catalog
+        if isinstance(row, dict) and CODE.fullmatch(_code(row.get("sku")))
+    }
+    all_sage = sage_source.get("prices", {}) if sage_source else {}
+    counts = {
+        "original_v10_catalogue_distinct_skus": len(catalogue_codes),
+        "august_2026_master_source_rows": len(master["rows"]),
+        "august_2026_master_distinct_skus": len(by_code),
+        "august_master_skus_not_in_v10": len(set(by_code) - catalogue_codes),
+        "v10_skus_with_master_reference": 0,
+        "v10_skus_with_conflicting_master_rows": 0,
+        "v10_skus_referred_to_sage": 0,
+        "v10_skus_absent_from_both_lists": 0,
+    }
+    for sku in catalogue_codes:
+        match = resolve(sku, by_code, sage_source)
+        if match["basis"] == "august_2026_master_list_price":
+            counts["v10_skus_with_master_reference"] += 1
+        elif match["basis"] in ("master_price_conflict", "master_variant_conflict"):
+            counts["v10_skus_with_conflicting_master_rows"] += 1
+        elif match["basis"] == "sage_sales_price_fallback_review":
+            counts["v10_skus_referred_to_sage"] += 1
+        else:
+            counts["v10_skus_absent_from_both_lists"] += 1
+    return {
+        "priority": ["August 2026 Master List Price", "Sage exact-SKU Sales Price fallback"],
+        "counts": counts,
+        "august_source_date": master["source_date"],
+        "august_original_file_sha256": master["source_file_sha256"],
+        "august_snapshot_sha256": master["snapshot_sha256"],
+        "sage_loaded": bool(sage_source),
+        "sage_review_overdue": sage_source["review_overdue"] if sage_source else None,
+        "master_list_price_is_primary": True,
+        "sage_sales_price_is_not_an_approved_rrp": True,
+        "commercially_approved": False,
+        "customer_quote_issue_enabled": False,
+    }
