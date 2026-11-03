@@ -32,7 +32,7 @@ def db_fixture(tmp_path, monkeypatch):
             (2, "Active", "MOD", {
                 "Customer / site": "Fictional Defence Facility",
                 "Next action": "Request information", "Next action date": "",
-                "Expiry date": "2030-01-01",
+                "Expiry date": "",
             }),
             (3, "Expired", "Expired", {
                 "Customer / site": "Fictional Archived Site",
