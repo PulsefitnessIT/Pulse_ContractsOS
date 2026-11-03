@@ -203,9 +203,11 @@ def test_sage_conflicts_and_non_equipment_rows_cannot_be_silently_installed(tmp_
         writer.writerow([row[0], "Fictional equipment", "Cardiovascular Equipment", row[1]])
     writer.writerow(["PART-1", "Fictional repair kit", "Spare Parts", "20000"])
     parsed = refresh.parse_export("sage.csv", output.getvalue().encode())
-    assert parsed["excluded_group_rows"] == 1
-    assert parsed["usable_rows"] == 6
-    assert "PART-1" not in parsed["prices"]
+    assert parsed["excluded_group_rows"] == 0
+    assert parsed["non_equipment_reference_rows"] == 1
+    assert parsed["usable_rows"] == 7
+    assert parsed["prices"]["PART-1"]["sales_price"] == 20000
+    # An inventory code in Sage is not automatically a maintainable machine.
 
 
 def test_invalid_sage_formats_prices_and_dates_fail_closed(tmp_path, monkeypatch):
@@ -350,3 +352,66 @@ def test_sage_refresh_requires_full_valid_export_and_hash_integrity(tmp_path, mo
         ))
     assert err.value.status_code == 422
     assert reference.snapshot() is None
+
+
+def test_full_sage_export_preserves_original_special_codes_manufacturer_and_zero_prices():
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow([
+        "Code", "Name", "Product Group Description",
+        "Sales Price", "Manufacturer",
+    ])
+    writer.writerow([
+        "JTDR-05-20 BLK", "Fictional weight rack",
+        "Free Weight Benches & Racks", "320.643", "Example Manufacturer",
+    ])
+    writer.writerow([
+        "P16-A5000-B#1", "Fictional spare code",
+        "CV Parts", "0", "Parts Supplier",
+    ])
+    writer.writerow([
+        "SCKIOSK&COMPUTER2", "Fictional console",
+        "PulseMove Parts", "445.50", "Example",
+    ])
+    writer.writerow([
+        "FS800-100(209)", "Fictional exercise equipment",
+        "Functional Equipment", "1499", "Example",
+    ])
+    writer.writerow([
+        "JTDR-08-10N GRY", "Fictional weight rack",
+        "Free Weights", "199.99", "Example",
+    ])
+    parsed = refresh.parse_export("sage-full.csv", out.getvalue().encode())
+    assert parsed["usable_rows"] == 5
+    assert parsed["positive_price_rows"] == 4
+    assert parsed["zero_price_rows"] == 1
+    assert parsed["invalid_equipment_rows"] == 0
+    assert parsed["non_equipment_reference_rows"] == 2
+    assert parsed["prices"]["JTDR-05-20 BLK"]["sales_price"] == 320.64
+    assert parsed["prices"]["JTDR-05-20 BLK"]["manufacturer"] == "Example Manufacturer"
+    assert parsed["prices"]["P16-A5000-B#1"]["sales_price"] == 0
+    assert "SCKIOSK&COMPUTER2" in parsed["prices"]
+
+
+def test_real_export_style_xlsx_fifth_manufacturer_column_is_retained():
+    rows = [
+        ["Code", "Name", "Product Group Description", "Sales Price", "Manufacturer"],
+    ] + [[code, "Fictional product", "Free Weights", str(price), "Test Supplier"]
+         for code, price in dataset()]
+    root = ('<worksheet xmlns="http://schemas.openxmlformats.org/'
+            'spreadsheetml/2006/main"><sheetData>')
+    for position, values in enumerate(rows, 1):
+        root += f'<row r="{position}">'
+        for col, value in zip("ABCDE", values):
+            root += (f'<c r="{col}{position}" t="inlineStr"><is>'
+                     f'<t>{value}</t></is></c>')
+        root += '</row>'
+    root += '</sheetData></worksheet>'
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/worksheets/sheet1.xml", root)
+    result = refresh.parse_export("full-sage.xlsx", buffer.getvalue())
+    assert result["usable_rows"] == 6
+    assert result["equipment_rows"] == 6
+    assert result["prices"]["FIC-0002"]["manufacturer"] == "Test Supplier"
