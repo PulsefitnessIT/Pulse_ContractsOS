@@ -39,13 +39,16 @@ MIN_VALID = 5
 COLUMNS = ("code", "name", "product group description", "sales price")
 N = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 SOURCE_LABEL = "Sage Sales Price export — exact item-code equipment price basis"
-ALLOWED_GROUPS = frozenset((
+# The Sage source is the complete item-code reference, not just a maintenance
+# equipment export. Keep spare parts, free weights, accessories and £0 rows
+# for lookup and audit. Coverage approval still happens in V10 configurations.
+EQUIPMENT_GROUPS = frozenset((
     "Strength Equipment", "Cardiovascular Equipment", "Functional Equipment",
     "Free Weight Benches & Racks", "Studio/Circuit Equipment",
     "Non Pulse Equipment", "Equipment with Serial Numbers",
-    "Equipment without serial numbers",
+    "Equipment without serial numbers", "Free Weights", "Base Units",
 ))
-SKU = re.compile(r"^[A-Z0-9][A-Z0-9._/-]{0,99}$")
+SKU = re.compile(r"^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$")
 
 
 def _date(value):
@@ -70,7 +73,7 @@ def _parse_price(value):
         if isinstance(value, bool):
             raise ValueError()
         p = Decimal(str(value).replace("£", "").replace(",", "").strip())
-        if not p.is_finite() or not 0 < p <= 1000000:
+        if not p.is_finite() or not 0 <= p <= 1000000:
             return None
         return float(p.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     except (ValueError, InvalidOperation, TypeError):
@@ -125,7 +128,7 @@ def _xlsx_rows(raw):
                 fields = {}
                 for cell in element.findall(N + "c"):
                     column = re.match(r"[A-Z]+", cell.attrib.get("r", ""))
-                    if not column or column.group(0) not in ("A", "B", "C", "D"):
+                    if not column or column.group(0) not in ("A", "B", "C", "D", "E"):
                         continue
                     if cell.find(N + "f") is not None:
                         raise ValueError("Formula-driven prices cannot be treated as Sage export evidence")
@@ -139,48 +142,65 @@ def _xlsx_rows(raw):
                     fields[column.group(0)] = str(value or "").strip()
                 element.clear()
                 if fields:
-                    yield number, [fields.get(k, "") for k in ("A", "B", "C", "D")]
+                    yield number, [fields.get(k, "") for k in ("A", "B", "C", "D", "E")]
     except (ValueError, KeyError, IndexError, zipfile.BadZipFile, ET.ParseError,
             OSError, OverflowError) as exc:
         raise HTTPException(422, "Invalid or unsafe Sage XLSX export. Export a new Sage item price list.") from exc
 
 
 def parse_export(filename, raw):
-    """Match original SmartQuote's four-column Sage equipment export layout."""
+    """Preserve Sage's full item-code universe, including legacy and £0 rows.
+
+    The source's fifth Manufacturer column is optional for earlier exports.
+    All valid exact item-code records are retained; parts are not silently
+    removed. A valid Sage code does not imply maintenance eligibility.
+    """
     if not isinstance(raw, bytes) or not 0 < len(raw) <= SIZE_LIMIT:
         raise HTTPException(413, "Sage export is empty or exceeds 16 MB.")
     suffix = Path(filename).suffix.lower()
     if suffix not in (".csv", ".xlsx"):
         raise HTTPException(422, "Upload Sage price list as CSV or XLSX.")
     rows = _csv_rows(raw) if suffix == ".csv" else _xlsx_rows(raw)
-    items, conflicts, excluded, invalid, total, equipment, seen_header = {}, set(), 0, 0, 0, 0, False
+    items, conflicts = {}, set()
+    total = equipment = unclassified = invalid = zero = positive = 0
+    seen_header = False
     for position, parts in rows:
         if not seen_header:
             if tuple(p.lower().strip() for p in parts[:4]) != COLUMNS:
                 raise HTTPException(
-                    422, "Expected Sage export columns: Code, Name, Product Group Description, Sales Price."
+                    422, "Expected Sage columns: Code, Name, Product Group Description, Sales Price (optional Manufacturer)."
                 )
+            if len(parts) >= 5 and parts[4] and parts[4].lower().strip() != "manufacturer":
+                raise HTTPException(422, "Unexpected fifth Sage column; expected Manufacturer.")
             seen_header = True
             continue
         total += 1
         if total > MAX_ROWS:
             raise HTTPException(422, "Sage export exceeds 60,000 item rows.")
-        code, name, group, price = (parts + ["", "", "", ""])[:4]
-        if group not in ALLOWED_GROUPS:
-            excluded += 1
-            continue
-        equipment += 1
+        code, name, group, price, manufacturer = (
+            parts + ["", "", "", "", ""]
+        )[:5]
         sku = code.strip().upper()
         amount = _parse_price(price)
         if not SKU.fullmatch(sku) or amount is None:
             invalid += 1
             continue
+        if group in EQUIPMENT_GROUPS:
+            equipment += 1
+        else:
+            unclassified += 1
+        if amount == 0:
+            zero += 1
+        else:
+            positive += 1
         item = {
             "sku": sku, "name": name[:250], "group": group[:120],
-            "sales_price": amount, "row": position,
+            "sales_price": amount, "manufacturer": manufacturer[:200],
+            "row": position,
         }
-        old = items.get(sku)
-        if old and any(old[k] != item[k] for k in ("name", "group", "sales_price")):
+        previous = items.get(sku)
+        if previous and any(previous[key] != item[key]
+                            for key in ("name", "group", "sales_price", "manufacturer")):
             conflicts.add(sku)
         else:
             items.setdefault(sku, item)
@@ -188,14 +208,18 @@ def parse_export(filename, raw):
         items.pop(key, None)
     if not seen_header or len(items) < MIN_VALID:
         raise HTTPException(
-            422, "Sage equipment export is incomplete (fewer than five usable item codes)."
+            422, "Sage export is incomplete (fewer than five usable item codes)."
         )
     return {
         "prices": items,
         "total_rows": total,
         "equipment_rows": equipment,
+        "non_equipment_reference_rows": unclassified,
         "usable_rows": len(items),
-        "excluded_group_rows": excluded,
+        "positive_price_rows": positive,
+        "zero_price_rows": zero,
+        # No product group is dropped from the full Sage item-code snapshot.
+        "excluded_group_rows": 0,
         "invalid_equipment_rows": invalid,
         "conflicting_item_codes": len(conflicts),
         "source_file_sha256": hashlib.sha256(raw).hexdigest(),
@@ -264,7 +288,7 @@ def _current():
 
 
 def difference(previous, current):
-    """Compare exact SKUs; never silently discard removed equipment."""
+    """Compare exact SKUs across ALL Sage groups; do not silently drop parts."""
     before = previous.get("prices", {}) if previous else {}
     keys = sorted(set(before) | set(current))
     changes = []
@@ -277,7 +301,9 @@ def difference(previous, current):
             kind = "removed"
         elif older.get("sales_price") != newer.get("sales_price"):
             kind = "price_changed"
-        elif older.get("name") != newer.get("name") or older.get("group") != newer.get("group"):
+        elif (older.get("name") != newer.get("name")
+              or older.get("group") != newer.get("group")
+              or older.get("manufacturer") != newer.get("manufacturer")):
             kind = "details_changed"
         else:
             kind = "unchanged"
@@ -318,6 +344,9 @@ def preview_import(filename, raw, source_date):
         "total_rows": parsed["total_rows"],
         "equipment_rows": parsed["equipment_rows"],
         "usable_rows": parsed["usable_rows"],
+        "positive_price_rows": parsed["positive_price_rows"],
+        "zero_price_rows": parsed["zero_price_rows"],
+        "non_equipment_reference_rows": parsed["non_equipment_reference_rows"],
         "excluded_group_rows": parsed["excluded_group_rows"],
         "invalid_equipment_rows": parsed["invalid_equipment_rows"],
         "conflicting_item_codes": parsed["conflicting_item_codes"],
