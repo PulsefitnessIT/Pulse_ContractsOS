@@ -197,3 +197,58 @@ def test_stale_override_stops_quote_instead_of_using_new_sage_price():
     assert result["lines"][0]["rrp_source"] == "stale_price_override"
     assert result["lines"][0]["price_override"]["status"] == "source_changed_review_required"
     assert result["issue_quote_enabled"] is False
+
+
+def test_admin_can_correct_real_sage_zero_price_without_writing_original_source(tmp_path,monkeypatch):
+    setup_admin(tmp_path,monkeypatch)
+    monkeypatch.setattr(edits,"source_for_code",lambda sku:(
+        {"basis":"sage_unpriced_exact_sku","rrp":None,"review_required":True},
+        "c"*64
+    ))
+    saved=edits.update_price("legacy #1",edits.PriceChange(
+        price_gbp="850.00",expected_revision=0,
+        reason="Confirmed historical equipment price with service team"
+    ))
+    assert saved["source_kind"]=="sage_unpriced_exact_sku"
+    assert saved["effective_rrp_gbp"]==850.0
+    active=edits.active_overrides(["legacy #1"])["LEGACY #1"]
+    source={"basis":"sage_unpriced_exact_sku","rrp":None,"review_required":True}
+    adjusted=edits.effective(source,active,{},{"source_file_sha256":"c"*64})
+    assert adjusted["basis"]=="managed_price_override"
+    assert adjusted["rrp"]==850.0
+    assert adjusted["original_source_price_gbp"] is None
+    assert source["rrp"] is None
+
+
+def test_sage_zero_source_cannot_calculate_contract_until_price_is_corrected():
+    from app import quote_rrp_priority
+    catalog,configs,rules,draft=_preview_inputs()
+    sage={
+        "prices":{"OLD-BIKE":{"sku":"OLD-BIKE","sales_price":0.0}},
+        "source_date":"2026-11-03","review_due":"2027-11-03",
+        "review_overdue":False,"source_file_sha256":"d"*64,
+        "source":"Fictional complete Sage export",
+    }
+    before=quote_pricing.preview(
+        draft,catalog,configs,rules,
+        {"catalog":"x","configs":"y","pricing":"z"},
+        master_by_sku=quote_rrp_priority.index({"rows":[]}),
+        sage_source=sage,overrides={},august_source={}
+    )
+    assert before["priced_count"]==0
+    assert before["lines"][0]["rrp_source"]=="sage_unpriced_exact_sku"
+    active={"OLD-BIKE":{
+        "price_pence":112000,"source_kind":"sage_unpriced_exact_sku",
+        "source_sha256":"d"*64,"revision":1,"active":1,
+        "updated_by":"fictional-admin","updated_at":"2026-11-03",
+    }}
+    after=quote_pricing.preview(
+        draft,catalog,configs,rules,
+        {"catalog":"x","configs":"y","pricing":"z"},
+        master_by_sku=quote_rrp_priority.index({"rows":[]}),
+        sage_source=sage,overrides=active,august_source={}
+    )
+    assert after["priced_count"]==1
+    assert after["lines"][0]["rrp"]==1120.0
+    assert after["annual_partial"]==67.2
+    assert after["issue_quote_enabled"] is False
