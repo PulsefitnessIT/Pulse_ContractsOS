@@ -7,6 +7,48 @@ customer-ready PDF to send using the normal customer email process.
 **Status:** built into draft PR #5 for the next supervised pilot. Not yet
 merged, staged with live Pulse data, commercially signed off or deployed.
 
+## In-app commercial onboarding (current build)
+
+The next protected pilot now has **SmartQuote → Customer Quotation — Commercial
+Setup**, restricted to a named Administrator. Commercial onboarding no longer
+requires IT to prepare terms/issuer JSON files or manually set tariff
+environment variables; the existing environment-pinned configuration remains
+supported as an IT-managed override.
+
+1. **Approve tariff:** after the authentic V10 price/config files are
+   securely staged, inspect the exact source rate groups and Silver/Gold/
+   Platinum multipliers. An authorised manager confirms each source rule,
+   minimum charge, discount and outstanding parity issue, and records an
+   approval reference and reason. The precise tariff source SHA-256 is
+   captured. Source status marked `Provisional` is **not** auto-approved.
+2. **Approve terms:** upload the actual approved maintenance terms PDF, record
+   legal/commercial approval and confirm the entire document is current. The
+   exact bytes are saved privately and appended to issued quotations.
+3. **Supplier identity:** record factual verified legal company name,
+   registered office, company number, service contact email and optional
+   phone/VAT number. The source bytes are versioned and audited.
+4. **Enable customer PDFs:** once the three preceding requirements are
+   complete and an end-to-end approved-data acceptance test has been carried
+   out, record the release decision and enable customer quote issuance.
+   The app will still require an Administrator's approval for every individual
+   quote. Issuance remains OFF by default.
+5. Any update to an approved tariff, company identity or terms **automatically
+   disables** the in-app customer issue switch, requiring review and
+   reactivation. Every change is recorded in an append-only audit.
+
+**IT override:** `PULSE_QUOTE_LIVE_ISSUANCE=0` explicitly disables customer
+PDFs even if the Administrator switch is enabled. A matching
+`PULSE_QUOTE_APPROVED_TARIFF_SHA256`, terms/issuer file hashes and
+`PULSE_QUOTE_LIVE_ISSUANCE=1` may still be used on tightly managed
+infrastructure. If any associated file/hash pair is partially provided,
+the application fails closed. Never enable issue with unverified commercial
+tariffs or placeholder company details.
+
+The authenticated pilot and secure core source staging are still needed.
+The UI cannot independently verify that a real person had commercial
+authority to sign off tariffs; the company is responsible for controlling
+Admin access and validating its genuine signed-off terms.
+
 ## Operational workflow
 
 1. Open **Contracts OS → SmartQuote**, search an actual customer site and
@@ -82,6 +124,8 @@ PULSE_SMARTQUOTE_SOURCE_MANIFEST=/secure/v10/source_manifest.json
 PULSE_SMARTQUOTE_RRP_2026_SOURCE=/secure/v10/data/rrp_2026_source.json.gz
 PULSE_SMARTQUOTE_DB=/secure/v10/original-smartquote.db
 
+# Optional IT-managed overrides. Normally use the in-app Commercial Setup
+# to approve the following sources and enable customer PDFs:
 # Customer quotation release; do not enable before approval:
 PULSE_QUOTE_APPROVED_TARIFF_SHA256=<SHA256-of-reviewed-pricing-json>
 PULSE_QUOTE_TERMS_PDF=/secure/commercial/approved-maintenance-terms.pdf
