@@ -380,10 +380,22 @@ function unifiedAddEquipment(event) {
     String(data.item_code||'').trim().toUpperCase();
   const invoicePages=form.dataset.invoicePages?
     JSON.parse(form.dataset.invoicePages):[];
+  const serial=String(data.serial||'').trim();
+  if(serial){
+    const duplicate=unifiedEquipment.findIndex((line,index)=>
+      index!==editing&&String(line.serial||'').trim().toUpperCase()===
+        serial.toUpperCase());
+    if(duplicate!==-1){
+      if(feedback)feedback.textContent='Serial '+serial+
+        ' already exists on equipment line '+(duplicate+1)+
+        '. Edit the existing line instead of charging the same machine twice.';
+      return;
+    }
+  }
   const record={
     description:String(data.description).trim(),
     item_code:String(data.item_code||'').trim(),
-    serial:String(data.serial||'').trim(),
+    serial,
     cover_start:String(data.cover_start||''),
     quantity,
     source_import_id:sameCode&&Number.isSafeInteger(invoiceId)&&invoiceId>0?
