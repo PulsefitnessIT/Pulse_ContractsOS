@@ -1,13 +1,8 @@
+# Packaging is a manual release task only. Do not build demos on each
+# SmartQuote development commit; use source regression tests until UAT sign-off.
 name: Package Pulse Contracts OS Windows demo
 on:
   workflow_dispatch:
-  push:
-    branches: ['feature/unified-smartquote-intake']
-    paths:
-      - 'app/**'
-      - 'scripts/launch_windows.py'
-      - 'scripts/create_demo_runtime.py'
-      - '.github/workflows/package-windows.yml'
 
 permissions:
   contents: read
