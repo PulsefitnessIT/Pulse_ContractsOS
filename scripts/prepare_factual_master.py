@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import sqlite3
+from contextlib import closing
 import sys
 import tempfile
 from pathlib import Path
@@ -60,7 +61,10 @@ def stage(source, destination, *, explicitly_approved=False):
             raise RuntimeError("Contracts OS persistence already initialised for a different runtime.")
         report = source_audit(fresh / "approved_master.xlsx")
         store.init_db()
-        with sqlite3.connect(fresh / "contracts.sqlite3") as db:
+        # sqlite3.Connection context managers do not CLOSE a connection.
+        # Windows refuses to rename the prepared runtime while this DB is
+        # still open. Close explicitly before the final atomic folder move.
+        with closing(sqlite3.connect(fresh / "contracts.sqlite3")) as db:
             integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
             counts = dict(db.execute("SELECT status,COUNT(*) FROM contracts GROUP BY status"))
             load = db.execute(
