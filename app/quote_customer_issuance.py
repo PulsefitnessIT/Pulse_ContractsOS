@@ -15,6 +15,7 @@ import os
 import re
 import sqlite3
 import uuid
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import fitz
@@ -182,8 +183,54 @@ def _price(draft):
     return preview, fingerprints
 
 
+def _reconcile_quotation_amounts(draft, preview):
+    """Independently verify displayed totals against every priced equipment line.
+
+    Avoid accepting a PDF amount that disagrees with the line schedule, even
+    if an upstream pricing calculation incorrectly reports complete_price.
+    For dated cover, the original V10 ACT/ACT engine computes each line's
+    period_charge; without dates, the proposed term is annual x years.
+    """
+    errors = []
+    penny = Decimal("0.01")
+
+    def amount(raw):
+        if type(raw) not in (int, float, str):
+            raise InvalidOperation()
+        value = Decimal(str(raw))
+        if not value.is_finite() or value < 0 or value != value.quantize(penny):
+            raise InvalidOperation()
+        return value
+
+    try:
+        if preview.get("currency") not in (None, "GBP"):
+            raise InvalidOperation()
+        lines = preview["lines"]
+        annual_lines = sum((amount(line["annual"]) for line in lines), Decimal(0))
+        annual_total = amount(preview["annual_partial"])
+        if annual_lines != annual_total:
+            errors.append("Annual quotation total does not equal the priced equipment schedule.")
+        if preview.get("staged", {}).get("enabled"):
+            charges = sum((amount(line["period_charge"]) for line in lines), Decimal(0))
+            staged_total = amount(preview["staged"]["total"])
+            term_total = amount(preview["term_partial"])
+            if charges != staged_total or charges != term_total:
+                errors.append("Dated contract term value differs from equipment period charges.")
+        else:
+            years = draft["term_years"]
+            if type(years) is not int or not 1 <= years <= 5:
+                raise InvalidOperation()
+            if amount(preview["term_partial"]) != annual_total * years:
+                errors.append("Proposed contract term value does not reconcile to annual value.")
+    except (KeyError, TypeError, ValueError, ArithmeticError, InvalidOperation, OverflowError):
+        errors.append("Quotation amounts are missing, non-finite or invalid for release.")
+    return errors
+
+
 def _errors(draft, preview):
     errors = []
+    if preview.get("complete_price"):
+        errors.extend(_reconcile_quotation_amounts(draft, preview))
     if not draft["equipment"]:
         errors.append("Add the customer's equipment before issuing a quote.")
     # The saved quote, not just the source price engine's self-reported count,
