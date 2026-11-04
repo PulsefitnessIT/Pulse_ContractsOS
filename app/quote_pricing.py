@@ -625,40 +625,12 @@ def draft_tier_comparison(draft_id: str):
             master_by_sku=indexed, sage_source=sage,
             overrides=price_overrides, august_source=august,
         )
-        # The original engine can calculate partial amounts, which MUST NOT
-        # be presented as a complete option in this staff comparison.
-        complete = bool(quoted["complete_price"]) and all(
-            not line.get("exception") and
-            not any(
-                reason not in (
-                    "August 2026 source List Price used; commercial maintenance tariff approval remains separate.",
-                    "Price taken from exact Sage item code; maintenance tariff approval remains separate.",
-                    "Administrator-adjusted equipment price; source revision recorded in price audit.",
-                )
-                for reason in line.get("coverage_review", [])
-            ) and not line.get("review_required_below_minimum", False)
-            and (line.get("annual", 0) >= line.get("minimum_annual", 0) - .01)
-            for line in quoted["lines"]
-        ) and not quoted["staged"]["issues"]
-        blockers = [
-            f'Line {line["line"]}: ' + (
-                str(line.get("exception") or
-                    "; ".join(line.get("coverage_review") or []) or
-                    "Price is below the permitted minimum.")
-            )[:220]
-            for line in quoted["lines"]
-            if not line["priced"] or line.get("exception")
-            or any(
-                reason not in (
-                    "August 2026 source List Price used; commercial maintenance tariff approval remains separate.",
-                    "Price taken from exact Sage item code; maintenance tariff approval remains separate.",
-                    "Administrator-adjusted equipment price; source revision recorded in price audit.",
-                )
-                for reason in line.get("coverage_review", [])
-            ) or line.get("annual", 0) < line.get("minimum_annual", 0) - .01
-        ][:8]
-        if quoted["staged"]["issues"]:
-            blockers.extend(str(x)[:180] for x in quoted["staged"]["issues"][:3])
+        # Reuse the EXACT per-equipment commercial release checks for all
+        # tiers, rather than inventing weaker comparison-only criteria.
+        # This includes overdue Sage fallback, eligibility and minimum price.
+        from .quote_customer_issuance import _errors
+        blockers = _errors({**draft, "tier": tier}, quoted)
+        complete = not blockers
         options.append({
             "tier": tier,
             "available": True,
