@@ -102,11 +102,26 @@ def validate_draft(data):
                         raise ValueError("Equipment cover start must be within the contract period.")
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
+        # PDF source provenance is attached to the DRAFT only. A printed
+        # item code does not become approved maintenance equipment.
+        source_id = line.get("source_import_id")
+        if source_id in ("", None):
+            source_id = None
+        elif type(source_id) is not int or source_id < 1:
+            raise HTTPException(422, f"Equipment line {i+1}: invalid invoice source ID.")
+        pages = line.get("source_pages", [])
+        if not isinstance(pages, list) or len(pages)>30 or any(
+            type(page) is not int or not 1 <= page <= 9999 for page in pages
+        ):
+            raise HTTPException(422, f"Equipment line {i+1}: invalid invoice page references.")
+        pages = sorted(set(pages))
+        if pages and source_id is None:
+            raise HTTPException(422, f"Equipment line {i+1}: pages require a source invoice.")
         result.append({"item_code":_clean(line.get("item_code",""),"item_code",100),
                        "description":_clean(line.get("description",""),"description",400,required=True),
                        "serial":_clean(line.get("serial",""),"serial",120),
-                       "cover_start":cover_start,
-                       "quantity":qty})
+                       "cover_start":cover_start, "quantity":qty,
+                       "source_import_id":source_id, "source_pages":pages})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
             "contract_start":contract_start,"contract_end":contract_end,
@@ -197,11 +212,64 @@ def verify_source_site_link(data):
         )
 
 
+
+
+def verify_invoice_evidence_link(data):
+    """Only allow PDF/source references that actually contain this exact code.
+
+    This does not certify the extracted SKU, equipment identity, maintenance
+    suitability, quantity, ownership, warranty or service pricing. It only
+    proves the source PDF was uploaded and its code extraction is preserved
+    for later staff audit. A manual correction drops its invoice link unless
+    the corrected code also exists on the source evidence.
+    """
+    sourced=[line for line in data["equipment"] if line.get("source_import_id")]
+    if not sourced:
+        return
+    ids=sorted({line["source_import_id"] for line in sourced})
+    with connect() as con:
+        rows={}
+        for source_id in ids:
+            record=con.execute(
+                "SELECT type,evidence_json FROM imports WHERE id=?", (source_id,)
+            ).fetchone()
+            if record is None or record["type"]!="pdf":
+                raise HTTPException(409, "A referenced source invoice no longer exists.")
+            try:
+                evidence=json.loads(record["evidence_json"] or "{}")
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(409, "The referenced invoice evidence is damaged.") from exc
+            found={}
+            for item in evidence.get("equipment_codes", []):
+                if not isinstance(item,dict):
+                    continue
+                code=str(item.get("value") or "").strip().upper()
+                if not code:
+                    continue
+                pages={
+                    page for page in (item.get("pages") or [])
+                    if type(page) is int and 1 <= page <= 9999
+                }
+                found.setdefault(code,set()).update(pages)
+            rows[source_id]=found
+    for line in sourced:
+        code=str(line["item_code"]).strip().upper()
+        pages=rows[line["source_import_id"]].get(code)
+        if pages is None:
+            raise HTTPException(
+                409, "This item code is not evidenced by the selected source invoice. "
+                "Verify the code and select it again, or enter it manually without an invoice link."
+            )
+        if line["source_pages"] and not set(line["source_pages"]).issubset(pages):
+            raise HTTPException(409, "This equipment page reference does not match the invoice evidence.")
+
+
 @router.post("/drafts",status_code=201)
 def create_draft(payload:dict=Body(...)):
     user=_check_access(write=True)
     data=validate_draft(payload)
     verify_source_site_link(data)
+    verify_invoice_evidence_link(data)
     ref=uuid.uuid4().hex
     with connect() as con:
         _init(con)
@@ -218,6 +286,7 @@ def update_draft(draft_id:str,payload:dict=Body(...)):
         raise HTTPException(422,"Revision is required.")
     data=validate_draft(payload)
     verify_source_site_link(data)
+    verify_invoice_evidence_link(data)
     with connect() as con:
         _init(con)
         cur=con.execute("UPDATE unified_quote_drafts SET payload_json=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?",
