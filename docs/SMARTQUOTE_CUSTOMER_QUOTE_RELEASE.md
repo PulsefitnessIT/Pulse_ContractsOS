@@ -7,6 +7,60 @@ customer-ready PDF to send using the normal customer email process.
 **Status:** built into draft PR #5 for the next supervised pilot. Not yet
 merged, staged with live Pulse data, commercially signed off or deployed.
 
+## Shortest path to the first genuine customer quotation
+
+This branch now includes a staff-facing **Customer quotation readiness**
+check at the top of SmartQuote. It distinguishes required approval gates from
+the Sage fallback, which is optional for a current-machine SKU found in the
+August 2026 Master. **All release gates remain OFF by default.**
+
+1. **Deploy the protected pilot first:** IT must provision the approved
+   private Contracts OS Master and SQLite snapshot, HTTPS/TLS, named pilot
+   accounts and backups. The source repository contains neither a live
+   customer database nor the deployed service.
+2. **Obtain the original four V10 files:** On a Windows IT/admin workstation
+   with the GitHub CLI signed into the private PulseFitness organisation,
+   run `./scripts/prepare_smartquote_v10_bundle.ps1` from this repository.
+   The script fetches exactly the original `catalog.json`, `configs.json`,
+   `pricing.json` and compressed August 2026 master from the private
+   `PulsefitnessIT/Pulse_SmartQuote` handoff branch. It creates a source ZIP
+   and deliberately downloads **no customer records**. Alternatively,
+   manually create the same four-file ZIP.
+3. **Activate original V10 sources:** In Contracts OS SmartQuote, an Admin
+   uploads that ZIP into **Original V10 & August Price Source Setup**,
+   reviews its source counts and fingerprints, then activates it. The V10
+   product picker **now reads this same active ZIP**. It no longer requires
+   the separate `PULSE_SMARTQUOTE_CATALOG_JSON` variable.
+4. **Upload the provided Sage Price List:** Use **Sage Price List Refresh**,
+   enter the actual verified export date, inspect the 21,120-item preview and
+   activate the correct snapshot. This extends quoting to legacy equipment
+   codes *already mapped* to a verified V10 service configuration.
+5. **Authorise real commercial data:** In **Customer Quotation — Commercial
+   Setup**, explicitly review and approve the genuine maintenance rates
+   and Silver/Gold/Platinum multipliers, upload the approved T&Cs PDF,
+   verify company issuer details and enable customer issuance only after
+   an internal acceptance quotation.
+6. **Make the first quotation:** Start with a *confirmed exact V10 machine
+   that has an August Master List Price and an eligible Active maintenance
+   configuration*. Select the real customer, add the exact equipment SKU,
+   confirm serials and quantities, choose a cover package and term, **save**,
+   then **Preview V10 price**. The new release panel tells staff which
+   equipment, dates, pricing source or commercial approvals are still missing.
+7. **Issue the PDF:** A named Coordinator can prepare and review the internal
+   draft; an Admin verifies the quote and records its explicit commercial
+   approval. The issued PDF is immutably archived and can then be downloaded
+   by Coordinators and Admins for manual customer emailing.
+
+**The original V10 handoff source currently contains 4,012 catalogue rows
+(4,007 distinct SKU values), 490 service configuration records, and a
+provisional price policy.** Exact-source identity alone is insufficient to
+approve an equipment line. Ambiguous or ineligible machines remain blocked
+until resolved. No sign-off is inferred from a passing test.
+
+The application also exposes an explicit, read-only API
+`GET /api/quoting/release-check` to show staff which prerequisites remain.
+Sage-only inventory lines do **not** become maintainable equipment automatically.
+
 ## Source onboarding from the app — no Python setup for staff
 
 An authenticated pilot Administrator can now stage the complete original
