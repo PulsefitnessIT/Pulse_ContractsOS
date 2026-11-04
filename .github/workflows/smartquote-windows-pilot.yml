@@ -50,6 +50,10 @@ jobs:
             throw 'Unstaged pilot should refuse Admin lookup without a source-backed Master.'
           }
           exit 0
+      - name: Test frozen Windows service with an entirely fictional Master
+        shell: pwsh
+        run: |
+          python scripts/windows_pilot_smoke.py .\dist\Pulse_ContractsOS_SmartQuote_Pilot.exe
       - name: Assemble small private-data-free Windows staff package
         shell: pwsh
         run: |
