@@ -2,7 +2,9 @@
 
 Original workbook/sanitised extracted rows are never bundled in Contracts OS.
 This module reads a protected, pinned extract. No quote or catalogue write,
-and neither a source List Price nor a Sage Sales Price is tariff approval.
+and both current Master / legacy Sage prices are accepted equipment price bases
+for maintenance calculations; neither replaces approval of the actual
+Silver/Gold/Platinum service rates, minimum charges or contract terms.
 """
 from __future__ import annotations
 
@@ -143,7 +145,7 @@ def resolve(sku, by_code, sage_source=None):
             "master_rows": evidence,
             "master_console": str(rows[0].get("console") or "")[:120],
             "master_name": str(rows[0].get("name") or "")[:400],
-            "review_required": True,  # Valid source evidence is not tariff approval.
+            "review_required": False,  # Agreed equipment price basis; V10 cover rates need separate sign-off.
         }
 
     sage = None
