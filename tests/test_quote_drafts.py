@@ -190,3 +190,47 @@ def test_repeated_equipment_serials_are_blocked_without_preventing_two_distinct_
     assert len(correct["equipment"])==2
     assert correct["equipment"][0]["serial"]=="SER-001"
     assert correct["equipment"][1]["serial"]=="SER-002"
+
+
+def test_coordinator_and_issuer_share_serial_verification():
+    from app import quote_customer_issuance
+    equipment = [
+        {"quantity": 1, "serial": "S-100"},
+        {"quantity": 1, "serial": " s-100 "},
+        {"quantity": 2, "serial": "S-200"},
+        {"quantity": 1, "serial": "TBC"},
+        {"quantity": 1, "serial": "S-300"},
+    ]
+    expected = {
+        "total": 3,
+        "lines": [
+            {"line": 2, "unconfirmed_units": 1},
+            {"line": 3, "unconfirmed_units": 1},
+            {"line": 4, "unconfirmed_units": 1},
+        ],
+    }
+    assert quote_drafts.unconfirmed_serials(equipment) == expected
+    assert quote_customer_issuance._unconfirmed_serials({"equipment": equipment}) == expected
+
+
+def test_draft_readiness_warns_about_placeholder_serials(tmp_path, monkeypatch):
+    import sqlite3
+
+    path = tmp_path / "serial-readiness.sqlite3"
+    def db():
+        connection = sqlite3.connect(path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    monkeypatch.setattr(quote_drafts, "connect", db)
+    monkeypatch.setattr(quote_drafts, "actor", lambda: "fictional-coordinator")
+    monkeypatch.setattr(quote_drafts, "PILOT_MODE", False)
+    created = quote_drafts.create_draft({
+        "customer": "Example Ltd", "site": "Example Leisure",
+        "equipment": [{"item_code": "DEMO-001",
+                       "description": "Fictional treadmill",
+                       "quantity": 1, "serial": "N/A"}],
+    })
+    readiness = quote_drafts.draft_readiness(created["id"])
+    assert any("Verify 1 equipment serial" in issue
+               for issue in readiness["review_issues"])
