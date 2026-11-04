@@ -23,7 +23,7 @@ function makeForm(values){
     },
     reset(){
       for(const [name,input] of Object.entries(elements))
-        input.value=String(name==='quantity'?1:name==='tier'?'Gold':name==='term_years'?1:0&&name==='discount_percent'?0:'');
+        input.value=String(name==='quantity'?1:name==='tier'?'Gold':name==='term_years'?1:name==='discount_percent'?0:'');
       if(elements.discount_percent)elements.discount_percent.value='0';
     },
     submit,cancel,
@@ -71,6 +71,7 @@ function workspace(){
     '#unifiedDraftFeedback':feedback,
     '#unifiedPricePanel':pricePanel,
     '#unifiedDraftTitle':{textContent:''},
+    '#unifiedDraftSave':{disabled:false},'#unifiedSaveAndPrice':{disabled:false},
   };
   const confirms=[];
   const ctx={
