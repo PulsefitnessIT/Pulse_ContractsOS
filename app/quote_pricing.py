@@ -287,11 +287,17 @@ def _master_console_identity(product, master):
         return True
     if not master_name or not product_name or _source_title(master_name)!=_source_title(product_name):
         return False
-    uncertain=(
-        "verify", "legacy", "source variant", "not stated",
-        "unspecified", "unknown", "to confirm", "other",
-    )
-    return not any(word in master_console.casefold() for word in uncertain)
+    # The only physical-description / V10-group equivalences observed
+    # unambiguously in the original 2026 source's exact SKU and full name.
+    # Do not generalise from similar-looking equipment or from a console
+    # substring. Strength variants labelled "verify" remain under review.
+    verified_taxonomy = {
+        "7-inch cardio tactile-key": "Console 3.5 (Series 1)",
+        "10.1-inch cardio tactile-key": "Console 5 (Series 2)",
+        "10.1-inch cardio touchscreen": "Console 8 (Series 3 Mini)",
+        "18.5-inch cardio touchscreen": "Console 6 (Series 3)",
+    }
+    return verified_taxonomy.get(master_console.casefold()) == catalogue_console
 
 
 def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_source=None,
