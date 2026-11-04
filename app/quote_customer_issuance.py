@@ -611,6 +611,7 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             valid_until=valid_until.isoformat(),
             approval_ref=approval_ref, approved_by=admin,
             terms_pdf=terms, issuer=issuer, internal_draft=False,
+            unconfirmed_serial_count=serials["total"],
         )
         pdf_digest = hashlib.sha256(pdf).hexdigest()
         con.execute(
