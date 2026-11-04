@@ -285,3 +285,118 @@ def test_duplicate_selected_contracts_rejected_before_writing(tmp_path,monkeypat
         move.transfer_expired_contracts(approve([entry,entry]))
     assert error.value.status_code==422
     assert marker["called"]==0
+
+
+def _fictional_excel_template(filename):
+    """Small OOXML workbook with real 31+12 column headers and Excel tables."""
+    import zipfile
+    from xml.sax.saxutils import escape
+    from app.excel_io import colname
+    main="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    office="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package="http://schemas.openxmlformats.org/package/2006/relationships"
+    kinds=[
+        ("Maintenance Database",HEADERS,"ContractsRegister","AE"),
+        ("MOD",HEADERS,"MODContractsRegister","AE"),
+        ("Expired",HEADERS+HISTORY,"ExpiredHistoryRegister","AQ"),
+    ]
+    def write_row(n,details,style="2"):
+        return (f'<row r="{n}">'+"".join(
+            f'<c r="{colname(index)}{n}" s="{style}" t="inlineStr">'
+            f'<is><t>{escape(str(value))}</t></is></c>'
+            for index,value in sorted(details.items())
+        )+'</row>')
+    with __import__("zipfile").ZipFile(filename,"w",zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml",
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="xml" ContentType="application/xml"/></Types>')
+        wb='<workbook xmlns="'+main+'" xmlns:r="'+office+'"><sheets>'+''.join(
+            f'<sheet name="{name}" sheetId="{i}" r:id="rId{i}"/>'
+            for i,(name,__,___,____) in enumerate(kinds,1))+'</sheets></workbook>'
+        z.writestr("xl/workbook.xml",wb)
+        z.writestr("xl/_rels/workbook.xml.rels",
+           '<Relationships xmlns="'+package+'">'+''.join(
+           f'<Relationship Id="rId{i}" '
+           f'Type="{office}/worksheet" Target="worksheets/sheet{i}.xml"/>'
+           for i in range(1,4))+'</Relationships>')
+        z.writestr("xl/styles.xml",
+            '<styleSheet xmlns="'+main+'"><fills count="1"><fill/></fills>'
+            '<cellXfs count="5">'+('<xf fillId="0"/>'*5)+
+            '</cellXfs></styleSheet>')
+        for i,(name,headers,tablename,lastcol) in enumerate(kinds,1):
+            data={j+1:value for j,value in enumerate(headers)}
+            if name=="Maintenance Database":
+                sample={1:"Fictional Active Club",2:"Keep source notes",11:date(-10),
+                        30:"FIC-SOURCE-1"}
+                row2=write_row(2,sample,style="2")
+            elif name=="MOD":
+                sample={1:"Fictional MOD Station",2:"MOD notes",11:date(-10),
+                        30:"FIC-MOD-1"}
+                row2=write_row(2,sample,style="4")
+            else:
+                sample={1:"Existing Historical Club",30:"HIST-KEEP",
+                        32:"Existing historical coordinator",
+                        43:"Do not lose historical pricing notes"}
+                row2=write_row(2,sample,style="2")
+            xml=(
+                '<worksheet xmlns="'+main+'"><dimension ref="A1:'+lastcol+'2"/>'
+                '<sheetData>'+write_row(1,data)+row2+'</sheetData></worksheet>'
+            )
+            z.writestr(f"xl/worksheets/sheet{i}.xml",xml)
+            table_xml=(
+                '<table xmlns="'+main+'" name="'+tablename+'" '
+                'displayName="'+tablename+'" id="'+str(i)+'" '
+                'ref="A1:'+lastcol+'2" totalsRowShown="0">'
+                '<autoFilter ref="A1:'+lastcol+'2"/></table>'
+            )
+            z.writestr(f"xl/tables/table{i}.xml",table_xml)
+
+
+def test_excel_export_moves_full_row_and_preserves_expired_history_columns(tmp_path):
+    """Real OOXML output retains all shared fields, MOD formatting, extra data."""
+    from app.excel_io import ExcelSource, export_template
+    import zipfile
+    from lxml import etree as ET
+
+    original=tmp_path/"fictional_approved_master.xlsx"
+    exported=tmp_path/"fictional_export.xlsx"
+    _fictional_excel_template(original)
+    assert layout.current_layout(original)["shared_column_count"]==31
+    assert layout.current_layout(original)["expired_only_column_count"]==12
+
+    archived_fields=fields("FIC-MOD-1","Fictional MOD Station",date(-10))
+    archived_fields["Renewal status"]="Historical / archived"
+    archived_fields["Site notes"]="MOD notes"
+    export_template(original,{
+        "MOD":[{"row":2,"changes":{k:"" for k in HEADERS}}],
+        "Expired":[{
+            "row":4,"changes":archived_fields,
+            "style_origin":{"sheet":"MOD","row":2},
+        }],
+    },str(exported))
+    source=ExcelSource(exported)
+    try:
+        headings, expired=source.records("Expired")
+        assert headings==HEADERS+HISTORY
+        historic=next(r for r in expired if r["row"]==2)
+        new=next(r for r in expired if r["row"]==4)
+        assert historic["fields"]["Contract coordinator"]=="Existing historical coordinator"
+        assert historic["fields"]["Price reviews / contract history"]=="Do not lose historical pricing notes"
+        assert new["fields"]["Customer / site"]=="Fictional MOD Station"
+        assert new["fields"]["Record ID"]=="FIC-MOD-1"
+        assert new["fields"]["Contract amount (£)"]=="777.35"
+        assert new["fields"]["Site notes"]=="MOD notes"
+        assert new["fields"]["Renewal status"]=="Historical / archived"
+        assert not new["fields"]["Price reviews / contract history"]
+        assert source.records("MOD")[1]==[]
+        root=source.sheet("Expired")
+        ns="{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        row=root.find(ns+"sheetData").findall(ns+"row")[-1]
+        assert row.get("r")=="4"
+        assert next(c for c in row.findall(ns+"c") if c.get("r")=="A4").get("s")=="4"
+    finally:
+        source.z.close()
+    with zipfile.ZipFile(exported) as z:
+        table=ET.fromstring(z.read("xl/tables/table3.xml"))
+        assert table.get("ref")=="A1:AQ4"
+        assert table.find("{http://schemas.openxmlformats.org/spreadsheetml/2006/main}autoFilter").get("ref")=="A1:AQ4"
