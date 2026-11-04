@@ -261,3 +261,55 @@ def test_current_master_console_variant_mismatch_blocks_customer_approval():
     assert any("console variant" in reason for reason in result["lines"][0]["coverage_review"])
     assert any("commercial or equipment coverage" in issue
                for issue in _errors(example_draft(), result))
+
+
+
+def test_real_master_tactile_console_terminology_does_not_block_exact_source_identity():
+    """The two authentic source systems name the same cardio console differently."""
+    from app import quote_pricing
+    from app.quote_customer_issuance import _errors
+    catalogue, configs, policy, fingerprints = example_sources()
+    catalogue[0].update({
+        "name":"Fictional Club Line Treadmill with 10.1-inch Tactile Console",
+        "console":"Console 5 (Series 2)",
+    })
+    policy["console_rules"]=[{
+        "name":"Console 5 (Series 2)","multiplier":1,"uplift":0,
+    }]
+    master=staged([line("EXAMPLE-SKU",3000,
+        name=catalogue[0]["name"],console="10.1-inch cardio tactile-key")])
+    result=quote_pricing.preview(
+        example_draft(),catalogue,configs,policy,fingerprints,
+        master_by_sku=rrp.index(master),
+    )
+    item=result["lines"][0]
+    assert item["priced"] is True
+    assert item["rrp"]==3000.0
+    assert item["master_console_evidence"]["identity_reconciled"] is True
+    assert item["master_console_evidence"]["exact_full_name_match"] is True
+    assert not any("console variant" in note for note in item["coverage_review"])
+    assert _errors(example_draft(),result)==[]
+
+
+@pytest.mark.parametrize("master_name,master_console",[
+    ("Fictional Treadmill with Different Equipment", "10.1-inch cardio tactile-key"),
+    ("Fictional Club Line Treadmill with 10.1-inch Tactile Console", "10.1-inch strength touchscreen (verify)"),
+    ("Fictional Club Line Treadmill with 10.1-inch Tactile Console", "18.5-inch cardio touchscreen"),
+    ("Fictional Club Line Treadmill with 10.1-inch Tactile Console", "Console not stated"),
+])
+def test_console_variant_stays_blocked_with_ambiguous_master_evidence(master_name,master_console):
+    from app import quote_pricing
+    from app.quote_customer_issuance import _errors
+    cat,cfg,policy,hashes=example_sources()
+    cat[0]["console"]="Console 5 (Series 2)"
+    cat[0]["name"]="Fictional Club Line Treadmill with 10.1-inch Tactile Console"
+    policy["console_rules"]=[{"name":"Console 5 (Series 2)","multiplier":1,"uplift":0}]
+    master=staged([line("EXAMPLE-SKU",3000,name=master_name,console=master_console)])
+    result=quote_pricing.preview(
+        example_draft(),cat,cfg,policy,hashes,
+        master_by_sku=rrp.index(master),
+    )
+    assert result["priced_count"]==1
+    assert result["lines"][0]["master_console_evidence"]["identity_reconciled"] is False
+    assert any("console variant" in note for note in result["lines"][0]["coverage_review"])
+    assert any("equipment coverage exception" in note for note in _errors(example_draft(),result))
