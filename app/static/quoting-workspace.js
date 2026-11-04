@@ -215,6 +215,8 @@ async function quotingWorkspacePage() {
   document.querySelector('#quoteGoLiveRefresh').addEventListener('click', loadQuoteGoLiveStatus);
   loadQuoteGoLiveStatus().catch(()=>{});
   document.querySelector('#unifiedEquipmentAdd').addEventListener('submit', unifiedAddEquipment);
+  document.querySelector('#unifiedEquipmentAdd').addEventListener('input', unifiedCoordinatorGuidance);
+  document.querySelector('#unifiedEquipmentAdd').addEventListener('change', unifiedCoordinatorGuidance);
   document.querySelector('#unifiedInvoiceImport').addEventListener('submit', unifiedImportInvoiceEvidence);
   document.querySelector('#unifiedCancelEquipmentEdit').addEventListener('click', unifiedStopEquipmentEdit);
   document.querySelector('#unifiedSiteSearch').addEventListener('submit', unifiedSearchSites);
@@ -274,6 +276,7 @@ function unifiedStopEquipmentEdit() {
     delete form.dataset.invoiceSourceId;
     delete form.dataset.invoicePages;
   }
+  unifiedCoordinatorGuidance();
 }
 
 function renderUnifiedEquipment() {
@@ -603,25 +606,31 @@ function unifiedInvoiceCandidates(record) {
   const raw=record?.evidence?.equipment_codes||[];
   if(!Array.isArray(raw))return [];
   const matched=record?.catalogue_matches||{};
-  const seen=new Set();
+  const seen=new Map();
   const candidates=[];
   for(const item of raw) {
     if(!item||typeof item!=='object')continue;
     const sku=String(item.value||'').trim().toUpperCase();
-    if(!/^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$/.test(sku)||seen.has(sku))continue;
-    seen.add(sku);
+    if(!/^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$/.test(sku))continue;
     const product=matched[sku]||{};
-    const pages=Array.isArray(item.pages)?item.pages.filter(
+    const pages=Array.isArray(item.pages)?[...new Set(item.pages.filter(
       n=>Number.isSafeInteger(n)&&n>0&&n<10000
-    ).slice(0,30):[];
-    candidates.push({
+    ))].sort((a,b)=>a-b):[];
+    if(seen.has(sku)){
+      const existing=seen.get(sku);
+      existing.pages=[...new Set(existing.pages.concat(pages))].sort((a,b)=>a-b).slice(0,30);
+      continue;
+    }
+    const evidence={
       sku,
       pages,
       description:String(product.name||'').slice(0,250),
       identity_not_verified:true,
       quantity_not_inferred:true,
       serials_not_inferred:true,
-    });
+    };
+    seen.set(sku,evidence);
+    candidates.push(evidence);
   }
   return candidates;
 }
@@ -724,6 +733,7 @@ async function unifiedImportInvoiceEvidence(event) {
           addForm.elements.serial.value='';
           addForm.elements.quantity.value='1';
           addForm.elements.cover_start.value='';
+          unifiedCoordinatorGuidance();
           const note=document.querySelector('#unifiedDraftFeedback');
           if(note)note.textContent=exact.length===1?
             'Exact V10 code found. Verify machine, add its serial and quantity, '+
@@ -794,6 +804,7 @@ async function unifiedSearchCatalogue(event) {
       const equipmentForm = document.querySelector('#unifiedEquipmentAdd');
       equipmentForm.elements.description.value = choice.name || choice.model || choice.sku;
       equipmentForm.elements.item_code.value = choice.sku;
+      unifiedCoordinatorGuidance();
       delete equipmentForm.dataset.invoiceSku;
       delete equipmentForm.dataset.invoiceSourceId;
       delete equipmentForm.dataset.invoicePages;
