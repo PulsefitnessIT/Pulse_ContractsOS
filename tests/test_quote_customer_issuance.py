@@ -438,9 +438,55 @@ def test_all_individual_serials_confirmed_needs_no_manager_exception(tmp_path,mo
         {**fully["equipment"][0],"quantity":1,"serial":"SERIAL-TWO"},
     ]
     setup_database(tmp_path,monkeypatch,draft=fully)
+    fully_priced=fake_price()
+    first={**fully_priced["lines"][0], "quantity":1,"annual":112.50,
+        "minimum_annual":93.75}
+    second={**first,"line":2,"item_code":"DEMO-TREAD"}
+    fully_priced["lines"]=[first,second]
+    fully_priced["line_count"]=2
+    fully_priced["priced_count"]=2
+    monkeypatch.setattr(issues,"_price",lambda data:(
+        fully_priced,{"pricing":"a"*64,"catalog":"b"*64,"configs":"c"*64}
+    ))
     ready=issues.customer_quote_readiness(fully["id"])
     assert ready["serials_unconfirmed"]==0
     assert ready["serial_exception_reason_needed"] is False
     approval_without_reason=approval().model_copy(update={"serial_exception_reason":""})
     issued=issues.issue_customer_quotation(fully["id"],approval_without_reason)
     assert issued["issued"] is True
+
+
+
+def test_customer_issue_rejects_price_engine_omitting_saved_machine(tmp_path,monkeypatch):
+    extra=fake_draft()
+    extra["equipment"].append({
+        "item_code":"DEMO-SECOND","description":"Fictional second machine",
+        "quantity":1,"serial":"OTHER-SERIAL","cover_start":"",
+    })
+    path=setup_database(tmp_path,monkeypatch,draft=extra)
+    # The synthetic pricing source reports complete for only its first line.
+    # It must never be allowed to issue a customer PDF for two saved lines.
+    preview=fake_price()
+    assert preview["complete_price"] is True
+    assert any("every saved equipment line" in text for text in issues._errors(extra,preview))
+    with pytest.raises(HTTPException) as err:
+        issues.issue_customer_quotation(extra["id"],approval())
+    assert err.value.status_code==409
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM unified_customer_quotes").fetchone()[0]==0
+
+
+def test_customer_issue_rejects_swapped_quantity_sku_or_draft_revision():
+    original=fake_draft()
+    price=fake_price()
+    for damaged in (
+        {**price,"lines":[{**price["lines"][0],"quantity":1}]},
+        {**price,"lines":[{**price["lines"][0],"item_code":"OTHER-SKU"}]},
+        {**price,"revision":5},
+        {**price,"tier":"Silver"},
+        {**price,"draft_id":"e"*32},
+    ):
+        assert any(
+            "snapshot" in text.lower() or "equipment line" in text.lower()
+            for text in issues._errors(original,damaged)
+        )
