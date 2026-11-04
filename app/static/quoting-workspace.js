@@ -33,6 +33,8 @@ function unifiedDraftSnapshot() {
       serial:String(e.serial||'').trim(),
       cover_start:String(e.cover_start||''),
       quantity:Number(e.quantity),
+      source_import_id:e.source_import_id||null,
+      source_pages:Array.isArray(e.source_pages)?e.source_pages:[],
     }))
   });
 }
@@ -255,6 +257,9 @@ function unifiedStopEquipmentEdit() {
     if(button)button.textContent='Add equipment line';
     const cancel=form.querySelector('#unifiedCancelEquipmentEdit');
     if(cancel)cancel.hidden=true;
+    delete form.dataset.invoiceSku;
+    delete form.dataset.invoiceSourceId;
+    delete form.dataset.invoicePages;
   }
 }
 
@@ -262,7 +267,12 @@ function renderUnifiedEquipment() {
   const host=document.querySelector('#unifiedEquipmentTable');
   if(!host || view!=='quoting')return;
   const rows=unifiedEquipment.map((item,i)=>
-    '<tr><td>'+esc(item.description)+'</td><td>'+esc(item.item_code)+'</td>'+
+    '<tr><td>'+esc(item.description)+'</td><td>'+
+    esc(item.item_code)+
+    (item.source_import_id?
+      '<p class="fine-print">Invoice #'+esc(item.source_import_id)+
+      (item.source_pages?.length?' · page '+esc(item.source_pages.join(', ')):'')+
+      '</p>':'')+'</td>'+
     '<td>'+esc(item.serial||'Not confirmed')+'</td><td>'+
     esc(item.cover_start||'Contract start')+'</td><td>'+esc(item.quantity)+'</td>'+
     '<td><button class="button button-outline" type="button" data-edit-line="'+i+'">Edit</button> '+
@@ -285,6 +295,15 @@ function renderUnifiedEquipment() {
     if(!form)return;
     for(const key of ['description','item_code','serial','cover_start','quantity'])
       form.elements[key].value=String(item[key]??'');
+    if(item.source_import_id){
+      form.dataset.invoiceSku=String(item.item_code||'').trim().toUpperCase();
+      form.dataset.invoiceSourceId=String(item.source_import_id);
+      form.dataset.invoicePages=JSON.stringify(item.source_pages||[]);
+    } else {
+      delete form.dataset.invoiceSku;
+      delete form.dataset.invoiceSourceId;
+      delete form.dataset.invoicePages;
+    }
     unifiedEditingEquipmentIndex=index;
     const submit=form.querySelector('[type="submit"]');
     if(submit)submit.textContent='Save equipment changes';
@@ -340,12 +359,21 @@ function unifiedAddEquipment(event) {
     if(feedback)feedback.textContent='The equipment list changed. Select the line to edit again.';
     return;
   }
+  const invoiceId=Number(form.dataset.invoiceSourceId||0);
+  const sameCode=String(form.dataset.invoiceSku||'')===
+    String(data.item_code||'').trim().toUpperCase();
+  const invoicePages=form.dataset.invoicePages?
+    JSON.parse(form.dataset.invoicePages):[];
   const record={
     description:String(data.description).trim(),
     item_code:String(data.item_code||'').trim(),
     serial:String(data.serial||'').trim(),
     cover_start:String(data.cover_start||''),
     quantity,
+    source_import_id:sameCode&&Number.isSafeInteger(invoiceId)&&invoiceId>0?
+      invoiceId:null,
+    source_pages:sameCode&&invoiceId>0&&Array.isArray(invoicePages)?
+      invoicePages:[],
   };
   if(editing!==null)unifiedEquipment[editing]=record;
   else unifiedEquipment.push(record);
@@ -619,7 +647,9 @@ async function unifiedImportInvoiceEvidence(event) {
     let suggestions=[];
     const cards=analysed.map(item=>{
       const base=suggestions.length;
-      suggestions=suggestions.concat(item.codes.slice(0,80));
+      suggestions=suggestions.concat(item.codes.slice(0,80).map(code=>({
+        ...code,source_import_id:item.id
+      })));
       const unread=item.details?.evidence?.unread_pages||[];
       const notices=item.details?.evidence?.reading_warnings||[];
       const names=item.codes.slice(0,80).map((candidate,i)=>
@@ -669,6 +699,9 @@ async function unifiedImportInvoiceEvidence(event) {
             String(row.sku||'').trim().toUpperCase()===selected.sku &&
             !row.duplicate_sku);
           addForm.elements.item_code.value=selected.sku;
+          addForm.dataset.invoiceSku=selected.sku;
+          addForm.dataset.invoiceSourceId=String(selected.source_import_id);
+          addForm.dataset.invoicePages=JSON.stringify(selected.pages);
           addForm.elements.description.value=exact.length===1?
             String(exact[0].name||''):'';
           addForm.elements.serial.value='';
@@ -744,6 +777,9 @@ async function unifiedSearchCatalogue(event) {
       const equipmentForm = document.querySelector('#unifiedEquipmentAdd');
       equipmentForm.elements.description.value = choice.name || choice.model || choice.sku;
       equipmentForm.elements.item_code.value = choice.sku;
+      delete equipmentForm.dataset.invoiceSku;
+      delete equipmentForm.dataset.invoiceSourceId;
+      delete equipmentForm.dataset.invoicePages;
       equipmentForm.elements.serial.focus();
       const feedback = document.querySelector('#unifiedDraftFeedback');
       if (feedback) feedback.textContent = choice.requires_service_mapping
