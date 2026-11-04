@@ -86,6 +86,7 @@ def validate_draft(data):
     if not isinstance(equipment,list) or len(equipment)>MAX_LINES:
         raise HTTPException(422,"Maximum 500 equipment lines.")
     result=[]
+    seen_serials={}
     for i,line in enumerate(equipment):
         if not isinstance(line,dict):
             raise HTTPException(422,f"Equipment line {i+1} must be an object.")
@@ -117,9 +118,18 @@ def validate_draft(data):
         pages = sorted(set(pages))
         if pages and source_id is None:
             raise HTTPException(422, f"Equipment line {i+1}: pages require a source invoice.")
+        serial=_clean(line.get("serial",""),"serial",120)
+        serial_key=serial.casefold()
+        if serial_key and serial_key in seen_serials:
+            raise HTTPException(
+                422, f"Equipment serial on line {i+1} is already entered on "
+                f"line {seen_serials[serial_key]}. Check for duplicate machines."
+            )
+        if serial_key:
+            seen_serials[serial_key]=i+1
         result.append({"item_code":_clean(line.get("item_code",""),"item_code",100),
                        "description":_clean(line.get("description",""),"description",400,required=True),
-                       "serial":_clean(line.get("serial",""),"serial",120),
+                       "serial":serial,
                        "cover_start":cover_start, "quantity":qty,
                        "source_import_id":source_id, "source_pages":pages})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
