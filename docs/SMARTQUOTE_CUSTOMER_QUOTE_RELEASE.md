@@ -90,6 +90,41 @@ The application also exposes an explicit, read-only API
 `GET /api/quoting/release-check` to show staff which prerequisites remain.
 Sage-only inventory lines do **not** become maintainable equipment automatically.
 
+## Compare Silver, Gold and Platinum without making three separate quotes
+
+Once a Coordinator has saved a draft with customer/site, exact equipment SKUs,
+quantities, serials, term and discount, select **Save & calculate price**.
+The SmartQuote screen calculates the original V10 source pricing for
+**all three maintenance packages using identical equipment and the same
+August/Sage source snapshot**, then shows three side-by-side options.
+
+- Each complete cover shows annual, monthly and proposed term totals.
+- An incomplete cover shows **no misleading partial money total**. Expand
+  **What needs reviewing?** to see its equipment, Sage freshness, minimum
+  price, console and date blockers.
+- **Use Silver / Use Gold / Use Platinum for this draft** saves a **new draft
+  revision** and recalculates the chosen package. It never changes other
+  packages or creates a customer-facing offer.
+- An expired Sage snapshot is a release blocker only if the selected SKU
+  actually uses the legacy Sage fallback. A valid August Master price is not
+  invalidated by an old Sage comparison value.
+- The underlying Silver/Gold/Platinum percentages remain **provisional
+  until an authorised manager approves the specific V10 tariff fingerprint**.
+  The comparison itself cannot approve rates, terms or customer issuance.
+
+For troubleshooting and automated integration testing the protected read-only
+API is `GET /api/quoting/drafts/{draft_id}/tier-comparison`. It reports the
+saved draft revision, each package's completeness and its named blockers,
+but never writes a quote, an account, Sage or Sicon.
+
+**Build validation status:** Changes on the open feature branch have regression
+tests, but a Windows installer/build from a *previous* green commit does not
+include this comparison. If GitHub Actions shows failure with zero runner ID
+and no executed steps, IT must first resolve hosted Actions runner
+availability/billing/policy, then confirm the new source, security,
+Windows executable and fictional-database browser smoke tests are all green.
+Do not describe an untested updated installer as validated.
+
 ## Source onboarding from the app — no Python setup for staff
 
 An authenticated pilot Administrator can now stage the complete original
