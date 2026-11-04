@@ -263,3 +263,94 @@ def test_unrelated_duplicate_tariff_does_not_block_unique_source_group():
     assert result["priced_count"] == 1
     assert result["annual_partial"] == 120.0
     assert result["issue_quote_enabled"] is False
+
+
+def _set_comparison_sources(monkeypatch, source_draft=None, catalogue=None, configs=None, pricing=None):
+    from app import quote_rrp_priority, quote_price_overrides
+    cat, cfg, policy, hashes = example()
+    if catalogue is not None: cat = catalogue
+    if configs is not None: cfg = configs
+    if pricing is not None: policy = pricing
+    saved = source_draft or draft()
+    source = {
+        "rows": [
+            {
+                "sku": "TEST-100", "rrp": 2000,
+                "name": "Example Bike", "console": "No Console / N/A",
+                "sheet": "Test", "row": 2, "rrp_column": "List Price",
+            }
+        ],
+        "source_date": quote_rrp_priority.MASTER_DATE,
+        "source_file_sha256": quote_rrp_priority.MASTER_ORIGINAL_SHA256,
+        "snapshot_sha256": "b" * 64,
+    }
+    monkeypatch.setattr(quote_pricing, "get_draft", lambda _: saved)
+    monkeypatch.setattr(quote_pricing, "source_snapshot", lambda: (cat, cfg, policy, hashes))
+    monkeypatch.setattr(quote_pricing, "sage_snapshot", lambda: None)
+    monkeypatch.setattr(quote_rrp_priority, "source_snapshot", lambda: source)
+    monkeypatch.setattr(quote_price_overrides, "active_overrides", lambda _: {})
+    return saved
+
+
+def test_tier_comparison_uses_one_verified_equipment_price_basis(monkeypatch):
+    saved = _set_comparison_sources(monkeypatch)
+    before = json.dumps(saved, sort_keys=True)
+    result = quote_pricing.draft_tier_comparison(saved["id"])
+    assert result["selected_tier"] == "Gold"
+    assert result["revision"] == 1
+    assert result["indicative_only"] is True
+    assert result["commercially_approved"] is False
+    assert result["customer_quote_issued"] is False
+    assert [x["annual_gbp"] for x in result["options"]] == [96, 120, 156]
+    assert [x["monthly_gbp"] for x in result["options"]] == [8, 10, 13]
+    assert [x["term_gbp"] for x in result["options"]] == [96, 120, 156]
+    assert all(x["complete_price"] for x in result["options"])
+    assert json.dumps(saved, sort_keys=True) == before
+
+
+def test_tier_comparison_hides_partial_amounts_for_unknown_equipment(monkeypatch):
+    incomplete = draft()
+    incomplete["equipment"].append({
+        "item_code": "UNKNOWN-ITEM", "description": "Unknown equipment",
+        "quantity": 1, "serial": "",
+    })
+    _set_comparison_sources(monkeypatch, source_draft=incomplete)
+    result = quote_pricing.draft_tier_comparison(incomplete["id"])
+    assert all(not x["complete_price"] for x in result["options"])
+    assert all(x["annual_gbp"] is None for x in result["options"])
+    assert all(x["monthly_gbp"] is None for x in result["options"])
+    assert all(x["term_gbp"] is None for x in result["options"])
+    assert all(x["priced_lines"] == 1 and x["total_lines"] == 2 for x in result["options"])
+    assert any("UNKNOWN-ITEM" in json.dumps(x) for x in result["options"]) is False
+
+
+def test_tier_comparison_does_not_invent_unsupported_v10_tier(monkeypatch):
+    _, _, pricing, _ = example()
+    pricing["tiers"].pop("Platinum")
+    saved = _set_comparison_sources(monkeypatch, pricing=pricing)
+    result = quote_pricing.draft_tier_comparison(saved["id"])
+    assert result["options"][2]["tier"] == "Platinum"
+    assert result["options"][2]["available"] is False
+    assert result["options"][2]["annual_gbp"] is None
+
+
+def test_tier_comparison_uses_sage_for_valid_legacy_sku_without_master_row(monkeypatch):
+    from app import quote_rrp_priority
+    saved = _set_comparison_sources(monkeypatch)
+    monkeypatch.setattr(quote_rrp_priority, "source_snapshot", lambda: {
+        "rows": [], "source_date": quote_rrp_priority.MASTER_DATE,
+        "source_file_sha256": quote_rrp_priority.MASTER_ORIGINAL_SHA256,
+        "snapshot_sha256": "b" * 64,
+    })
+    monkeypatch.setattr(quote_pricing, "sage_snapshot", lambda: {
+        "prices": {"TEST-100": {
+            "sku": "TEST-100", "sales_price": 3000.0, "name": "Example Bike"
+        }},
+        "source_date": "2026-10-23", "review_due": "2027-10-23",
+        "review_overdue": False, "source_file_sha256": "a" * 64,
+        "source": "Fictional Sage source",
+    })
+    result = quote_pricing.draft_tier_comparison(saved["id"])
+    assert result["sage_source_sha256"] == "a" * 64
+    assert [x["annual_gbp"] for x in result["options"]] == [144, 180, 234]
+    assert all(x["complete_price"] for x in result["options"])
