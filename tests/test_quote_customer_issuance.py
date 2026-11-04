@@ -320,3 +320,40 @@ def test_verified_customer_terms_require_exact_pdf_hash(tmp_path,monkeypatch):
     with pytest.raises(HTTPException) as exc:
         issues._terms()
     assert exc.value.status_code==503
+
+
+def test_coordinator_can_check_release_readiness_but_cannot_authorise_pdf(tmp_path,monkeypatch):
+    setup_database(tmp_path,monkeypatch)
+    monkeypatch.setattr(issues.pilot_access,"current_role",lambda:"Coordinator")
+    # Price functions are stubbed here; only the access boundary is under test.
+    result=issues.customer_quote_readiness(fake_draft()["id"])
+    assert result["draft_id"]==fake_draft()["id"]
+    assert result["pricing_complete"] is True
+    with pytest.raises(HTTPException) as err:
+        issues.issue_customer_quotation(fake_draft()["id"],approval())
+    assert err.value.status_code==403
+
+
+def test_coordinator_can_download_approved_pdf_without_reissuing(tmp_path,monkeypatch):
+    setup_database(tmp_path,monkeypatch)
+    issued=issues.issue_customer_quotation(fake_draft()["id"],approval())
+    monkeypatch.setattr(issues.pilot_access,"current_role",lambda:"Coordinator")
+    archive=issues.issued_quotation_history(fake_draft()["id"])
+    assert archive["items"][0]["quote_no"]==issued["quote_no"]
+    received=issues.download_issued_customer_quote(issued["quote_no"])
+    assert received.body.startswith(b"%PDF-")
+    assert hashlib.sha256(received.body).hexdigest()==issued["pdf_sha256"]
+
+
+def test_viewer_cannot_access_commercial_quote_readiness_or_pdf(tmp_path,monkeypatch):
+    setup_database(tmp_path,monkeypatch)
+    issued=issues.issue_customer_quotation(fake_draft()["id"],approval())
+    monkeypatch.setattr(issues.pilot_access,"current_role",lambda:"Viewer")
+    for action in [
+        lambda:issues.customer_quote_readiness(fake_draft()["id"]),
+        lambda:issues.issued_quotation_history(fake_draft()["id"]),
+        lambda:issues.download_issued_customer_quote(issued["quote_no"]),
+    ]:
+        with pytest.raises(HTTPException) as error:
+            action()
+        assert error.value.status_code==403
