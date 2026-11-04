@@ -62,6 +62,21 @@ def _admin():
     return name
 
 
+def _quote_reader():
+    """Authenticated staff may check readiness and retrieve APPROVED PDFs.
+
+    Only a named Administrator can issue a new PDF. Viewers must never
+    receive commercial document downloads or approval status.
+    """
+    if (not pilot_access.PILOT_MODE or
+            pilot_access.current_role() not in ("Admin", "Coordinator")):
+        raise HTTPException(403, "Signed-in Coordinator or Administrator required.")
+    identity = pilot_access.actor("")
+    if not isinstance(identity, str) or len(identity.strip()) < 2:
+        raise HTTPException(403, "A named staff account is required.")
+    return identity
+
+
 def _approved_tariff(fingerprint):
     pinned = os.environ.get(APPROVAL_SOURCE_ENV, "").strip().lower()
     if pinned:  # IT deployment override remains the highest authority.
@@ -261,7 +276,7 @@ def _readiness(draft):
 
 @router.get("/drafts/{draft_id}/customer-quote/readiness")
 def customer_quote_readiness(draft_id: str):
-    _admin()
+    _quote_reader()
     record = quote_drafts.get_draft(draft_id)
     return _readiness(record)
 
@@ -435,7 +450,7 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
 
 @router.get("/drafts/{draft_id}/customer-quotes")
 def issued_quotation_history(draft_id: str):
-    _admin()
+    _quote_reader()
     quote_drafts._validate_id(draft_id)
     con = connect()
     try:
@@ -459,7 +474,7 @@ def issued_quotation_history(draft_id: str):
 
 @router.get("/customer-quotes/{quote_no}/download.pdf")
 def download_issued_customer_quote(quote_no: str):
-    _admin()
+    _quote_reader()
     if not NUMBER.fullmatch(quote_no):
         raise HTTPException(422, "Invalid issued quote reference.")
     con = connect()
