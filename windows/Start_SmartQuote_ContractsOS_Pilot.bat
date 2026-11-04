@@ -45,6 +45,7 @@ start "" "http://127.0.0.1:18080"
 echo.
 echo SmartQuote pilot has stopped.
 pause
+exit /b 0
 
 
 :FirstTimeSetup
