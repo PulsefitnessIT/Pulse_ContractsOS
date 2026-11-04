@@ -27,6 +27,7 @@ from .master_roundtrip import normal, DERIVED
 from .pilot_access import PILOT_MODE, actor, current_role
 from .backups import create_local_backup
 from .store import DB, DATA, TEMPLATE, connect, now
+from .register_layout import current_layout
 
 router = APIRouter(prefix="/api/pilot/master-sync", tags=["Recurring working Master synchronisation"])
 MAX_UPLOAD = 35_000_000
@@ -279,6 +280,10 @@ def _load_validated(path):
     checked = workbook_check(path)
     if not checked["valid"]:
         raise ValueError("Expected the approved eight-sheet Maintenance Master layout.")
+    # The modern Master must be safe for direct A:AE cut/paste. Reject a
+    # reordered Expired layout before comparing or applying any imported edits.
+    if "MOD" in checked.get("sheet_names", []):
+        current_layout(path)
     src = ExcelSource(path)
     return src
 
