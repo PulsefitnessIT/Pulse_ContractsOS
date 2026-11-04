@@ -12,10 +12,12 @@ async function quotingWorkspacePage() {
   unifiedEquipment = [];
   content.innerHTML =
     '<section class="panel"><h2>SmartQuote</h2>' +
-    '<p>Prepare quotations in Contracts OS. Existing issued SmartQuote records remain read-only while commercial pricing is integrated.</p></section>' +
+    '<p>Create a maintenance quotation, select equipment, check prices, and download an approved PDF. '+ 
+    'Existing SmartQuote records stay intact and read-only.</p></section>' +
     '<section class="panel" id="unifiedDraftPanel">' +
     '<h3 id="unifiedDraftTitle">New quotation draft</h3>' +
-    '<p>This draft is not priced or approved; it cannot be sent to a customer.</p>' +
+    '<p>Start with a customer and equipment, save, then preview the Silver, Gold or Platinum price. '+ 
+    'A customer PDF is available only after commercial approval.</p>' +
     '<form id="unifiedSiteSearch"><label>Find a site already recorded in Contracts OS ' +
     '<input name="q" minlength="2" maxlength="100" placeholder="Search recorded site name" required></label> ' +
     '<button class="button button-outline" type="submit">Find site</button></form>' +
@@ -48,7 +50,7 @@ async function quotingWorkspacePage() {
     '<label>Quantity <input name="quantity" type="number" min="1" max="10000" step="1" value="1" required></label>' +
     '</div><button type="submit" class="button button-outline">Add equipment line</button></form>' +
     '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem">' +
-    '<button type="button" class="button button-primary" id="unifiedDraftSave">Save unpriced draft</button>' +
+    '<button type="button" class="button button-primary" id="unifiedDraftSave">Save draft</button>' +
     '<button type="button" class="button button-outline" id="unifiedDraftNew">New draft</button>' +
     '<button type="button" class="button button-outline" id="unifiedDraftPrice">Preview V10 price</button></div>' +
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
@@ -512,7 +514,7 @@ async function unifiedPricePreview() {
       '<h4>Commercial controls and exceptions</h4><ul>' +
       preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
       '</ul><p>The preview is not itself customer-approved. Use the quotation controls below to check release readiness and obtain manager sign-off.</p></section>';
-    if (typeof showCustomerQuotePanel === 'function' && preview.complete_price) showCustomerQuotePanel(preview);
+    if (typeof showCustomerQuotePanel === 'function') showCustomerQuotePanel(preview);
   } catch(error) {
     const current = document.querySelector('#unifiedPricePanel');
     if (current) current.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
