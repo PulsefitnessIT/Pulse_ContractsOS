@@ -30,16 +30,19 @@ function showCustomerQuotePanel(preview) {
     '<div id="quoteIssuedHistory"></div>';
   section.appendChild(holder);
   const internalButton=holder.querySelector('#quoteInternalPdf');
-  internalButton.disabled=!preview.complete_price;
-  internalButton.title=preview.complete_price?
-    'Review the marked internal quotation before commercial approval':
-    'Resolve all missing equipment prices before generating a PDF';
+  // A priced line can still have an unresolved console or coverage exception.
+  // Only the server-side release-check result may enable internal PDF access.
+  internalButton.disabled=true;
+  internalButton.title='Checking equipment and commercial source readiness…';
   holder.querySelector('#quoteInternalPdf').addEventListener('click',()=>{
     if(!unifiedDraftSelected)return;
     window.open(quotePdfUrl(unifiedDraftSelected.id)+'/internal-preview.pdf',
                 '_blank','noopener');
   });
   holder.querySelector('#quoteIssueReadiness').addEventListener('click',quoteCheckCustomerReadiness);
+  // One less step for Coordinators: read-only readiness check runs as soon as
+  // the saved quote has been priced. It never issues or approves a quotation.
+  void quoteCheckCustomerReadiness();
   quoteLoadIssuedHistory();
 }
 
@@ -57,6 +60,13 @@ async function quoteCheckCustomerReadiness(){
     if(data.revision!==selected.revision) {
       feedback.textContent='Draft changed. Open the latest revision and preview its prices.';
       return;
+    }
+    const draftPdf=document.querySelector('#quoteInternalPdf');
+    if(draftPdf) {
+      draftPdf.disabled=!data.internal_draft_pdf_available;
+      draftPdf.title=data.internal_draft_pdf_available?
+        'Download marked internal quotation for review':
+        'Resolve equipment, minimum price and coverage exceptions first';
     }
     const gates=data.gates||{};
     const rows=[
