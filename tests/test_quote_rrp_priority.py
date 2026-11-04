@@ -313,3 +313,51 @@ def test_console_variant_stays_blocked_with_ambiguous_master_evidence(master_nam
     assert result["lines"][0]["master_console_evidence"]["identity_reconciled"] is False
     assert any("console variant" in note for note in result["lines"][0]["coverage_review"])
     assert any("equipment coverage exception" in note for note in _errors(example_draft(),result))
+
+
+
+def test_unadorned_no_console_machine_with_same_full_title_is_quotable():
+    from app import quote_pricing
+    from app.quote_customer_issuance import _errors
+    catalogue, configs, policy, hashes = example_sources()
+    catalogue[0]["console"] = "No Console / N/A"
+    catalogue[0]["name"] = "Fictional Weight Stack Tower in Black"
+    master = staged([line(
+        "EXAMPLE-SKU", 3000, name=catalogue[0]["name"],
+        console="Console not stated",
+    )])
+    result = quote_pricing.preview(
+        example_draft(), catalogue, configs, policy, hashes,
+        master_by_sku=rrp.index(master),
+    )
+    assert result["complete_price"] is True
+    assert result["lines"][0]["master_console_evidence"]["identity_reconciled"] is True
+    assert not any("console variant" in s for s in result["lines"][0]["coverage_review"])
+    assert _errors(example_draft(),result) == []
+
+
+@pytest.mark.parametrize("text",[
+    "Fictional Machine with LCD Console in Black",
+    "Fictional Machine with PM5 Display in Black",
+    "Fictional Machine with Touchscreen in Black",
+    "Fictional Machine with SmartCard in Black",
+    "Fictional Machine with Touch-Key in Black",
+    "Fictional Machine with NFC in Black",
+])
+def test_unstated_master_console_does_not_override_screen_clues(text):
+    from app import quote_pricing
+    from app.quote_customer_issuance import _errors
+    catalogue, configs, policy, hashes = example_sources()
+    catalogue[0]["console"] = "No Console / N/A"
+    catalogue[0]["name"] = text
+    master = staged([line(
+        "EXAMPLE-SKU", 3000, name=text, console="Console not stated",
+    )])
+    result = quote_pricing.preview(
+        example_draft(), catalogue, configs, policy, hashes,
+        master_by_sku=rrp.index(master),
+    )
+    assert result["priced_count"] == 1
+    assert result["lines"][0]["master_console_evidence"]["identity_reconciled"] is False
+    assert any("console variant" in s for s in result["lines"][0]["coverage_review"])
+    assert _errors(example_draft(), result)
