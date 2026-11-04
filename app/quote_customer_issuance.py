@@ -51,6 +51,7 @@ class QuoteApproval(BaseModel):
     confirm_package_price_and_discount: bool
     confirm_maintenance_scope_and_terms: bool
     confirm_vat_basis: bool
+    serial_exception_reason: str = ""
     confirm_source_price_variances: bool = False  # Old pilot client compatibility; NOT required.
 
 
@@ -216,6 +217,28 @@ def _errors(draft, preview):
     return errors
 
 
+
+def _unconfirmed_serials(draft):
+    """One line can establish only one machine serial, even when quantity > 1.
+
+    The application must not invent serials from invoice OCR or imply every
+    unit was identified by a single serial number. Missing/illegible numbers
+    are permitted only with a recorded human commercial exception.
+    """
+    missing=[]
+    for i,item in enumerate(draft.get("equipment", []),1):
+        quantity=item.get("quantity")
+        if type(quantity) is not int or quantity<1:
+            continue
+        confirmed=1 if str(item.get("serial") or "").strip() else 0
+        if quantity>confirmed:
+            missing.append({"line":i,"unconfirmed_units":quantity-confirmed})
+    return {
+        "total":sum(row["unconfirmed_units"] for row in missing),
+        "lines":missing,
+    }
+
+
 def _quote_flags(fingerprints, errors, terms_ready):
     return {
         "all_equipment_priced_and_unambiguous": not errors,
@@ -256,6 +279,7 @@ def _readiness(draft):
     except HTTPException:
         issuer_ready = False
     flags = _quote_flags(fingerprints, errors, terms_ready)
+    serials=_unconfirmed_serials(draft)
     flags["verified_company_issuer_details"] = issuer_ready
     return {
         "draft_id": draft["id"],
@@ -273,6 +297,9 @@ def _readiness(draft):
         ),
         "status": "READY_FOR_COMMERCIAL_APPROVAL" if not errors else "PRICING_REVIEW_REQUIRED",
         "no_quotation_has_been_issued": True,
+        "serials_unconfirmed": serials["total"],
+        "serials_unconfirmed_lines": serials["lines"],
+        "serial_exception_reason_needed": bool(serials["total"]),
         "price_source_variances_requiring_ack": 0,
         "price_source_comparisons_available": sum(
             bool(line.get("source_price_comparison"))
@@ -464,6 +491,19 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             raise HTTPException(404, "Quotation draft not found.")
         draft = {"id": raw["id"], "revision": raw["revision"], **json.loads(raw["payload_json"])}
         valid_until, approval_ref = _approval(payload, draft["revision"])
+        serials=_unconfirmed_serials(draft)
+        serial_reason=payload.serial_exception_reason.strip()
+        if serials["total"] and (
+            not 15 <= len(serial_reason) <= 500
+            or any(ord(c)<32 and c not in "\t\n" for c in serial_reason)
+        ):
+            raise HTTPException(
+                422, "This quotation includes "+str(serials["total"])+
+                " equipment unit(s) without verified serial numbers. "
+                "Record a clear reason (15–500 characters) for the manager's exception."
+            )
+        if not serials["total"]:
+            serial_reason=""
 
         existing = con.execute(
             "SELECT quote_no FROM unified_customer_quotes "
@@ -506,6 +546,9 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             "issuer_sha256": issuer_sha, "issuer": issuer,
             "source_fingerprints": fingerprints,
             "customer_email_sent": False,
+            "serial_exception_reason": serial_reason,
+            "unconfirmed_serial_count": serials["total"],
+            "unconfirmed_serial_lines": serials["lines"],
             "source_price_comparisons_informational": True,
             "source_price_comparison_lines": [
                 item["line"] for item in comparisons
