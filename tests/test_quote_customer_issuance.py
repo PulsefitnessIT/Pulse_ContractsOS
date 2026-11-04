@@ -529,3 +529,56 @@ def test_individual_unique_serials_remain_verified():
         {"quantity": 1, "serial": "S-003"},
     ]}
     assert issues._unconfirmed_serials(draft) == {"total": 0, "lines": []}
+
+
+def test_customer_quote_release_blocks_mismatched_annual_total(tmp_path, monkeypatch):
+    """Upstream complete_price cannot override mismatched financial lines."""
+    setup_database(tmp_path, monkeypatch)
+    bad = fake_price()
+    bad["annual_partial"] = 224.99
+    monkeypatch.setattr(issues, "_price", lambda draft: (
+        bad, {"pricing": "a"*64, "catalog": "b"*64, "configs": "c"*64}
+    ))
+    with pytest.raises(HTTPException) as exc:
+        issues.issue_customer_quotation(fake_draft()["id"], approval())
+    assert exc.value.status_code == 409
+    assert "Annual quotation total" in str(exc.value.detail)
+
+
+def test_customer_quote_release_blocks_mismatched_undated_term(tmp_path, monkeypatch):
+    setup_database(tmp_path, monkeypatch)
+    bad = fake_price()
+    bad["term_partial"] = 449.99
+    monkeypatch.setattr(issues, "_price", lambda draft: (
+        bad, {"pricing": "a"*64, "catalog": "b"*64, "configs": "c"*64}
+    ))
+    with pytest.raises(HTTPException) as exc:
+        issues.issue_customer_quotation(fake_draft()["id"], approval())
+    assert exc.value.status_code == 409
+    assert "term value" in str(exc.value.detail)
+
+
+def test_quotation_amount_reconciliation_for_staged_equipment():
+    draft = fake_draft()
+    draft["contract_start"] = "2026-01-01"
+    draft["contract_end"] = "2026-12-31"
+    priced = fake_price()
+    priced["staged"] = {"enabled": True, "issues": [], "total": 180.00}
+    priced["term_partial"] = 180.00
+    priced["lines"][0]["period_charge"] = 180.00
+    assert issues._reconcile_quotation_amounts(draft, priced) == []
+    priced["term_partial"] = 180.01
+    assert any("Dated contract term" in message for message in
+               issues._reconcile_quotation_amounts(draft, priced))
+    priced["term_partial"] = 180.00
+    priced["lines"][0]["period_charge"] = 179.99
+    assert any("Dated contract term" in message for message in
+               issues._reconcile_quotation_amounts(draft, priced))
+
+
+def test_quotation_amount_reconciliation_rejects_non_finite_amounts():
+    draft = fake_draft()
+    priced = fake_price()
+    priced["lines"][0]["annual"] = float("nan")
+    assert any("invalid" in message for message in
+               issues._reconcile_quotation_amounts(draft, priced))
