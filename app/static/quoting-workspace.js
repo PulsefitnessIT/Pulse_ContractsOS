@@ -8,6 +8,95 @@ let unifiedSiteMatches = [];
 let quotePriceEditorSelection = null;
 let unifiedEditingEquipmentIndex = null;
 let unifiedRemovedEquipment = null;
+let unifiedLastSavedDraftState = null;
+let unifiedLatestPricePreview = null;
+let unifiedSavePending = false;
+let unifiedNavigationGuardInstalled = false;
+
+function unifiedDraftSnapshot() {
+  const form=document.querySelector('#unifiedDraftForm');
+  if(!form)return null;
+  const values=Object.fromEntries(new FormData(form).entries());
+  return JSON.stringify({
+    customer:String(values.customer||'').trim(),
+    site:String(values.site||'').trim(),
+    contact:String(values.contact||'').trim(),
+    source_contract_id:Number(values.source_contract_id||0),
+    tier:String(values.tier||'Gold'),
+    term_years:Number(values.term_years||1),
+    discount_percent:Number(values.discount_percent||0),
+    contract_start:String(values.contract_start||''),
+    contract_end:String(values.contract_end||''),
+    equipment:unifiedEquipment.map(e=>({
+      item_code:String(e.item_code||'').trim(),
+      description:String(e.description||'').trim(),
+      serial:String(e.serial||'').trim(),
+      cover_start:String(e.cover_start||''),
+      quantity:Number(e.quantity),
+    }))
+  });
+}
+
+function unifiedDraftHasUnsavedChanges() {
+  const current=unifiedDraftSnapshot();
+  return Boolean(unifiedEditingEquipmentIndex!==null ||
+    (current!==null && unifiedLastSavedDraftState!==null &&
+      current!==unifiedLastSavedDraftState));
+}
+
+function unifiedCoordinatorGuidance() {
+  const host=document.querySelector('#quoteCoordinatorGuide');
+  const form=document.querySelector('#unifiedDraftForm');
+  if(!host||!form)return;
+  const customer=String(form.elements.customer.value||'').trim();
+  const site=String(form.elements.site.value||'').trim();
+  const count=unifiedEquipment.reduce((sum,item)=>sum+Number(item.quantity||0),0);
+  const unconfirmed=unifiedEquipment.reduce((sum,item)=>
+    sum+(String(item.serial||'').trim()?Math.max(0,item.quantity-1):item.quantity),0);
+  let step=1,action='Select a recorded site or enter a verified customer and site.';
+  if(customer&&site){
+    step=2;
+    action='Find equipment by model or item code, add quantities and confirm serial numbers.';
+    if(unifiedEquipment.length){
+      step=3;
+      action='Save and calculate the source-based maintenance price.';
+      if(unifiedEditingEquipmentIndex!==null)
+        action='Finish or cancel your equipment edit before saving this quotation.';
+      else if(!unifiedDraftSelected||unifiedDraftHasUnsavedChanges())
+        action='Save and calculate to include your latest changes.';
+      else if(unifiedLatestPricePreview){
+        step=4;
+        action=unifiedLatestPricePreview.complete_price?
+          'Review all source exceptions, package options and the manager approval checks before preparing a customer PDF.':
+          'Some equipment cannot be fully priced. Check the exceptions and correct the source SKU or service mapping.';
+      }
+    }
+  }
+  host.innerHTML='<strong>Step '+step+' of 4 — '+
+    esc(['Customer & site','Equipment','Calculate','Review & approve'][step-1])+
+    '</strong><p>'+esc(action)+'</p>'+
+    '<p class="fine-print">'+esc(unifiedEquipment.length)+
+    ' equipment lines · '+esc(count)+' units'+
+    (unconfirmed?' · '+esc(unconfirmed)+' serials still to verify':'')+
+    (unifiedDraftHasUnsavedChanges()?' · Unsaved changes':'')+
+    '</p>';
+}
+
+function unifiedGuardNavigation() {
+  if(unifiedNavigationGuardInstalled)return;
+  const nav=document.querySelector('#nav');
+  if(!nav)return;
+  nav.addEventListener('click',event=>{
+    if(view!=='quoting'||!unifiedDraftHasUnsavedChanges())return;
+    const button=event.target.closest('[data-view]');
+    if(!button||button.dataset.view==='quoting')return;
+    if(!window.confirm('This quotation contains unsaved changes. Leave SmartQuote without saving?')){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  },true);
+  unifiedNavigationGuardInstalled=true;
+}
 
 async function quotingWorkspacePage() {
   unifiedDraftSelected = null;
@@ -23,6 +112,7 @@ async function quotingWorkspacePage() {
     '<div id="quoteGoLiveStatus" aria-live="polite">Checking pricing and commercial setup…</div></section>' +
     '<section class="panel" id="unifiedDraftPanel">' +
     '<h3 id="unifiedDraftTitle">New quotation draft</h3>' +
+    '<div class="notice" id="quoteCoordinatorGuide" role="status" aria-live="polite"></div>' +
     '<p>Start with a customer and equipment, save, then preview the Silver, Gold or Platinum price. '+ 
     'A customer PDF is available only after commercial approval.</p>' +
     '<form id="unifiedSiteSearch"><label>Find a site already recorded in Contracts OS ' +
@@ -136,7 +226,12 @@ async function quotingWorkspacePage() {
       form.elements.customer.focus();
     }
   }
+  unifiedLastSavedDraftState=unifiedDraftSnapshot();
+  unifiedLatestPricePreview=null;
+  unifiedSavePending=false;
+  unifiedGuardNavigation();
   renderUnifiedEquipment();
+  unifiedCoordinatorGuidance();
   // Independent requests: a disconnected original SmartQuote must never hide draft creation.
   await Promise.allSettled([loadUnifiedDrafts(), loadUnifiedLegacyQuotes()]);
 }
@@ -209,6 +304,7 @@ function renderUnifiedEquipment() {
     unifiedClearPrice();
     renderUnifiedEquipment();
   });
+  unifiedCoordinatorGuidance();
 }
 
 function unifiedAddEquipment(event) {
@@ -254,11 +350,14 @@ function unifiedAddEquipment(event) {
 }
 
 function unifiedNewDraft() {
+  if(unifiedSavePending)return;
   if (unifiedEditingEquipmentIndex !== null) {
     const feedback=document.querySelector('#unifiedDraftFeedback');
     if(feedback)feedback.textContent='Save or cancel your equipment edit before starting another quotation.';
     return;
   }
+  if(unifiedDraftHasUnsavedChanges() &&
+      !window.confirm('Discard unsaved changes and start a new quotation?'))return;
   unifiedDraftSelected = null;
   unifiedEquipment = [];
   unifiedRemovedEquipment=null;
@@ -270,6 +369,7 @@ function unifiedNewDraft() {
   if (heading) heading.textContent = 'New quotation draft';
   const feedback = document.querySelector('#unifiedDraftFeedback');
   if (feedback) feedback.textContent = '';
+  unifiedLastSavedDraftState=unifiedDraftSnapshot();
   renderUnifiedEquipment();
 }
 
@@ -278,7 +378,7 @@ async function unifiedSaveDraft() {
   const feedback = document.querySelector('#unifiedDraftFeedback');
   const button = document.querySelector('#unifiedDraftSave');
   const combined = document.querySelector('#unifiedSaveAndPrice');
-  if (!form || !form.reportValidity() || !feedback || !button) return null;
+  if (!form || !form.reportValidity() || !feedback || !button || unifiedSavePending) return null;
   if (unifiedEditingEquipmentIndex!==null){
     feedback.textContent='Save or cancel the equipment line you are editing first.';
     return null;
@@ -297,12 +397,15 @@ async function unifiedSaveDraft() {
     method = 'PUT';
     payload.revision = unifiedDraftSelected.revision;
   }
+  unifiedSavePending=true;
   button.disabled = true;
   if (combined) combined.disabled = true;
   feedback.textContent = 'Saving…';
   try {
     const saved = await api(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     unifiedDraftSelected = {id:saved.id, revision:saved.revision};
+    unifiedLastSavedDraftState=unifiedDraftSnapshot();
+    unifiedRemovedEquipment=null;
     unifiedClearPrice();
     feedback.textContent = 'Saved. This quotation remains unpriced and cannot be issued yet.';
     document.querySelector('#unifiedDraftTitle').textContent = 'Edit quotation draft';
@@ -312,8 +415,10 @@ async function unifiedSaveDraft() {
     feedback.textContent = error.message + ' If another user saved changes, reload the draft.';
     return null;
   } finally {
+    unifiedSavePending=false;
     button.disabled = false;
     if (combined) combined.disabled = false;
+    unifiedCoordinatorGuidance();
   }
 }
 
@@ -348,7 +453,9 @@ async function loadUnifiedDrafts() {
 
 async function unifiedOpenDraft(id) {
   const feedback = document.querySelector('#unifiedDraftFeedback');
-  if (!feedback) return;
+  if (!feedback || unifiedSavePending) return;
+  if(unifiedDraftHasUnsavedChanges() &&
+      !window.confirm('Discard unsaved changes and open another quotation?'))return;
   try {
     // Fetch current revision, not the potentially stale paginated register snapshot.
     const draft = await api('/api/quoting/drafts/' + encodeURIComponent(id));
@@ -368,10 +475,12 @@ async function unifiedOpenDraft(id) {
     unifiedStopEquipmentEdit();
     unifiedClearPrice();
     unifiedDraftSelected = {id:draft.id, revision:draft.revision};
+    unifiedLastSavedDraftState=unifiedDraftSnapshot();
     document.querySelector('#unifiedDraftTitle').textContent = 'Edit quotation draft';
     feedback.textContent = 'Loaded draft revision ' + draft.revision + '. Recalculate prices before generating a customer quote.';
     renderUnifiedEquipment();
     document.querySelector('#unifiedDraftPanel').scrollIntoView({behavior:'smooth',block:'start'});
+    void unifiedPricePreview();
   } catch(error) {
     feedback.textContent = error.message;
   }
@@ -543,8 +652,10 @@ async function unifiedPreviewHandover(id) {
 
 
 function unifiedClearPrice() {
+  unifiedLatestPricePreview=null;
   const host = document.querySelector('#unifiedPricePanel');
   if (host) host.innerHTML = '';
+  unifiedCoordinatorGuidance();
 }
 
 async function unifiedPricePreview() {
@@ -574,10 +685,12 @@ async function unifiedPricePreview() {
   try {
     const preview = await api('/api/quoting/drafts/' + encodeURIComponent(unifiedDraftSelected.id) + '/price-preview');
     if (view !== 'quoting' || !document.querySelector('#unifiedPricePanel')) return;
-    if (preview.revision !== unifiedDraftSelected.revision) {
-      host.textContent = 'The draft has changed. Reopen it before pricing.';
+    if (preview.revision !== unifiedDraftSelected.revision || unifiedDraftHasUnsavedChanges()) {
+      host.textContent = 'The draft changed while pricing. Save it again before calculating.';
       return;
     }
+    unifiedLatestPricePreview=preview;
+    unifiedCoordinatorGuidance();
     const comparisonLines=preview.lines.filter(line=>
       Boolean(line.source_price_comparison));
     const lines = preview.lines.map(line =>
