@@ -45,9 +45,11 @@ jobs:
             throw 'Packaged SmartQuote failed its offline self-test.'
           }
           & .\dist\Pulse_ContractsOS_SmartQuote_Pilot.exe --has-admin
-          if ($LASTEXITCODE -eq 0) {
-            throw 'A source-only executable claimed it has a live Admin account.'
+          $missingRuntimeExit = $LASTEXITCODE
+          if ($missingRuntimeExit -ne 2) {
+            throw 'Unstaged pilot should refuse Admin lookup without a source-backed Master.'
           }
+          exit 0
       - name: Assemble small private-data-free Windows staff package
         shell: pwsh
         run: |
