@@ -68,6 +68,7 @@ async function quoteCheckCustomerReadiness(){
         'Download marked internal quotation for review':
         'Resolve equipment, minimum price and coverage exceptions first';
     }
+    const missingSerials=Number(data.serials_unconfirmed||0);
     const gates=data.gates||{};
     const rows=[
       ['All equipment prices and configurations',gates.all_equipment_priced_and_unambiguous],
@@ -81,6 +82,10 @@ async function quoteCheckCustomerReadiness(){
       '<div style="overflow-x:auto"><table class="data-table">'+
       '<thead><tr><th>Requirement</th><th>Status</th></tr></thead><tbody>'+
       rows+'</tbody></table></div>'+
+      (missingSerials?
+        '<p class="notice warning">'+esc(missingSerials)+
+        ' unit(s) do not have individually confirmed serial numbers. '+
+        'A manager must record the reason for any exception before issuing the offer.</p>':'')+
       ((data.issues||[]).length?
         '<ul>'+data.issues.map(message=>'<li>'+esc(message)+'</li>').join('')+'</ul>':'');
     if(!data.customer_issue_configured) {
@@ -113,6 +118,11 @@ async function quoteCheckCustomerReadiness(){
       opts.map(([key,label])=>'<label style="display:block;margin:.6rem 0">'+
         '<input type="checkbox" name="'+esc(key)+'" required> '+
         esc(label)+'</label>').join('')+
+      (missingSerials?
+        '<label>Reason for '+esc(missingSerials)+' unconfirmed machine serial(s) '+
+        '<textarea name="serial_exception_reason" required minlength="15" '+
+        'maxlength="500" rows="3" placeholder="Explain why the numbers are '+
+        'unavailable and how the machines were individually verified"></textarea></label>':'')+
       (priceComparisonCount?
         '<p class="fine-print">'+esc(priceComparisonCount)+
         ' equipment line(s) include an August/Sage source price comparison. '+
@@ -154,7 +164,8 @@ async function quoteIssueCustomerPdf(event){
     const payload={
       expected_revision:selected.revision,
       valid_until:String(values.get('valid_until')||''),
-      commercial_approval_ref:String(values.get('commercial_approval_ref')||'').trim()
+      commercial_approval_ref:String(values.get('commercial_approval_ref')||'').trim(),
+      serial_exception_reason:String(values.get('serial_exception_reason')||'').trim()
     };
     for(const key of keys)payload[key]=values.has(key);
     const result=await api(quotePdfUrl(selected.id)+'/issue',{
