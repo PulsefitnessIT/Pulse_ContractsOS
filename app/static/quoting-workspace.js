@@ -14,6 +14,11 @@ async function quotingWorkspacePage() {
     '<section class="panel"><h2>SmartQuote</h2>' +
     '<p>Create a maintenance quotation, select equipment, check prices, and download an approved PDF. '+ 
     'Existing SmartQuote records stay intact and read-only.</p></section>' +
+    '<section class="panel" id="quoteGoLiveStatusPanel">' +
+    '<div class="section-head"><div><h3>Customer quotation readiness</h3>' +
+    '<p>See exactly what is still needed before the first approved customer PDF can be issued.</p></div>' +
+    '<button type="button" class="button button-outline" id="quoteGoLiveRefresh">Check readiness</button></div>' +
+    '<div id="quoteGoLiveStatus" aria-live="polite">Checking pricing and commercial setup…</div></section>' +
     '<section class="panel" id="unifiedDraftPanel">' +
     '<h3 id="unifiedDraftTitle">New quotation draft</h3>' +
     '<p>Start with a customer and equipment, save, then preview the Silver, Gold or Platinum price. '+ 
@@ -90,6 +95,8 @@ async function quotingWorkspacePage() {
     '<section class="panel"><h3>Existing SmartQuote quotations</h3>' +
     '<div id="unifiedLegacyList">Checking the original SmartQuote source…</div>' +
     '<div id="unifiedLegacyDetail" aria-live="polite"></div></section>';
+  document.querySelector('#quoteGoLiveRefresh').addEventListener('click', loadQuoteGoLiveStatus);
+  loadQuoteGoLiveStatus().catch(()=>{});
   document.querySelector('#unifiedEquipmentAdd').addEventListener('submit', unifiedAddEquipment);
   document.querySelector('#unifiedSiteSearch').addEventListener('submit', unifiedSearchSites);
   document.querySelector('#unifiedDraftForm').elements.site.addEventListener('input', () => {
@@ -736,5 +743,46 @@ async function quoteRevertPriceRevision() {
     if(current)current.textContent='Price reverted to the current source. Audit history retained.';
   } catch(error) {
     if(feedback)feedback.textContent=error.message;
+  }
+}
+
+
+async function loadQuoteGoLiveStatus(){
+  const holder=document.querySelector('#quoteGoLiveStatus');
+  if(!holder||view!=='quoting')return;
+  holder.textContent='Checking original equipment, Master/Sage prices and commercial sign-off…';
+  try{
+    const session=await api('/api/pilot/me');
+    if(view!=='quoting'||!document.querySelector('#quoteGoLiveStatus'))return;
+    if(!session.pilot||!['Admin','Coordinator'].includes(session.role)){
+      holder.textContent='Quotation release is available only in the protected pilot to named staff accounts.';
+      return;
+    }
+    const result=await api('/api/quoting/release-check');
+    if(view!=='quoting'||!document.querySelector('#quoteGoLiveStatus'))return;
+    const steps=(result.items||[]).map(item=>
+      '<tr><td>'+esc(item.title)+'</td><td>'+
+      esc(item.ready?'Ready':item.required?'Action needed':'Optional — not loaded')+
+      '</td><td>'+esc(item.ready?item.details:item.next_action+
+         (item.details?' — '+item.details:''))+'</td></tr>'
+    ).join('');
+    holder.innerHTML=
+      '<p><strong>'+
+      (result.required_ready?
+        'Core quotation setup is ready for individual quote review.':
+        'Commercial setup is incomplete; see the outstanding actions below.')+
+      '</strong> '+
+      (result.sage_fallback_ready?'Sage fallback prices are loaded.':
+        'Sage-only historical machines cannot use fallback prices until the Sage export is imported.')+
+      '</p>'+
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+      '<th>Requirement</th><th>Status</th><th>What to do</th></tr></thead><tbody>'+
+      steps+'</tbody></table></div>'+
+      '<p class="fine-print">A ready setup is not approval for every machine. '+
+      'An Admin still checks exact equipment and its maintenance terms, then '+
+      'authorises the specific customer PDF. Sending the email remains manual.</p>';
+  }catch(error){
+    const target=document.querySelector('#quoteGoLiveStatus');
+    if(target)target.textContent='Cannot verify quotation setup: '+error.message;
   }
 }
