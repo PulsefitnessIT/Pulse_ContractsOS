@@ -220,3 +220,15 @@ test('pending unadded machine is never silently lost or omitted from a saved quo
   assert.equal(w.equipmentForm.elements.item_code.value,'UNFINISHED-1');
   assert.match(w.confirms[0],/Discard unsaved changes/);
 });
+
+
+test('beginner cannot accidentally add a second line for the same machine serial',()=>{
+  const w=workspace();
+  w.run('unifiedEquipment=[{description:"Example Bike",item_code:"TEST-001",serial:"SER-001",cover_start:"",quantity:1}]');
+  w.equipmentForm.elements.description.value='Same bike twice';
+  w.equipmentForm.elements.item_code.value='TEST-001';
+  w.equipmentForm.elements.serial.value='ser-001';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  assert.equal(w.run('unifiedEquipment.length'),1);
+  assert.match(w.feedback.textContent,/already exists on equipment line 1/);
+});
