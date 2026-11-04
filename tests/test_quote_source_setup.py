@@ -212,3 +212,133 @@ def test_coordinator_must_not_import_potentially_confidential_v10_sources(tmp_pa
     with pytest.raises(HTTPException) as err:
         src.source_status()
     assert err.value.status_code==403
+
+
+
+def test_real_price_engine_to_manager_approved_customer_pdf_without_it_paths(tmp_path,monkeypatch):
+    """Integrated pilot release path using entirely SYNTHETIC source records.
+
+    This deliberately does not stub the V10 price engine, source manifest,
+    master list resolution or PDF renderer. Only a missing optional Sage
+    source and optional per-code overrides are replaced by empty fixtures.
+    """
+    import datetime as dt
+    import fitz
+    from app import (
+        quote_drafts, quote_customer_issuance as issuance,
+        quote_commercial_setup as approvals, quote_price_overrides,
+        quote_sage_reference,
+    )
+    from starlette.datastructures import UploadFile
+
+    _setup(tmp_path,monkeypatch)
+    connection=src.connect
+    monkeypatch.setattr(quote_drafts,"connect",connection)
+    monkeypatch.setattr(issuance,"connect",connection)
+    monkeypatch.setattr(approvals,"connect",connection)
+    monkeypatch.setattr(quote_price_overrides,"active_overrides",lambda skus=None:{})
+    monkeypatch.setattr(quote_sage_reference,"snapshot",lambda:None)
+    monkeypatch.setattr(quote_pricing,"sage_snapshot",lambda:None)
+    for key in (
+        issuance.APPROVAL_SOURCE_ENV,issuance.TERMS_FILE_ENV,
+        issuance.TERMS_SHA_ENV,issuance.ISSUER_FILE_ENV,
+        issuance.ISSUER_SHA_ENV,issuance.ISSUE_ENV,
+    ):
+        monkeypatch.delenv(key,raising=False)
+
+    pending=asyncio.run(src.preview_zip(
+        UploadFile(file=io.BytesIO(_bundle()),filename="originals.zip")
+    ))
+    src.activate_source(_approve(pending["token"]))
+    # Previously this step failed after successful in-app source staging:
+    # equipment lookup ignored the protected active source bundle.
+    from app import quote_catalogue
+    monkeypatch.setattr(quote_catalogue,"actor",lambda:"fictional-coordinator")
+    catalog=quote_catalogue.search_catalogue("FICTIONAL",limit=10)
+    assert catalog["total"]==1
+    assert catalog["results"][0]["sku"]=="FICTIONAL-EXACT"
+    assert catalog["results"][0]["pricing_approved"] is False
+
+    record=quote_drafts.create_draft({
+        "customer":"Fictional Leisure Organisation Ltd",
+        "site":"Synthetic Fitness Centre",
+        "tier":"Gold","term_years":1,"discount_percent":0,
+        "equipment":[{
+            "item_code":"FICTIONAL-EXACT",
+            "description":"Fictional Treadmill",
+            "serial":"FICT-TEST-001",
+            "quantity":2,
+        }],
+    })
+    preview=quote_pricing.draft_price_preview(record["id"])
+    assert preview["complete_price"] is True
+    assert preview["priced_count"]==1
+    assert preview["lines"][0]["rrp_source"]=="august_2026_master_list_price"
+    assert preview["lines"][0]["rrp"]==3000
+    assert preview["annual_partial"]==180.0
+    assert preview["term_partial"]==180.0
+    assert preview["issue_quote_enabled"] is False
+
+    rate_sha=quote_pricing.source_snapshot()[3]["pricing"]
+    approvals.approve_tariff(approvals.ApproveTariff(
+        expected_source_sha256=rate_sha,
+        approval_reference="FICTITIOUS-RATE-APPROVAL",
+        reason="Synthetic source tariff fully reviewed in automated test",
+        confirm_equipment_rate_groups=True,
+        confirm_package_multipliers=True,
+        confirm_minimums_and_discounts=True,
+        confirm_parity_exceptions_reviewed=True,
+    ))
+    document=fitz.open()
+    document.new_page().insert_text((50,70),"SYNTHETIC MAINTENANCE TERMS - NO LIVE COVER")
+    terms_pdf=document.tobytes()
+    document.close()
+    asyncio.run(approvals.approve_terms(
+        file=UploadFile(file=io.BytesIO(terms_pdf),filename="test-terms.pdf"),
+        approval_reference="FICTITIOUS-TERMS-SIGNOFF",
+        reason="Synthetic maintenance terms confirmed for test only",
+        confirm_approved_current_terms=True,
+    ))
+    approvals.save_issuer(approvals.IssuerDetails(
+        legal_name="Fictional Pulse Fitness Ltd",
+        registered_address="123 Fictional Testing Road, Test Town",
+        company_number="FICTIONAL123",
+        contact_email="example@fictional.invalid",
+        approval_reference="FICTITIOUS-SUPPLIER-APPROVAL",
+        reason="Synthetic company details verified for automated pilot test",
+        confirm_verified_company_details=True,
+    ))
+    approvals.set_issuance(approvals.EnableCustomerQuotes(
+        enabled=True,
+        approval_reference="FICTITIOUS-PILOT-RELEASE",
+        reason="Synthetic end-to-end acceptance steps were fully exercised",
+        confirm_customer_quote_acceptance_tests=True,
+    ))
+    ready=issuance.customer_quote_readiness(record["id"])
+    assert ready["customer_issue_configured"] is True
+    assert ready["issues"]==[]
+
+    approved=issuance.issue_customer_quotation(
+        record["id"],issuance.QuoteApproval(
+            expected_revision=record["revision"],
+            valid_until=(dt.date.today()+dt.timedelta(days=30)).isoformat(),
+            commercial_approval_ref="FICTITIOUS-SERVICE-MANAGER-SIGNOFF",
+            confirm_customer_and_site=True,
+            confirm_equipment_and_serials=True,
+            confirm_package_price_and_discount=True,
+            confirm_maintenance_scope_and_terms=True,
+            confirm_vat_basis=True,
+        )
+    )
+    assert approved["issued"] is True
+    assert approved["annual_gbp"]==180.0
+    assert approved["customer_email_sent"] is False
+    pdf_response=issuance.download_issued_customer_quote(approved["quote_no"])
+    with fitz.open(stream=pdf_response.body,filetype="pdf") as file:
+        all_text=" ".join(page.get_text() for page in file)
+        assert file.page_count>=2
+    assert "FICTIONAL-EXACT" in all_text
+    assert "GBP 180.00" in all_text
+    assert "SYNTHETIC MAINTENANCE TERMS" in all_text
+    assert "Fictional Pulse Fitness Ltd" in all_text
+    assert "FICT-TEST-001" in all_text
