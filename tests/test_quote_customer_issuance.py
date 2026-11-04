@@ -358,3 +358,38 @@ def test_viewer_cannot_access_commercial_quote_readiness_or_pdf(tmp_path,monkeyp
         with pytest.raises(HTTPException) as error:
             action()
         assert error.value.status_code==403
+
+
+
+def test_material_sage_master_difference_requires_explicit_approval_and_is_frozen(tmp_path,monkeypatch):
+    db=setup_database(tmp_path,monkeypatch)
+    changed=fake_price()
+    changed["lines"][0]["source_price_comparison"]={
+        "selected_equipment_price_gbp":9000.0,
+        "sage_sales_price_gbp":7000.0,
+        "percentage_difference":-22.22,
+        "requires_explicit_ack":True,
+        "not_a_new_or_approved_tariff":True,
+    }
+    monkeypatch.setattr(
+        issues,"_price",
+        lambda draft:(changed,{"pricing":"a"*64,"catalog":"b"*64,"configs":"c"*64})
+    )
+    ready=issues.customer_quote_readiness(fake_draft()["id"])
+    assert ready["price_source_variances_requiring_ack"]==1
+    with pytest.raises(HTTPException) as error:
+        issues.issue_customer_quotation(fake_draft()["id"],approval())
+    assert error.value.status_code==422
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM unified_customer_quotes").fetchone()[0]==0
+    consent=approval().model_copy(update={"confirm_source_price_variances":True})
+    issued=issues.issue_customer_quotation(fake_draft()["id"],consent)
+    assert issued["issued"] is True
+    with sqlite3.connect(db) as conn:
+        raw=conn.execute(
+            "SELECT snapshot_json FROM unified_customer_quotes WHERE quote_no=?",
+            (issued["quote_no"],)
+        ).fetchone()[0]
+    frozen=json.loads(raw)
+    assert frozen["material_source_price_variances_reviewed"] is True
+    assert frozen["material_source_price_variance_lines"]==[1]
