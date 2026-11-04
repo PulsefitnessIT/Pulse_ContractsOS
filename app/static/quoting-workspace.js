@@ -581,7 +581,11 @@ async function unifiedShowTierComparison(quoted) {
         '</strong> · Monthly '+money(option.monthly_gbp)+
         ' · Term '+(option.term_gbp===null?'Unavailable':money(option.term_gbp))+'</p>':
         '<p>Price requires review ('+esc(option.priced_lines)+' / '+
-        esc(option.total_lines)+' lines priced). No complete totals shown.</p>';
+        esc(option.total_lines)+' lines priced). No complete totals shown.</p>'+
+        ((option.blockers||[]).length?
+          '<details><summary>What needs reviewing?</summary><ul>'+
+          option.blockers.slice(0,8).map(item=>'<li>'+esc(item)+'</li>').join('')+
+          '</ul></details>':'');
       const action=active?
         '<strong>Current selected cover</strong>':
         '<button class="button button-outline" type="button" '+
