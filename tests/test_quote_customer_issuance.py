@@ -108,6 +108,7 @@ def setup_database(tmp_path, monkeypatch, draft=None):
              })),
         )
     monkeypatch.setattr(issues,"connect",db)
+    monkeypatch.setattr(quote_drafts,"connect",db)
     from app import quote_commercial_setup
     monkeypatch.setattr(quote_commercial_setup, "connect", db)
     monkeypatch.setattr(issues.pilot_access,"PILOT_MODE",True)
