@@ -39,9 +39,18 @@ function unifiedDraftSnapshot() {
   });
 }
 
+function unifiedHasPendingEquipmentInput() {
+  const form=document.querySelector('#unifiedEquipmentAdd');
+  if(!form)return false;
+  const keys=['description','item_code','serial','cover_start'];
+  return keys.some(key=>String(form.elements[key]?.value||'').trim()) ||
+    Number(form.elements.quantity?.value||1)!==1;
+}
+
 function unifiedDraftHasUnsavedChanges() {
   const current=unifiedDraftSnapshot();
   return Boolean(unifiedEditingEquipmentIndex!==null ||
+    unifiedHasPendingEquipmentInput() ||
     (current!==null && unifiedLastSavedDraftState!==null &&
       current!==unifiedLastSavedDraftState));
 }
@@ -64,6 +73,10 @@ function unifiedCoordinatorGuidance() {
       action='Save and calculate the source-based maintenance price.';
       if(unifiedEditingEquipmentIndex!==null)
         action='Finish or cancel your equipment edit before saving this quotation.';
+      else if(unifiedHasPendingEquipmentInput()){
+        step=2;
+        action='Select Add equipment line to include the machine you are entering before saving.';
+      }
       else if(!unifiedDraftSelected||unifiedDraftHasUnsavedChanges())
         action='Save and calculate to include your latest changes.';
       else if(unifiedLatestPricePreview){
@@ -418,6 +431,10 @@ async function unifiedSaveDraft() {
   if (!form || !form.reportValidity() || !feedback || !button || unifiedSavePending) return null;
   if (unifiedEditingEquipmentIndex!==null){
     feedback.textContent='Save or cancel the equipment line you are editing first.';
+    return null;
+  }
+  if(unifiedHasPendingEquipmentInput()){
+    feedback.textContent='You have started an equipment line that is not yet in the quote. Select Add equipment line first.';
     return null;
   }
   const data = Object.fromEntries(new FormData(form).entries());
