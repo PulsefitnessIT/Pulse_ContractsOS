@@ -51,7 +51,7 @@ class QuoteApproval(BaseModel):
     confirm_package_price_and_discount: bool
     confirm_maintenance_scope_and_terms: bool
     confirm_vat_basis: bool
-    confirm_source_price_variances: bool = False
+    confirm_source_price_variances: bool = False  # Old pilot client compatibility; NOT required.
 
 
 def _admin():
@@ -206,8 +206,9 @@ def _errors(draft, preview):
             "managed_price_override",
         ):
             errors.append(f"Line {number}: equipment price source is not accepted.")
-        if line.get("sage_reference", {}).get("review_overdue"):
-            errors.append(f"Line {number}: Sage source price review is overdue.")
+        if (line.get("rrp_source") == "sage_exact_sku_price"
+                and line.get("sage_reference", {}).get("review_overdue")):
+            errors.append(f"Line {number}: selected Sage price source is overdue for review.")
         if any(reason not in ALLOWED_PRICE_NOTES for reason in line.get("coverage_review", [])):
             errors.append(f"Line {number}: commercial or equipment coverage exception requires correction.")
         if line.get("annual", 0) < line.get("minimum_annual", 0) - 0.01:
@@ -272,15 +273,17 @@ def _readiness(draft):
         ),
         "status": "READY_FOR_COMMERCIAL_APPROVAL" if not errors else "PRICING_REVIEW_REQUIRED",
         "no_quotation_has_been_issued": True,
-        "price_source_variances_requiring_ack": sum(
-            bool(line.get("source_price_comparison", {}).get("requires_explicit_ack"))
+        "price_source_variances_requiring_ack": 0,
+        "price_source_comparisons_available": sum(
+            bool(line.get("source_price_comparison"))
             for line in preview["lines"]
         ),
         "source_price_policy": (
-            "August Master List Price preferred when present; exact Sage "
-            "Sales Price only for machines absent from the Master. Both "
-            "amounts shown when available; a 5% difference is a temporary "
-            "review trigger, NOT a signed-off company tolerance."
+            "Business-confirmed equipment price basis: current August Master "
+            "first, exact Sage item-code price for machines absent from that "
+            "Master. Any source difference is informational, not a separate "
+            "approval requirement. The maintenance service tariff, terms "
+            "and each customer quotation still require sign-off."
         ),
     }
 
@@ -477,16 +480,13 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
         errors = _errors(draft, preview)
         if errors:
             raise HTTPException(409, "Resolve quotation issues: " + "; ".join(errors[:6]))
-        variances = [
+        comparisons = [
             line for line in preview["lines"]
-            if line.get("source_price_comparison", {}).get("requires_explicit_ack")
+            if line.get("source_price_comparison")
         ]
-        if variances and not payload.confirm_source_price_variances:
-            raise HTTPException(
-                422, "One or more exact SKUs differ by over 5% between the "
-                "August List Price and Sage Sales Price. Review their commercial "
-                "basis and explicitly attest the difference before issue."
-            )
+        # The accepted price-source hierarchy is a business decision, not
+        # an arbitrary 5% discrepancy threshold. Full source values and
+        # fingerprints are already archived for the individual quote.
         if not _approved_tariff(fingerprints["pricing"]):
             raise HTTPException(
                 409, "The exact V10 tariff source has not been commercially authorised. "
@@ -506,12 +506,14 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             "issuer_sha256": issuer_sha, "issuer": issuer,
             "source_fingerprints": fingerprints,
             "customer_email_sent": False,
-            "material_source_price_variances_reviewed": (
-                bool(payload.confirm_source_price_variances)
-            ),
-            "material_source_price_variance_lines": [
-                item["line"] for item in variances
+            "source_price_comparisons_informational": True,
+            "source_price_comparison_lines": [
+                item["line"] for item in comparisons
             ],
+            "price_basis": (
+                "August 2026 Master current machine; exact Sage item "
+                "price for equipment absent from Master"
+            ),
         }
         serialised = json.dumps(snapshot, sort_keys=True, ensure_ascii=False,
                                 separators=(",", ":"))
