@@ -132,6 +132,14 @@ async function quotingWorkspacePage() {
     '<label>Contract start <input name="contract_start" type="date"></label>' +
     '<label>Contract end <input name="contract_end" type="date"></label>' +
     '</div></form>' +
+    '<h4>Start from a sales invoice (optional)</h4>' +
+    '<p>Upload up to 12 PDF invoices in one go. SmartQuote will suggest item codes ' +
+    'found on the documents. You still confirm the correct machines, quantities ' +
+    'and serials; no equipment is automatically added or approved.</p>' +
+    '<form id="unifiedInvoiceImport"><label>Sales invoice PDF files ' +
+    '<input name="files" type="file" accept=".pdf,application/pdf" multiple required></label> ' +
+    '<button class="button button-outline" type="submit">Find equipment on invoices</button></form>' +
+    '<div id="unifiedInvoiceResults" role="status" aria-live="polite"></div>' +
     '<h4>Equipment lines</h4>' +
     '<form id="unifiedCatalogueSearch"><label>Find a SmartQuote product (SKU, model or name) ' +
     '<input name="q" minlength="2" maxlength="100" required placeholder="Search original product identity (not approval)"></label> ' +
@@ -192,6 +200,7 @@ async function quotingWorkspacePage() {
   document.querySelector('#quoteGoLiveRefresh').addEventListener('click', loadQuoteGoLiveStatus);
   loadQuoteGoLiveStatus().catch(()=>{});
   document.querySelector('#unifiedEquipmentAdd').addEventListener('submit', unifiedAddEquipment);
+  document.querySelector('#unifiedInvoiceImport').addEventListener('submit', unifiedImportInvoiceEvidence);
   document.querySelector('#unifiedCancelEquipmentEdit').addEventListener('click', unifiedStopEquipmentEdit);
   document.querySelector('#unifiedSiteSearch').addEventListener('submit', unifiedSearchSites);
   document.querySelector('#unifiedDraftForm').elements.site.addEventListener('input', () => {
@@ -539,6 +548,150 @@ async function unifiedShowLegacyQuote(id) {
     const target = document.querySelector('#unifiedLegacyDetail');
     if (target) target.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
   }
+}
+
+
+
+function unifiedInvoiceCandidates(record) {
+  // Code recognition is evidence only. Never infer equipment identity, count,
+  // warranty start, ownership, serials or eligibility from text extraction.
+  const raw=record?.evidence?.equipment_codes||[];
+  if(!Array.isArray(raw))return [];
+  const matched=record?.catalogue_matches||{};
+  const seen=new Set();
+  const candidates=[];
+  for(const item of raw) {
+    if(!item||typeof item!=='object')continue;
+    const sku=String(item.value||'').trim().toUpperCase();
+    if(!/^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$/.test(sku)||seen.has(sku))continue;
+    seen.add(sku);
+    const product=matched[sku]||{};
+    const pages=Array.isArray(item.pages)?item.pages.filter(
+      n=>Number.isSafeInteger(n)&&n>0&&n<10000
+    ).slice(0,30):[];
+    candidates.push({
+      sku,
+      pages,
+      description:String(product.name||'').slice(0,250),
+      identity_not_verified:true,
+      quantity_not_inferred:true,
+      serials_not_inferred:true,
+    });
+  }
+  return candidates;
+}
+
+async function unifiedImportInvoiceEvidence(event) {
+  event.preventDefault();
+  const fileInput=event.currentTarget.elements.files;
+  const feedback=document.querySelector('#unifiedInvoiceResults');
+  const button=event.currentTarget.querySelector('[type="submit"]');
+  if(!fileInput||!feedback||!button)return;
+  const files=Array.from(fileInput.files||[]);
+  if(!files.length||files.length>12||files.some(file=>
+      !/\.pdf$/i.test(file.name)||file.size>20000000||file.size===0)||
+      files.reduce((sum,file)=>sum+file.size,0)>60000000){
+    feedback.textContent='Choose 1–12 non-empty PDF invoices, maximum 20 MB each and 60 MB in total.';
+    return;
+  }
+  button.disabled=true;
+  feedback.textContent='Reading invoice PDF files. Detected item codes need manual confirmation…';
+  try {
+    const payload=new FormData();
+    files.forEach(file=>payload.append('files',file));
+    const uploaded=await api('/api/imports/batch',{method:'POST',body:payload});
+    const ready=(uploaded.results||[]).filter(item=>
+      Number.isSafeInteger(Number(item.id))&&Number(item.id)>0&&
+      item.status!=='Upload failed'
+    );
+    if(!ready.length)throw Error((uploaded.results||[]).map(x=>x.message).join('; ')||
+      'No PDF could be read.');
+    const analysed=await Promise.all(ready.map(async item=>{
+      try {
+        const details=await api('/api/imports/'+encodeURIComponent(String(item.id)));
+        return {id:Number(item.id),filename:item.filename,details,
+          codes:unifiedInvoiceCandidates(details)};
+      }catch(error) {
+        return {id:Number(item.id),filename:item.filename,error:error.message,codes:[]};
+      }
+    }));
+    if(view!=='quoting'||!document.querySelector('#unifiedInvoiceResults'))return;
+    let suggestions=[];
+    const cards=analysed.map(item=>{
+      const base=suggestions.length;
+      suggestions=suggestions.concat(item.codes.slice(0,80));
+      const unread=item.details?.evidence?.unread_pages||[];
+      const notices=item.details?.evidence?.reading_warnings||[];
+      const names=item.codes.slice(0,80).map((candidate,i)=>
+        '<tr><td>'+esc(candidate.sku)+'</td>'+
+        '<td>'+esc(candidate.description||'Model not yet confirmed')+'</td>'+
+        '<td>'+esc(candidate.pages.join(', ')||'Check original invoice')+'</td>'+
+        '<td><button class="button button-outline" type="button" '+
+        'data-invoice-code-index="'+(base+i)+'">Use code for new line</button></td></tr>'
+      ).join('');
+      return '<section class="panel"><h4>'+esc(item.filename||'Invoice')+'</h4>'+
+        (item.error?'<p class="notice warning">'+esc(item.error)+'</p>':'')+
+        '<p><a href="/api/imports/'+encodeURIComponent(String(item.id))+
+        '/source" target="_blank" rel="noopener">Review original invoice PDF</a></p>'+
+        (unread.length?'<p class="notice warning">'+esc(unread.length)+
+          ' page(s) could not be read. Check them against the original PDF.</p>':'')+
+        (notices.length?'<p class="fine-print">'+
+          esc(notices.map(note=>String(note).slice(0,180)).join('; '))+'</p>':'')+
+        (names?'<table class="data-table"><thead><tr>'+
+          '<th>Detected code</th><th>Reference description</th>'+
+          '<th>Source page(s)</th><th></th></tr></thead><tbody>'+
+          names+'</tbody></table>':
+          '<p>No usable equipment codes were extracted. Inspect the PDF or '+
+          'enter the correct machine manually.</p>')+
+        (item.codes.length>80?'<p>More candidates detected. Open the full Import Documents '+
+          'record and confirm any additional items manually.</p>':'')+
+        '</section>';
+    }).join('');
+    feedback.innerHTML='<p><strong>Invoice evidence only.</strong> Item codes can '+
+      'include spare parts or unrelated items. Select a candidate to check '+
+      'its exact V10 model, then confirm serials and quantity before adding it. '+
+      'No invoices or equipment have been converted into contract records.</p>'+cards;
+    feedback.querySelectorAll('[data-invoice-code-index]').forEach(button=>
+      button.addEventListener('click',async()=>{
+        const selected=suggestions[Number(button.dataset.invoiceCodeIndex)];
+        const addForm=document.querySelector('#unifiedEquipmentAdd');
+        if(!selected||!addForm)return;
+        if(unifiedEditingEquipmentIndex!==null){
+          const note=document.querySelector('#unifiedDraftFeedback');
+          if(note)note.textContent='Save or cancel the equipment line already being edited first.';
+          return;
+        }
+        button.disabled=true;
+        try {
+          const found=await api('/api/quoting/catalogue/search?q='+
+            encodeURIComponent(selected.sku)+'&limit=30');
+          const exact=(found.results||[]).filter(row=>
+            String(row.sku||'').trim().toUpperCase()===selected.sku &&
+            !row.duplicate_sku);
+          addForm.elements.item_code.value=selected.sku;
+          addForm.elements.description.value=exact.length===1?
+            String(exact[0].name||''):'';
+          addForm.elements.serial.value='';
+          addForm.elements.quantity.value='1';
+          addForm.elements.cover_start.value='';
+          const note=document.querySelector('#unifiedDraftFeedback');
+          if(note)note.textContent=exact.length===1?
+            'Exact V10 code found. Verify machine, add its serial and quantity, '+
+            'then select Add equipment line. No item is added until you confirm.':
+            'The printed code is not an unambiguous V10 machine. Confirm its model '+
+            'and service mapping with the technical team before using it in a quote.';
+          addForm.elements.serial.focus();
+        }catch(error) {
+          const note=document.querySelector('#unifiedDraftFeedback');
+          if(note)note.textContent='Cannot verify this item code in V10: '+error.message+
+            '. Enter the machine only after confirming its identity.';
+        }finally{button.disabled=false;}
+      }));
+    fileInput.value='';
+  }catch(error){
+    feedback.textContent='Invoice reading needs attention: '+error.message+
+      '. No invoice evidence has been added to this quotation.';
+  }finally{button.disabled=false;}
 }
 
 
