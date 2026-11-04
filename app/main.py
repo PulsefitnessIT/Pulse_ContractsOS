@@ -45,6 +45,8 @@ from .quote_source_setup import router as quote_source_setup_router
 from .source_integrity import router as source_integrity_router
 from .action_centre import router as action_centre_router
 from .master_sync import router as working_master_sync_router
+from .expiry_transfer import router as expiry_transfer_router
+from .register_layout import current_layout as checked_register_layout
 from .quote_site_lookup import router as source_site_lookup_router
 from .contract_setup import router as contract_setup_router
 from .sicon_bridge import router as sicon_bridge_router
@@ -135,6 +137,7 @@ app.include_router(quote_source_setup_router)
 app.include_router(source_integrity_router)
 app.include_router(action_centre_router)
 app.include_router(working_master_sync_router)
+app.include_router(expiry_transfer_router)
 app.include_router(source_site_lookup_router)
 app.include_router(contract_setup_router)
 app.include_router(sicon_bridge_router)
@@ -374,12 +377,18 @@ def create_contract(payload:ContractUpdate):
 
 @app.post('/api/contracts/{cid}/archive')
 def archive(cid:int,payload:ArchiveRequest):
+    # The maintenance, MOD and Expired column positions must match before
+    # an archived row can be represented safely in a later Excel export.
+    layout=checked_register_layout(TEMPLATE)
     con=connect();con.execute('BEGIN IMMEDIATE')
     r=con.execute('SELECT * FROM contracts WHERE id=?',(cid,)).fetchone()
     if not r or r['status']!='Active':
         con.close();raise HTTPException(404,'Active contract not found')
     concurrency_check(r,payload.expected_revision,con)
-    row=int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet='Expired'").fetchone()[0])+1
+    row=max(
+        int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet='Expired'").fetchone()[0]),
+        int(layout['template_last_expired_row'])
+    )+1
     if row>=1_048_576:
         con.close();raise HTTPException(409,'The Expired worksheet has reached Excel row capacity')
     old=json.loads(r['fields']);f=old.copy();f['Renewal status']='Historical / archived'
