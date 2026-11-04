@@ -51,6 +51,7 @@ class QuoteApproval(BaseModel):
     confirm_package_price_and_discount: bool
     confirm_maintenance_scope_and_terms: bool
     confirm_vat_basis: bool
+    confirm_source_price_variances: bool = False
 
 
 def _admin():
@@ -271,6 +272,16 @@ def _readiness(draft):
         ),
         "status": "READY_FOR_COMMERCIAL_APPROVAL" if not errors else "PRICING_REVIEW_REQUIRED",
         "no_quotation_has_been_issued": True,
+        "price_source_variances_requiring_ack": sum(
+            bool(line.get("source_price_comparison", {}).get("requires_explicit_ack"))
+            for line in preview["lines"]
+        ),
+        "source_price_policy": (
+            "August Master List Price preferred when present; exact Sage "
+            "Sales Price only for machines absent from the Master. Both "
+            "amounts shown when available; a 5% difference is a temporary "
+            "review trigger, NOT a signed-off company tolerance."
+        ),
     }
 
 
@@ -466,6 +477,16 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
         errors = _errors(draft, preview)
         if errors:
             raise HTTPException(409, "Resolve quotation issues: " + "; ".join(errors[:6]))
+        variances = [
+            line for line in preview["lines"]
+            if line.get("source_price_comparison", {}).get("requires_explicit_ack")
+        ]
+        if variances and not payload.confirm_source_price_variances:
+            raise HTTPException(
+                422, "One or more exact SKUs differ by over 5% between the "
+                "August List Price and Sage Sales Price. Review their commercial "
+                "basis and explicitly attest the difference before issue."
+            )
         if not _approved_tariff(fingerprints["pricing"]):
             raise HTTPException(
                 409, "The exact V10 tariff source has not been commercially authorised. "
@@ -485,6 +506,12 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
             "issuer_sha256": issuer_sha, "issuer": issuer,
             "source_fingerprints": fingerprints,
             "customer_email_sent": False,
+            "material_source_price_variances_reviewed": (
+                bool(payload.confirm_source_price_variances)
+            ),
+            "material_source_price_variance_lines": [
+                item["line"] for item in variances
+            ],
         }
         serialised = json.dumps(snapshot, sort_keys=True, ensure_ascii=False,
                                 separators=(",", ":"))
