@@ -240,7 +240,7 @@ def export_template(template_path, updates, output_path):
             source_styles={}
             if entry.get('style_origin'):
                 origin=entry['style_origin']
-                if origin['sheet'] in REGISTER_SHEETS:
+                if origin['sheet'] in register_sheets(src):
                     source_root=src.sheet(origin['sheet'])
                     source_row=next((r for r in source_root.find(Q('sheetData')).findall(Q('row'))
                                      if int(r.get('r'))==int(origin['row'])),None)
