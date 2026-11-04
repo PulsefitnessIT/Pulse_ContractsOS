@@ -171,3 +171,22 @@ def test_pdf_invoice_code_pages_are_checked_before_draft_write(tmp_path,monkeypa
     })
     assert updated["equipment"][0]["source_import_id"] is None
     assert updated["equipment"][0]["source_pages"]==[]
+
+
+
+def test_repeated_equipment_serials_are_blocked_without_preventing_two_distinct_units():
+    base={"customer":"Fictional Leisure","site":"Training Gym","tier":"Gold"}
+    lines=[
+        {"description":"Example Bike","item_code":"TEST-001","quantity":1,"serial":"SER-001"},
+        {"description":"Another Bike","item_code":"TEST-001","quantity":1,"serial":"ser-001"},
+    ]
+    with pytest.raises(HTTPException) as error:
+        quote_drafts.validate_draft({**base,"equipment":lines})
+    assert error.value.status_code==422
+    assert "already entered" in error.value.detail
+    correct=quote_drafts.validate_draft({
+        **base,"equipment":[lines[0],{**lines[1],"serial":"SER-002"}]
+    })
+    assert len(correct["equipment"])==2
+    assert correct["equipment"][0]["serial"]=="SER-001"
+    assert correct["equipment"][1]["serial"]=="SER-002"
