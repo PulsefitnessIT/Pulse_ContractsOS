@@ -6,6 +6,7 @@ cannot access real customer files during this GitHub Actions acceptance run.
 from __future__ import annotations
 
 import http.cookiejar
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -47,7 +48,9 @@ def run():
         private = folder / "private_runtime"
         assert (private / "approved_master.xlsx").is_file()
         assert (private / "contracts.sqlite3").is_file()
-        with sqlite3.connect(private / "contracts.sqlite3") as db:
+        # The sqlite3 context manager commits but does not close. Keep
+        # no database file handles open when Windows removes this fixture.
+        with closing(sqlite3.connect(private / "contracts.sqlite3")) as db:
             rows = db.execute(
                 "SELECT status,COUNT(*) FROM contracts GROUP BY status"
             ).fetchall()
