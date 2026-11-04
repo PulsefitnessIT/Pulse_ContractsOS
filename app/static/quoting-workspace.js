@@ -549,11 +549,70 @@ async function unifiedPricePreview() {
       '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
       '<h4>Commercial controls and exceptions</h4><ul>' +
       preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
-      '</ul><p>The preview is not itself customer-approved. Use the quotation controls below to check release readiness and obtain manager sign-off.</p></section>';
+      '</ul><p>The preview is not itself customer-approved. Use the quotation controls below to check release readiness and obtain manager sign-off.</p></section>' +
+      '<section class="panel" id="quoteTierComparison" aria-label="Silver Gold and Platinum comparison">'+
+      '<p>Comparing Silver, Gold and Platinum for the same equipment…</p></section>';
     if (typeof showCustomerQuotePanel === 'function') showCustomerQuotePanel(preview);
+    await unifiedShowTierComparison(preview);
   } catch(error) {
     const current = document.querySelector('#unifiedPricePanel');
     if (current) current.innerHTML = '<p class="notice warning">' + esc(error.message) + '</p>';
+  }
+}
+
+
+async function unifiedShowTierComparison(quoted) {
+  const holder=document.querySelector('#quoteTierComparison');
+  if(!holder||!unifiedDraftSelected)return;
+  const draftId=unifiedDraftSelected.id;
+  try {
+    const response=await api('/api/quoting/drafts/'+encodeURIComponent(draftId)+'/tier-comparison');
+    if(view!=='quoting'||!document.querySelector('#quoteTierComparison')||
+        !unifiedDraftSelected||unifiedDraftSelected.id!==draftId||
+        response.revision!==unifiedDraftSelected.revision||
+        quoted.revision!==response.revision)return;
+    const options=(response.options||[]).filter(option=>
+      ['Silver','Gold','Platinum'].includes(option.tier));
+    const cells=options.map(option=>{
+      const active=option.tier===response.selected_tier;
+      const available=option.available&&option.complete_price;
+      const details=available?
+        '<p><strong>Annual '+money(option.annual_gbp)+
+        '</strong> · Monthly '+money(option.monthly_gbp)+
+        ' · Term '+(option.term_gbp===null?'Unavailable':money(option.term_gbp))+'</p>':
+        '<p>Price requires review ('+esc(option.priced_lines)+' / '+
+        esc(option.total_lines)+' lines priced). No complete totals shown.</p>';
+      const action=active?
+        '<strong>Current selected cover</strong>':
+        '<button class="button button-outline" type="button" '+
+        'data-smartquote-tier="'+esc(option.tier)+'"'+
+        (available?'':' disabled title="Resolve equipment pricing first"')+
+        '>Use '+esc(option.tier)+' for this draft</button>';
+      return '<div style="flex:1;min-width:180px;border:1px solid var(--border, #ccc);'+
+        'border-radius:.5rem;padding:.8rem"><h4>'+esc(option.tier)+'</h4>'+
+        details+action+'</div>';
+    }).join('');
+    holder.innerHTML='<h3>Compare maintenance cover options</h3>'+
+      '<p>Same machines, quantities, discount and dates across all three '+
+      'packages. Source tariff rules are not yet approved for customer issue.</p>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:.75rem">'+cells+'</div>'+
+      '<p class="fine-print">Only complete pricing options show totals. '+
+      'Selecting another package saves a new draft revision and recalculates '+
+      'its price; it does not issue a customer quotation.</p>';
+    holder.querySelectorAll('button[data-smartquote-tier]').forEach(button=>
+      button.addEventListener('click',async ()=>{
+        const selected=String(button.dataset.smartquoteTier||'');
+        if(!['Silver','Gold','Platinum'].includes(selected))return;
+        const field=document.querySelector('#unifiedDraftForm select[name="tier"]');
+        if(!field)return;
+        button.disabled=true;
+        field.value=selected;
+        await unifiedSaveAndPrice();
+      }));
+  } catch(error) {
+    if(document.querySelector('#quoteTierComparison'))
+      holder.textContent='The three-package comparison could not be loaded: '+
+        error.message+'. The saved quotation preview above remains available.';
   }
 }
 
