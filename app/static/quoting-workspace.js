@@ -6,6 +6,8 @@ let unifiedDraftRecords = [];
 let unifiedCatalogueMatches = [];
 let unifiedSiteMatches = [];
 let quotePriceEditorSelection = null;
+let unifiedEditingEquipmentIndex = null;
+let unifiedRemovedEquipment = null;
 
 async function quotingWorkspacePage() {
   unifiedDraftSelected = null;
@@ -53,7 +55,8 @@ async function quotingWorkspacePage() {
     '<label>Serial number <input name="serial" maxlength="120"></label>' +
     '<label>Equipment cover starts <input name="cover_start" type="date"></label>' +
     '<label>Quantity <input name="quantity" type="number" min="1" max="10000" step="1" value="1" required></label>' +
-    '</div><button type="submit" class="button button-outline">Add equipment line</button></form>' +
+    '</div><button type="submit" class="button button-outline">Add equipment line</button> ' +
+    '<button type="button" class="button button-outline" id="unifiedCancelEquipmentEdit" hidden>Cancel edit</button></form>' +
     '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem">' +
     '<button type="button" class="button button-primary" id="unifiedSaveAndPrice">Save &amp; calculate price</button>' +
     '<button type="button" class="button button-outline" id="unifiedDraftSave">Save draft only</button>' +
@@ -99,6 +102,7 @@ async function quotingWorkspacePage() {
   document.querySelector('#quoteGoLiveRefresh').addEventListener('click', loadQuoteGoLiveStatus);
   loadQuoteGoLiveStatus().catch(()=>{});
   document.querySelector('#unifiedEquipmentAdd').addEventListener('submit', unifiedAddEquipment);
+  document.querySelector('#unifiedCancelEquipmentEdit').addEventListener('click', unifiedStopEquipmentEdit);
   document.querySelector('#unifiedSiteSearch').addEventListener('submit', unifiedSearchSites);
   document.querySelector('#unifiedDraftForm').elements.site.addEventListener('input', () => {
     const form = document.querySelector('#unifiedDraftForm');
@@ -137,61 +141,128 @@ async function quotingWorkspacePage() {
   await Promise.allSettled([loadUnifiedDrafts(), loadUnifiedLegacyQuotes()]);
 }
 
+
+function unifiedStopEquipmentEdit() {
+  const form=document.querySelector('#unifiedEquipmentAdd');
+  unifiedEditingEquipmentIndex=null;
+  if(form) {
+    form.reset();
+    const button=form.querySelector('[type="submit"]');
+    if(button)button.textContent='Add equipment line';
+    const cancel=form.querySelector('#unifiedCancelEquipmentEdit');
+    if(cancel)cancel.hidden=true;
+  }
+}
+
 function renderUnifiedEquipment() {
-  const host = document.querySelector('#unifiedEquipmentTable');
-  if (!host || view !== 'quoting') return;
-  const rows = unifiedEquipment.map((item, i) =>
-    '<tr><td>' + esc(item.description) + '</td><td>' + esc(item.item_code) +
-    '</td><td>' + esc(item.serial || 'Not confirmed') + '</td><td>' +
-    esc(item.cover_start || 'Contract start') + '</td><td>' +
-    esc(item.quantity) + '</td><td><button class="button button-outline" type="button" data-remove-line="' +
-    i + '">Remove</button></td></tr>'
+  const host=document.querySelector('#unifiedEquipmentTable');
+  if(!host || view!=='quoting')return;
+  const rows=unifiedEquipment.map((item,i)=>
+    '<tr><td>'+esc(item.description)+'</td><td>'+esc(item.item_code)+'</td>'+
+    '<td>'+esc(item.serial||'Not confirmed')+'</td><td>'+
+    esc(item.cover_start||'Contract start')+'</td><td>'+esc(item.quantity)+'</td>'+
+    '<td><button class="button button-outline" type="button" data-edit-line="'+i+'">Edit</button> '+
+    '<button class="button button-outline" type="button" data-remove-line="'+i+'">Remove</button></td></tr>'
   ).join('');
-  host.innerHTML =
-    '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Machine</th><th>Code</th><th>Serial</th><th>Cover starts</th><th>Qty</th><th></th></tr></thead><tbody>' +
-    (rows || '<tr><td colspan="6">No equipment added yet.</td></tr>') +
-    '</tbody></table></div>';
-  host.querySelectorAll('[data-remove-line]').forEach(b => b.addEventListener('click', () => {
-    unifiedEquipment.splice(Number(b.dataset.removeLine), 1);
+  host.innerHTML=
+    '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+    '<th>Machine</th><th>Code</th><th>Serial</th><th>Cover starts</th><th>Qty</th><th></th>'+
+    '</tr></thead><tbody>'+
+    (rows||'<tr><td colspan="6">No equipment added yet.</td></tr>')+
+    '</tbody></table></div>'+
+    (unifiedRemovedEquipment?
+      '<button class="button button-outline" type="button" id="unifiedUndoEquipmentRemove">'+
+      'Undo last removal</button>':'');
+  host.querySelectorAll('[data-edit-line]').forEach(button=>button.addEventListener('click',()=>{
+    const index=Number(button.dataset.editLine);
+    if(!Number.isSafeInteger(index)||index<0||index>=unifiedEquipment.length)return;
+    const item=unifiedEquipment[index];
+    const form=document.querySelector('#unifiedEquipmentAdd');
+    if(!form)return;
+    for(const key of ['description','item_code','serial','cover_start','quantity'])
+      form.elements[key].value=String(item[key]??'');
+    unifiedEditingEquipmentIndex=index;
+    const submit=form.querySelector('[type="submit"]');
+    if(submit)submit.textContent='Save equipment changes';
+    const cancel=form.querySelector('#unifiedCancelEquipmentEdit');
+    if(cancel)cancel.hidden=false;
+    const feedback=document.querySelector('#unifiedDraftFeedback');
+    if(feedback)feedback.textContent='Editing equipment line '+(index+1)+
+      '. Save equipment changes before calculating the quote.';
+    form.elements.serial.focus();
+  }));
+  host.querySelectorAll('[data-remove-line]').forEach(button=>button.addEventListener('click',()=>{
+    const index=Number(button.dataset.removeLine);
+    if(!Number.isSafeInteger(index)||index<0||index>=unifiedEquipment.length)return;
+    unifiedRemovedEquipment={item:{...unifiedEquipment[index]},index};
+    unifiedEquipment.splice(index,1);
+    unifiedStopEquipmentEdit();
     unifiedClearPrice();
     renderUnifiedEquipment();
   }));
+  const undo=host.querySelector('#unifiedUndoEquipmentRemove');
+  if(undo)undo.addEventListener('click',()=>{
+    const removed=unifiedRemovedEquipment;
+    if(!removed||unifiedEquipment.length>=500)return;
+    unifiedEquipment.splice(Math.min(removed.index,unifiedEquipment.length),0,removed.item);
+    unifiedRemovedEquipment=null;
+    unifiedClearPrice();
+    renderUnifiedEquipment();
+  });
 }
 
 function unifiedAddEquipment(event) {
   event.preventDefault();
-  const form = event.currentTarget;
-  const data = Object.fromEntries(new FormData(form).entries());
-  const quantity = Number(data.quantity);
-  const feedback = document.querySelector('#unifiedDraftFeedback');
-  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) {
-    feedback.textContent = 'Enter a positive whole-number equipment quantity.';
+  const form=event.currentTarget;
+  const data=Object.fromEntries(new FormData(form).entries());
+  const quantity=Number(data.quantity);
+  const feedback=document.querySelector('#unifiedDraftFeedback');
+  if(!Number.isSafeInteger(quantity)||quantity<1||quantity>10000){
+    if(feedback)feedback.textContent='Enter a whole-number equipment quantity from 1 to 10,000.';
     return;
   }
-  if (!String(data.description || '').trim()) {
-    feedback.textContent = 'Enter an equipment description.';
+  if(!String(data.description||'').trim()){
+    if(feedback)feedback.textContent='Enter an equipment description.';
     return;
   }
-  if (unifiedEquipment.length >= 500) {
-    feedback.textContent = 'Maximum 500 equipment lines per draft.';
+  const editing=unifiedEditingEquipmentIndex;
+  if(editing===null&&unifiedEquipment.length>=500){
+    if(feedback)feedback.textContent='Maximum 500 equipment lines per draft.';
     return;
   }
+  if(editing!==null&&(!Number.isSafeInteger(editing)||editing<0||editing>=unifiedEquipment.length)){
+    unifiedStopEquipmentEdit();
+    if(feedback)feedback.textContent='The equipment list changed. Select the line to edit again.';
+    return;
+  }
+  const record={
+    description:String(data.description).trim(),
+    item_code:String(data.item_code||'').trim(),
+    serial:String(data.serial||'').trim(),
+    cover_start:String(data.cover_start||''),
+    quantity,
+  };
+  if(editing!==null)unifiedEquipment[editing]=record;
+  else unifiedEquipment.push(record);
+  unifiedRemovedEquipment=null;
+  unifiedStopEquipmentEdit();
   unifiedClearPrice();
-  unifiedEquipment.push({
-    description: String(data.description).trim(),
-    item_code: String(data.item_code || '').trim(),
-    serial: String(data.serial || '').trim(),
-    cover_start: String(data.cover_start || ''),
-    quantity
-  });
-  form.reset();
-  feedback.textContent = 'Equipment line added. Save the quotation draft to retain it.';
   renderUnifiedEquipment();
+  if(feedback)feedback.textContent=(editing!==null?'Equipment changes saved.':'Equipment line added.')+
+    (quantity>1?' Add a separate equipment line for each distinct serial number before final approval.':
+      ' Save and calculate the draft to retain the changes.');
 }
 
 function unifiedNewDraft() {
+  if (unifiedEditingEquipmentIndex !== null) {
+    const feedback=document.querySelector('#unifiedDraftFeedback');
+    if(feedback)feedback.textContent='Save or cancel your equipment edit before starting another quotation.';
+    return;
+  }
   unifiedDraftSelected = null;
   unifiedEquipment = [];
+  unifiedRemovedEquipment=null;
+  unifiedStopEquipmentEdit();
   unifiedClearPrice();
   const form = document.querySelector('#unifiedDraftForm');
   if (form) form.reset();
@@ -208,6 +279,10 @@ async function unifiedSaveDraft() {
   const button = document.querySelector('#unifiedDraftSave');
   const combined = document.querySelector('#unifiedSaveAndPrice');
   if (!form || !form.reportValidity() || !feedback || !button) return null;
+  if (unifiedEditingEquipmentIndex!==null){
+    feedback.textContent='Save or cancel the equipment line you are editing first.';
+    return null;
+  }
   const data = Object.fromEntries(new FormData(form).entries());
   const payload = {
     customer:data.customer, site:data.site, contact:data.contact,
@@ -289,6 +364,8 @@ async function unifiedOpenDraft(id) {
     form.elements.contract_start.value = draft.contract_start || '';
     form.elements.contract_end.value = draft.contract_end || '';
     unifiedEquipment = draft.equipment.map(e => ({...e}));
+    unifiedRemovedEquipment=null;
+    unifiedStopEquipmentEdit();
     unifiedClearPrice();
     unifiedDraftSelected = {id:draft.id, revision:draft.revision};
     document.querySelector('#unifiedDraftTitle').textContent = 'Edit quotation draft';
