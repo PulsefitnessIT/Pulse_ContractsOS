@@ -429,6 +429,12 @@ def test_missing_machine_serials_require_a_specific_manager_reason_and_archive_i
         ).fetchone()[0])
     assert frozen["unconfirmed_serial_count"]==1
     assert frozen["serial_exception_reason"].startswith("The second fictional machine serial")
+    downloaded = issues.download_issued_customer_quote(issued["quote_no"])
+    with fitz.open(stream=downloaded.body, filetype="pdf") as document:
+        customer_text = " ".join(page.get_text() for page in document)
+    assert "Serial numbers for 1 equipment unit(s) are not yet verified." in customer_text
+    assert "must be confirmed before cover is activated." in customer_text
+    assert "The second fictional machine serial is unreadable" not in customer_text
 
 
 def test_all_individual_serials_confirmed_needs_no_manager_exception(tmp_path,monkeypatch):
@@ -454,6 +460,10 @@ def test_all_individual_serials_confirmed_needs_no_manager_exception(tmp_path,mo
     approval_without_reason=approval().model_copy(update={"serial_exception_reason":""})
     issued=issues.issue_customer_quotation(fully["id"],approval_without_reason)
     assert issued["issued"] is True
+    downloaded = issues.download_issued_customer_quote(issued["quote_no"])
+    with fitz.open(stream=downloaded.body, filetype="pdf") as document:
+        customer_text = " ".join(page.get_text() for page in document)
+    assert "Serial numbers for" not in customer_text
 
 
 
