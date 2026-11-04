@@ -42,6 +42,7 @@ from .quote_sage_refresh import router as sage_refresh_router
 from .quote_customer_issuance import router as customer_quote_issuance_router
 from .quote_commercial_setup import router as quote_commercial_setup_router
 from .quote_source_setup import router as quote_source_setup_router
+from .quote_release_coverage import router as quote_release_coverage_router
 from .source_integrity import router as source_integrity_router
 from .action_centre import router as action_centre_router
 from .master_sync import router as working_master_sync_router
@@ -134,6 +135,7 @@ app.include_router(sage_refresh_router)
 app.include_router(customer_quote_issuance_router)
 app.include_router(quote_commercial_setup_router)
 app.include_router(quote_source_setup_router)
+app.include_router(quote_release_coverage_router)
 app.include_router(source_integrity_router)
 app.include_router(action_centre_router)
 app.include_router(working_master_sync_router)
