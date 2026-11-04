@@ -353,11 +353,12 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                 }
             line["rrp_source"] = decision["basis"]
             line["master_rows"] = decision.get("master_rows", [])
-            # Sage Sales Price and August *List Price* may legitimately use
-            # different commercial bases. Keep BOTH as evidence; never
-            # silently substitute one for the other or treat a difference as
-            # a changed maintenance tariff. A >5% discrepancy is a TEMPORARY
-            # review trigger, not an approved company tolerance.
+            # Both sources are accepted equipment price bases under the
+            # business-confirmed policy: August Master for current SKUs,
+            # exact Sage Sales Price for legacy SKUs absent from Master.
+            # They can legitimately differ. Preserve both for audit, without
+            # inventing an extra price-difference approval threshold.
+            # The V10 cover multipliers, minimums and terms are independent.
             if sage_source and decision["basis"] in (
                 "august_2026_master_list_price", "managed_price_override"
             ):
@@ -374,11 +375,8 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                             "sage_sales_price_gbp": _money(sage_price),
                             "sage_minus_selected_gbp": _money(difference),
                             "percentage_difference": _money(percent),
-                            "provisional_review_trigger_percent": 5,
-                            "requires_explicit_ack": (
-                                abs(percent) > Decimal("5")
-                                and decision["basis"] != "managed_price_override"
-                            ),
+                            "requires_explicit_ack": False,
+                            "comparison_for_information_only": True,
                             "source_values_may_have_different_price_bases": True,
                             "not_a_new_or_approved_tariff": True,
                         }
@@ -417,8 +415,12 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                         line["rrp_source_approved"] = (
                             decision["basis"] == "managed_price_override"
                         )
-                        line["source_list_price_review_required"] = bool(
-                            decision["basis"] == "august_2026_master_list_price"
+                        line["source_list_price_review_required"] = False
+                        line["source_equipment_price_basis_accepted"] = (
+                            decision["basis"] in (
+                                "august_2026_master_list_price",
+                                "sage_exact_sku_price", "managed_price_override"
+                            )
                         )
                         if decision["basis"] == "august_2026_master_list_price":
                             verified_console = str(decision.get("master_console") or "").strip()
@@ -570,11 +572,16 @@ def draft_price_preview(draft_id: str):
         "source_date": sage["source_date"] if sage else None,
         "review_overdue": sage["review_overdue"] if sage else None,
         "used_as_automatic_rrp": sage is not None,
-        "used_for_quotation": False,
+        "used_for_quotation": any(
+            item.get("priced") and item.get("rrp_source") == "sage_exact_sku_price"
+            for item in result["lines"]
+        ),
     }
     result["rrp_source_priority"] = (
-        "August 2026 current List Price first; exact Sage item price for other machines. "
-        "Audited administrator revisions may update the internal equipment price, "
-        "but maintenance tariff and customer quote approval remain separate."
+        "Business-confirmed equipment price basis: August 2026 Master for current "
+        "machines; exact Sage Sales Price for legacy machines absent from the Master. "
+        "Both are accepted inputs to the V10 maintenance calculation. Audited "
+        "administrator corrections remain available; Silver/Gold/Platinum rate "
+        "rules, terms and customer quote approval are separate."
     )
     return result
