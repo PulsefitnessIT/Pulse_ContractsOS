@@ -46,8 +46,11 @@ function renderQuoteCommercialSetup(state){
     commercialStateText(ok)+'</td></tr>').join('');
   host.innerHTML=
     '<p>This control centre makes quotation setup manageable by an authorised '+
-    'Administrator. A provisional V10 tariff is NOT accepted automatically. '+
-    'Each approval has a named actor, source fingerprint and audit history.</p>'+
+    'Administrator. The current August Master and exact Sage price-list '+
+    'values are accepted equipment price bases. Step 1 is for the separate '+
+    'maintenance rate percentages, package multipliers, minimums and discounts. '+
+    'The provisional V10 service tariff is NOT automatically authorised by the '+
+    'Sage price-source decision. Each approval records an actor and source fingerprint.</p>'+
     '<div style="overflow-x:auto"><table class="data-table"><thead>'+
     '<tr><th>Commercial release requirement</th><th>Status</th></tr></thead><tbody>'+
     status+'</tbody></table></div>'+
