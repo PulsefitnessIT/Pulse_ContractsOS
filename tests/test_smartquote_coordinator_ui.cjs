@@ -175,7 +175,7 @@ test('invoice recognition is candidate evidence, never automatic equipment eligi
   const list=JSON.parse(w.run('JSON.stringify(unifiedInvoiceCandidates('+JSON.stringify(input)+'))'));
   assert.equal(list.length,2);
   assert.equal(list[0].sku,'TEST-001');
-  assert.deepEqual(list[0].pages,[2,3,2]);
+  assert.deepEqual(list[0].pages,[2,3]);
   assert.equal(list[0].description,'Fictional Bike');
   assert.equal(list[0].identity_not_verified,true);
   assert.equal(list[0].quantity_not_inferred,true);
