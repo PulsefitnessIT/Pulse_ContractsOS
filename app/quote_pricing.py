@@ -259,6 +259,41 @@ def _line_price(product, config, pricing, tier, discount, qty):
     }, None
 
 
+def _source_title(value):
+    """Compare original equipment descriptions without guessing machine families."""
+    return " ".join(str(value or "").casefold().strip().split())
+
+
+def _master_console_identity(product, master):
+    """Evidence-based bridge between two different console naming systems.
+
+    The August master describes physical screens (e.g. '10.1-inch cardio
+    tactile-key'); original V10 uses internal console group labels
+    ('Console 5 (Series 2)'). Their text is not designed to be equal.
+
+    Only a UNIQUE exact SKU with an IDENTICAL full equipment description and
+    an unqualified master console description can overcome this *terminology*
+    difference. Unknown/legacy/verify markers, conflicting product names
+    and missing master labels still block commercial issuance. We never infer
+    a console type from the product family or from a partial string.
+    """
+    master_console=str(master.get("master_console") or "").strip()
+    catalogue_console=str(product.get("console") or "").strip()
+    master_name=str(master.get("master_name") or "").strip()
+    product_name=str(product.get("name") or "").strip()
+    if not master_console or not catalogue_console:
+        return False
+    if master_console.casefold()==catalogue_console.casefold():
+        return True
+    if not master_name or not product_name or _source_title(master_name)!=_source_title(product_name):
+        return False
+    uncertain=(
+        "verify", "legacy", "source variant", "not stated",
+        "unspecified", "unknown", "to confirm", "other",
+    )
+    return not any(word in master_console.casefold() for word in uncertain)
+
+
 def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_source=None,
             overrides=None, august_source=None):
     tier = draft["tier"]
@@ -337,8 +372,18 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                         if decision["basis"] == "august_2026_master_list_price":
                             verified_console = str(decision.get("master_console") or "").strip()
                             catalogue_console = str(product.get("console") or "").strip()
-                            if (verified_console and catalogue_console and
-                                    verified_console.casefold() != catalogue_console.casefold()):
+                            line["master_console_evidence"] = {
+                                "august_master_label": verified_console,
+                                "v10_service_console_group": catalogue_console,
+                                "master_name": str(decision.get("master_name") or "")[:250],
+                                "exact_full_name_match": (
+                                    bool(decision.get("master_name")) and
+                                    _source_title(decision.get("master_name")) ==
+                                    _source_title(product.get("name"))
+                                ),
+                                "identity_reconciled": _master_console_identity(product, decision),
+                            }
+                            if not _master_console_identity(product, decision):
                                 line["coverage_review"].append(
                                     "August master console variant does not exactly match the V10 equipment record."
                                 )
