@@ -12,21 +12,7 @@ if not exist "%PILOT_EXE%" (
 )
 
 if not exist "%~dp0private_runtime\contracts.sqlite3" (
-  echo.
-  echo SMARTQUOTE - FIRST TIME PRIVATE SETUP
-  echo =====================================
-  echo Please enter the full path to the latest approved Pulse Fitness
-  echo Maintenance Master spreadsheet. All customer data remains on this PC.
-  echo.
-  echo A fresh database will be made. Existing data is NEVER overwritten.
-  echo.
-  set /p "PULSE_MASTER=Approved Master .xlsx path: "
-  if not defined PULSE_MASTER (
-    echo No file selected. Nothing changed.
-    pause
-    exit /b 1
-  )
-  "%PILOT_EXE%" --bootstrap-master "%PULSE_MASTER%"
+  call :FirstTimeSetup
   if errorlevel 1 (
     echo Bootstrap could not complete. Nothing has been published.
     pause
@@ -59,3 +45,23 @@ start "" "http://127.0.0.1:18080"
 echo.
 echo SmartQuote pilot has stopped.
 pause
+
+
+:FirstTimeSetup
+echo.
+echo SMARTQUOTE - FIRST TIME PRIVATE SETUP
+echo =====================================
+echo Please enter the full path to the latest approved Pulse Fitness
+echo Maintenance Master spreadsheet. All customer data remains on this PC.
+echo.
+echo A fresh database will be made. Existing data is NEVER overwritten.
+echo.
+set /p "PULSE_MASTER=Approved Master .xlsx path: "
+if not defined PULSE_MASTER (
+  echo No file selected. Nothing changed.
+  exit /b 1
+)
+rem Allow a filename pasted from Explorer with surrounding double quotes.
+set "PULSE_MASTER=%PULSE_MASTER:"=%"
+"%PILOT_EXE%" --bootstrap-master "%PULSE_MASTER%"
+exit /b %errorlevel%
