@@ -501,8 +501,8 @@ async function unifiedPricePreview() {
       host.textContent = 'The draft has changed. Reopen it before pricing.';
       return;
     }
-    const varianceLines=preview.lines.filter(line=>
-      Boolean(line.source_price_comparison?.requires_explicit_ack));
+    const comparisonLines=preview.lines.filter(line=>
+      Boolean(line.source_price_comparison));
     const lines = preview.lines.map(line =>
       '<tr><td>' + esc(line.line) + '</td><td>' + esc(line.item_code) +
       '</td><td>' + esc(line.quantity) + '</td><td>' +
@@ -516,8 +516,7 @@ async function unifiedPricePreview() {
       '</td><td>' + esc(
         (line.source_price_comparison?
           'Master/Sage difference '+line.source_price_comparison.percentage_difference+
-          '%'+(line.source_price_comparison.requires_explicit_ack?
-            ' — manager must acknowledge':'')+'; ':'')+
+          '% (source comparison only); ':'')+
         (line.exception || (line.coverage_review || []).join('; ') || 'Review commercial terms')
       ) +
       '</td></tr>').join('');
@@ -533,13 +532,14 @@ async function unifiedPricePreview() {
         esc(preview.term_years) + '-year indicative total ') +
       (preview.term_partial === null ? 'Unavailable until both contract dates are set' : money(preview.term_partial)) +
       ' (partial if any line is unpriced).</p>' +
-      (varianceLines.length?
-        '<p class="notice warning">'+esc(varianceLines.length)+
-        ' selected line(s) have a Sage Sales Price differing by more than 5% '+
-        'from the August List Price. These prices may have different source '+
-        'meanings. An Administrator must review and explicitly attest the chosen '+
-        'quote basis before issuing the customer PDF. Use an audited price '+
-        'revision if the equipment price itself needs correcting.</p>':'')+
+      (comparisonLines.length?
+        '<p class="fine-print">'+esc(comparisonLines.length)+
+        ' selected line(s) show both current Master and Sage item-code prices. '+
+        'These sources can use different commercial bases; the stated Master '+
+        'price remains the selected equipment basis for current SKUs. Sage '+
+        'is the agreed price basis for older machines absent from the Master. '+
+        'A difference does not require an additional percentage-based sign-off. '+
+        'Maintain the normal tariff and customer-quote approval.</p>':'')+
       (preview.staged.enabled ?
         '<h4>Staged cover — inclusive calendar-year prorating</h4><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Start date</th><th>Units</th><th>Period charge</th></tr></thead><tbody>' +
         preview.staged.stages.map(stage => '<tr><td>' + esc(stage.start) + '</td><td>' + esc(stage.count) + '</td><td>' + money(stage.amount) + '</td></tr>').join('') +
@@ -645,8 +645,10 @@ async function loadRrpPriorityStatus() {
         'term and package still requires confirmation.</p>'
         :'<p class="fine-print">Quotable-equipment candidate count is unavailable.</p>')+
       '<p class="fine-print">The source precedence is confirmed. '+
-      'Sage prices may calculate internal previews for legacy equipment. '+
-      'Maintenance tariffs and customer quotation issuance are still separate release gates.</p>';
+      'Exact Sage prices are the business-approved equipment price basis for legacy '+
+      'machines absent from the August Master. No extra Master-versus-Sage percentage '+
+      'approval is needed. Approved maintenance rates and individual customer '+
+      'quotation sign-off remain separate release gates.</p>';
   } catch(error) {
     host.textContent='Source coverage unavailable: '+error.message+
       '. Stage and pin the original August 2026 source before relying on RRP prices.';
