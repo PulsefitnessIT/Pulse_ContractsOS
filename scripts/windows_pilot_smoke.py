@@ -127,11 +127,22 @@ def run():
                     "serves loopback app, logs in and refuses unapproved quoting."
                 )
             finally:
-                proc.terminate()
+                # PyInstaller --onefile runs a supervising process plus an
+                # extracted child. On Windows terminate() may kill only the
+                # parent and leave the child holding the SQLite file open.
+                # Stop the entire process tree before deleting the fixture.
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                        capture_output=True, timeout=15, check=False,
+                    )
+                elif proc.poll() is None:
+                    proc.terminate()
                 try:
                     proc.wait(timeout=15)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+                time.sleep(1)
 
 
 if __name__ == "__main__":
