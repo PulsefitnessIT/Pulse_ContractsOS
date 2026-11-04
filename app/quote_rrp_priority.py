@@ -142,6 +142,7 @@ def resolve(sku, by_code, sage_source=None):
             "rrp": float(next(iter(prices))),
             "master_rows": evidence,
             "master_console": str(rows[0].get("console") or "")[:120],
+            "master_name": str(rows[0].get("name") or "")[:400],
             "review_required": True,  # Valid source evidence is not tariff approval.
         }
 
