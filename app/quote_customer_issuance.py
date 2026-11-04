@@ -186,6 +186,29 @@ def _errors(draft, preview):
     errors = []
     if not draft["equipment"]:
         errors.append("Add the customer's equipment before issuing a quote.")
+    # The saved quote, not just the source price engine's self-reported count,
+    # is the authoritative customer equipment list. Guard against a truncated
+    # or stale result that could otherwise issue a cheaper incomplete offer.
+    saved_lines=draft.get("equipment", [])
+    priced_lines=preview.get("lines", [])
+    if (preview.get("line_count") != len(saved_lines)
+            or len(priced_lines) != len(saved_lines)
+            or preview.get("priced_count") != sum(bool(r.get("priced")) for r in priced_lines)):
+        errors.append("Pricing did not include every saved equipment line. Reload and recalculate.")
+    else:
+        for index,(saved,calculated) in enumerate(zip(saved_lines,priced_lines),1):
+            if (calculated.get("line") != index
+                    or str(calculated.get("item_code") or "").strip().upper()
+                       != str(saved.get("item_code") or "").strip().upper()
+                    or calculated.get("quantity") != saved.get("quantity")):
+                errors.append(
+                    f"Equipment line {index} changed or was omitted from its pricing snapshot."
+                )
+    if (draft.get("id") and preview.get("draft_id") != draft["id"]
+            or draft.get("revision") is not None and
+            preview.get("revision") != draft.get("revision")
+            or draft.get("tier") and preview.get("tier") != draft["tier"]):
+        errors.append("The price snapshot belongs to another draft, revision or maintenance package.")
     if not preview["complete_price"] or preview["priced_count"] != preview["line_count"]:
         errors.append("Resolve every unpriced or ambiguous equipment line.")
     if preview["term_partial"] is None:
