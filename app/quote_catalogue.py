@@ -37,7 +37,16 @@ def _catalogue(path: str, modified_ns: int, size: int):
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise HTTPException(503, "SmartQuote catalogue cannot be decoded.") from exc
-    if not isinstance(raw, list) or len(raw) > 30000:
+    return _identities(raw)
+
+
+def _identities(raw):
+    """Build exact-source identity rows from an original V10 catalogue.
+
+    An identity match is not an approved equipment maintenance configuration.
+    Never infer a SKU, substitute a Sage-only inventory code, or supply prices.
+    """
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 30000:
         raise HTTPException(503, "SmartQuote catalogue has an unexpected format.")
     products = []
     for item in raw:
@@ -51,22 +60,51 @@ def _catalogue(path: str, modified_ns: int, size: int):
             "name": str(item.get("name") or "")[:250],
             "model": str(item.get("model") or "")[:120],
             "group": str(item.get("group") or "")[:120],
+            "console": str(item.get("console") or "")[:120],
+            "service_key": str(item.get("service_key") or "")[:180],
         })
-    counts = Counter(p["sku"] for p in products)
-    return products, counts
+    return products, Counter(p["sku"] for p in products)
+
+
+@lru_cache(maxsize=3)
+def _bundle_catalogue(sha256: str, binary: bytes):
+    """Cache verified in-app source bytes for fast catalogue search."""
+    import hashlib
+    if hashlib.sha256(binary).hexdigest() != sha256:
+        raise HTTPException(503, "V10 catalogue changed after source approval.")
+    try:
+        decoded = json.loads(binary.decode("utf-8"))
+    except (ValueError, UnicodeError) as exc:
+        raise HTTPException(503, "Verified V10 catalogue cannot be decoded.") from exc
+    return _identities(decoded)
 
 
 def _load():
-    path = catalogue_file()
-    if path is None:
-        raise HTTPException(503, "Approved SmartQuote catalogue not configured.")
-    try:
-        stat = path.stat()
-    except OSError as exc:
-        raise HTTPException(503, "Catalogue file unavailable.") from exc
-    if stat.st_size > MAX_FILE_BYTES:
-        raise HTTPException(503, "Catalogue exceeds pilot read-only limit.")
-    return _catalogue(str(path), stat.st_mtime_ns, stat.st_size)
+    # Explicit IT staging takes precedence and fails CLOSED if misconfigured.
+    configured = os.environ.get(ENV_NAME, "").strip()
+    if configured:
+        path = catalogue_file()
+        if path is None:
+            raise HTTPException(503, "IT-configured SmartQuote catalogue is missing.")
+        try:
+            stat = path.stat()
+        except OSError as exc:
+            raise HTTPException(503, "Catalogue file unavailable.") from exc
+        if stat.st_size > MAX_FILE_BYTES:
+            raise HTTPException(503, "Catalogue exceeds pilot read-only limit.")
+        return _catalogue(str(path), stat.st_mtime_ns, stat.st_size)
+
+    # Admin-uploaded original V10 source bundle is a fully supported input:
+    # using it for calculation but not for search previously made quoting unusable.
+    from .quote_source_setup import active_source
+    source = active_source()
+    if source is None:
+        raise HTTPException(
+            503, "SmartQuote equipment is not staged. Use Original V10 Source Setup."
+        )
+    return _bundle_catalogue(
+        source["hashes"]["catalog"], source["files"]["catalog"]
+    )
 
 
 @router.get("/catalogue/search")
