@@ -361,14 +361,15 @@ def test_viewer_cannot_access_commercial_quote_readiness_or_pdf(tmp_path,monkeyp
 
 
 
-def test_material_sage_master_difference_requires_explicit_approval_and_is_frozen(tmp_path,monkeypatch):
+def test_business_confirmed_sage_master_price_difference_is_informational_and_archived(tmp_path,monkeypatch):
     db=setup_database(tmp_path,monkeypatch)
     changed=fake_price()
     changed["lines"][0]["source_price_comparison"]={
         "selected_equipment_price_gbp":9000.0,
         "sage_sales_price_gbp":7000.0,
         "percentage_difference":-22.22,
-        "requires_explicit_ack":True,
+        "requires_explicit_ack":False,
+        "comparison_for_information_only":True,
         "not_a_new_or_approved_tariff":True,
     }
     monkeypatch.setattr(
@@ -376,14 +377,12 @@ def test_material_sage_master_difference_requires_explicit_approval_and_is_froze
         lambda draft:(changed,{"pricing":"a"*64,"catalog":"b"*64,"configs":"c"*64})
     )
     ready=issues.customer_quote_readiness(fake_draft()["id"])
-    assert ready["price_source_variances_requiring_ack"]==1
-    with pytest.raises(HTTPException) as error:
-        issues.issue_customer_quotation(fake_draft()["id"],approval())
-    assert error.value.status_code==422
-    with sqlite3.connect(db) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM unified_customer_quotes").fetchone()[0]==0
-    consent=approval().model_copy(update={"confirm_source_price_variances":True})
-    issued=issues.issue_customer_quotation(fake_draft()["id"],consent)
+    assert ready["price_source_variances_requiring_ack"]==0
+    assert ready["price_source_comparisons_available"]==1
+    assert "separate approval requirement" in ready["source_price_policy"]
+    # The normal Admin quote sign-off remains mandatory; the made-up 5%
+    # threshold must never become an extra manager checkbox.
+    issued=issues.issue_customer_quotation(fake_draft()["id"],approval())
     assert issued["issued"] is True
     with sqlite3.connect(db) as conn:
         raw=conn.execute(
@@ -391,5 +390,16 @@ def test_material_sage_master_difference_requires_explicit_approval_and_is_froze
             (issued["quote_no"],)
         ).fetchone()[0]
     frozen=json.loads(raw)
-    assert frozen["material_source_price_variances_reviewed"] is True
-    assert frozen["material_source_price_variance_lines"]==[1]
+    assert frozen["source_price_comparisons_informational"] is True
+    assert frozen["source_price_comparison_lines"]==[1]
+    assert frozen["priced"]["lines"][0]["source_price_comparison"]["sage_sales_price_gbp"]==7000.0
+
+
+def test_stale_sage_reference_does_not_block_selected_current_master_price():
+    record=fake_draft()
+    price=fake_price()
+    price["lines"][0]["rrp_source"]="august_2026_master_list_price"
+    price["lines"][0]["sage_reference"]={"review_overdue":True}
+    assert not any("Sage" in error for error in issues._errors(record,price))
+    price["lines"][0]["rrp_source"]="sage_exact_sku_price"
+    assert any("Sage" in error for error in issues._errors(record,price))
