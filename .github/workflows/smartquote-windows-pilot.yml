@@ -9,6 +9,9 @@ on:
       - 'run_smartquote_windows_pilot.py'
       - 'windows/**'
       - '.github/workflows/smartquote-windows-pilot.yml'
+  pull_request:
+    branches:
+      - feature/real-data-pilot-readiness
   workflow_dispatch:
 
 permissions:
