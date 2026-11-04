@@ -84,7 +84,7 @@ async function quoteCheckCustomerReadiness(){
     }
     const today=new Date();
     const expiry=new Date(today.valueOf()+30*86400000).toISOString().slice(0,10);
-    const varianceCount=Number(data.price_source_variances_requiring_ack||0);
+    const priceComparisonCount=Number(data.price_source_comparisons_available||0);
     const opts=[
       ['confirm_customer_and_site','Customer legal name and delivery site verified'],
       ['confirm_equipment_and_serials','Equipment, quantities, console options and serials checked'],
@@ -103,13 +103,12 @@ async function quoteCheckCustomerReadiness(){
       opts.map(([key,label])=>'<label style="display:block;margin:.6rem 0">'+
         '<input type="checkbox" name="'+esc(key)+'" required> '+
         esc(label)+'</label>').join('')+
-      (varianceCount?
-        '<label style="display:block;margin:.75rem 0">'+
-        '<input type="checkbox" name="confirm_source_price_variances" required> '+
-        'I reviewed the '+esc(varianceCount)+
-        ' price-source difference(s) above 5% between the current August List Price '+
-        'and Sage Sales Price, confirmed the appropriate source basis and accept '+
-        'the final quoted equipment price.</label>':'')+
+      (priceComparisonCount?
+        '<p class="fine-print">'+esc(priceComparisonCount)+
+        ' equipment line(s) include an August/Sage source price comparison. '+
+        'Differences are audit information, not a separate approval requirement. '+
+        'Check the selected price and approved service rate in the normal '+
+        'commercial quotation sign-off above.</p>':'')+
       '<button class="button button-primary" type="submit">'+
       'Approve and create customer PDF</button></form>'+
       '<p class="fine-print">The customer PDF is locked and archived by quote number. '+
@@ -145,8 +144,7 @@ async function quoteIssueCustomerPdf(event){
     const payload={
       expected_revision:selected.revision,
       valid_until:String(values.get('valid_until')||''),
-      commercial_approval_ref:String(values.get('commercial_approval_ref')||'').trim(),
-      confirm_source_price_variances:values.has('confirm_source_price_variances')
+      commercial_approval_ref:String(values.get('commercial_approval_ref')||'').trim()
     };
     for(const key of keys)payload[key]=values.has(key);
     const result=await api(quotePdfUrl(selected.id)+'/issue',{
