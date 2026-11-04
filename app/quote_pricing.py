@@ -353,6 +353,35 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                 }
             line["rrp_source"] = decision["basis"]
             line["master_rows"] = decision.get("master_rows", [])
+            # Sage Sales Price and August *List Price* may legitimately use
+            # different commercial bases. Keep BOTH as evidence; never
+            # silently substitute one for the other or treat a difference as
+            # a changed maintenance tariff. A >5% discrepancy is a TEMPORARY
+            # review trigger, not an approved company tolerance.
+            if sage_source and decision["basis"] in (
+                "august_2026_master_list_price", "managed_price_override"
+            ):
+                sage_evidence = sage_reference(code, sage_source)
+                if sage_evidence:
+                    chosen_price = Decimal(str(decision.get("rrp") or 0))
+                    sage_price = Decimal(str(sage_evidence["sage_sales_price"]))
+                    if chosen_price > 0:
+                        difference = sage_price - chosen_price
+                        percent = difference * Decimal("100") / chosen_price
+                        line["sage_reference"] = sage_evidence
+                        line["source_price_comparison"] = {
+                            "selected_equipment_price_gbp": _money(chosen_price),
+                            "sage_sales_price_gbp": _money(sage_price),
+                            "sage_minus_selected_gbp": _money(difference),
+                            "percentage_difference": _money(percent),
+                            "provisional_review_trigger_percent": 5,
+                            "requires_explicit_ack": (
+                                abs(percent) > Decimal("5")
+                                and decision["basis"] != "managed_price_override"
+                            ),
+                            "source_values_may_have_different_price_bases": True,
+                            "not_a_new_or_approved_tariff": True,
+                        }
             if "sage_reference" in decision:
                 line["sage_reference"] = decision["sage_reference"]
         if not code:
