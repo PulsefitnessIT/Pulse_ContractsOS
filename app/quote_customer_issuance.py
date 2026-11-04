@@ -274,6 +274,105 @@ def _readiness(draft):
     }
 
 
+@router.get("/release-check")
+def commercial_release_check():
+    """Staff-facing prerequisites for the FIRST genuine customer quotation.
+
+    This does not certify a draft, imply a tariff is approved, or write data.
+    Sage is optional for August-master SKUs, but essential for historic items
+    without a current master price. Actual line eligibility is checked later.
+    """
+    _quote_reader()
+    from .quote_rrp_priority import source_snapshot as august_snapshot
+    from .quote_sage_reference import snapshot as sage_snapshot
+
+    def verify(fn):
+        try:
+            return True, fn(), ""
+        except (HTTPException, OSError, ValueError) as exc:
+            message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            return False, None, str(message)[:190]
+
+    v10_ok, source, source_error = verify(quote_pricing.source_snapshot)
+    august_ok, _, august_error = verify(august_snapshot) if v10_ok else (
+        False, None, "Stage original V10 source files first."
+    )
+    sage_ok, sage, sage_error = verify(sage_snapshot)
+    sage_ok = sage_ok and sage is not None
+    if not sage_ok and not sage_error:
+        sage_error = "Import the latest verified Sage Sales Price export."
+    tariff_ok = bool(v10_ok and _approved_tariff(source[3]["pricing"]))
+    terms_ok, _, terms_error = verify(_terms)
+    issuer_ok, _, issuer_error = verify(_issuer)
+    issue_ok = _issuance_enabled()
+
+    steps = [
+        {
+            "key": "original_v10",
+            "title": "Original V10 equipment, service rules and tariff source",
+            "ready": v10_ok, "required": True,
+            "next_action": "Admin: Original V10 & August Price Source Setup",
+            "details": source_error if not v10_ok else "Original source fingerprints verified.",
+        },
+        {
+            "key": "august_2026_master",
+            "title": "August 2026 current equipment List Prices",
+            "ready": august_ok, "required": True,
+            "next_action": "Admin: verify the Master source in V10 Source Setup",
+            "details": august_error if not august_ok else "Master source identity verified.",
+        },
+        {
+            "key": "sage",
+            "title": "Sage prices for machines absent from the August Master",
+            "ready": sage_ok, "required": False,
+            "next_action": "Admin: Sage Price List Refresh",
+            "details": (
+                "Sage export date " + str(sage["source_date"]) +
+                ("; price review overdue." if sage["review_overdue"] else "; current review window.")
+                if sage_ok else sage_error
+            ),
+        },
+        {
+            "key": "commercial_rates",
+            "title": "Silver / Gold / Platinum tariff commercially authorised",
+            "ready": tariff_ok, "required": True,
+            "next_action": "Admin: Customer Quotation — Commercial Setup / Tariff",
+            "details": "Authorise the exact V10 tariff fingerprint after reviewing rates.",
+        },
+        {
+            "key": "maintenance_terms",
+            "title": "Signed-off maintenance terms PDF",
+            "ready": terms_ok, "required": True,
+            "next_action": "Admin: Commercial Setup / Maintenance terms",
+            "details": terms_error if not terms_ok else "The approved original PDF is intact.",
+        },
+        {
+            "key": "legal_issuer",
+            "title": "Verified Pulse Fitness company details",
+            "ready": issuer_ok, "required": True,
+            "next_action": "Admin: Commercial Setup / Company details",
+            "details": issuer_error if not issuer_ok else "Company identity source verified.",
+        },
+        {
+            "key": "customer_pdf_release",
+            "title": "Customer PDF issuance explicitly enabled",
+            "ready": issue_ok, "required": True,
+            "next_action": "Admin: Commercial Setup / Enable customer quotes",
+            "details": "Enable only after first real-data acceptance testing.",
+        },
+    ]
+    return {
+        "required_ready": all(step["ready"] for step in steps if step["required"]),
+        "sage_fallback_ready": sage_ok,
+        "items": steps,
+        "next_steps": [step["next_action"] for step in steps if
+                       step["required"] and not step["ready"]],
+        "customer_quote_requires_per_draft_admin_approval": True,
+        "customer_emails_not_sent_by_app": True,
+        "commercial_signoff_not_inferred": True,
+    }
+
+
 @router.get("/drafts/{draft_id}/customer-quote/readiness")
 def customer_quote_readiness(draft_id: str):
     _quote_reader()
