@@ -7,6 +7,35 @@ customer-ready PDF to send using the normal customer email process.
 **Status:** built into draft PR #5 for the next supervised pilot. Not yet
 merged, staged with live Pulse data, commercially signed off or deployed.
 
+## Confirmed equipment price-source decision — 4 November 2026
+
+Pulse Fitness confirmed the source prices in Sage are acceptable inputs to the
+maintenance tariff calculation, as already discussed in the previous
+development conversation. The existing exact-item pricing precedence is:
+
+1. **Current models in the 24 August 2026 Master:** use the exact, unique
+   Master List Price for the matching equipment code.
+2. **Legacy models absent from the current Master:** use the positive price
+   from the exact Sage Sales Price item code, provided the item is linked to
+   one eligible V10 maintenance configuration.
+3. **Corrections:** use the authenticated, audited administrator equipment
+   price revision when the verified item source must be corrected.
+
+The two price lists can use different commercial price bases. Their comparison
+is retained as evidence, but **no extra automatic 5% discrepancy approval or
+unagreed commercial tolerance is imposed**. An out-of-date Sage snapshot
+blocks only a quotation *using Sage as its selected equipment price source*;
+the same old Sage snapshot shown for reference cannot block a properly
+verified current Master price.
+
+This confirmation concerns **equipment prices**, not the percentage-based
+V10 maintenance cover tariff. Silver, Gold, Platinum multipliers, equipment
+rate groups, minimum charges, discount rules, exclusions, terms and final
+customer-offer approvals remain separate controls. An arbitrary Sage
+inventory/parts code does not become maintenance-eligible just because it
+has a positive Sales Price. Previously issued PDFs stay immutable when a
+new Sage price list is imported.
+
 ## Shortest path to the first genuine customer quotation
 
 This branch now includes a staff-facing **Customer quotation readiness**
