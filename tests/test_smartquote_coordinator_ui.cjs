@@ -15,7 +15,7 @@ function makeForm(values){
   const submit={textContent:'Add equipment line',disabled:false};
   const cancel={hidden:true};
   return {
-    elements, reportValidity(){return true;},
+    elements,dataset:{}, reportValidity(){return true;},
     querySelector(selector){
       if(selector==='[type="submit"]')return submit;
       if(selector==='#unifiedCancelEquipmentEdit')return cancel;
@@ -158,4 +158,44 @@ test('guide does not mistake a priced line for a commercial approval',()=>{
   assert.match(w.guide.innerHTML,/Step 4 of 4/);
   assert.match(w.guide.innerHTML,/manager approval checks/);
   assert.doesNotMatch(w.guide.innerHTML,/approved quotation ready/i);
+});
+
+
+test('invoice recognition is candidate evidence, never automatic equipment eligibility',()=>{
+  const w=workspace();
+  const input={
+    evidence:{equipment_codes:[
+      {value:'test-001',pages:[2,3,2]},
+      {value:'TEST-001',pages:[2]},
+      {value:''); alert(1)',pages:[9]},
+      {value:'PART-2',pages:[4]},
+    ]},
+    catalogue_matches:{'TEST-001':{name:'Fictional Bike'}},
+  };
+  const list=JSON.parse(w.run('JSON.stringify(unifiedInvoiceCandidates('+JSON.stringify(input)+'))'));
+  assert.equal(list.length,2);
+  assert.equal(list[0].sku,'TEST-001');
+  assert.deepEqual(list[0].pages,[2,3,2]);
+  assert.equal(list[0].description,'Fictional Bike');
+  assert.equal(list[0].identity_not_verified,true);
+  assert.equal(list[0].quantity_not_inferred,true);
+  assert.equal(list[0].serials_not_inferred,true);
+});
+
+test('invoice provenance remains on unchanged code and detaches on changed code',()=>{
+  const w=workspace();
+  w.equipmentForm.dataset.invoiceSku='TEST-001';
+  w.equipmentForm.dataset.invoiceSourceId='17';
+  w.equipmentForm.dataset.invoicePages='[2,3]';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  let item=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(item.source_import_id,17);
+  assert.deepEqual(item.source_pages,[2,3]);
+  w.run('renderUnifiedEquipment()');
+  w.buttons['[data-edit-line]0'].click();
+  w.equipmentForm.elements.item_code.value='CORRECTED-SKU';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  item=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(item.source_import_id,null);
+  assert.deepEqual(item.source_pages,[]);
 });
