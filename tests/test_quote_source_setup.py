@@ -338,6 +338,7 @@ def test_real_price_engine_to_manager_approved_customer_pdf_without_it_paths(tmp
             confirm_package_price_and_discount=True,
             confirm_maintenance_scope_and_terms=True,
             confirm_vat_basis=True,
+            serial_exception_reason="A fictional machine serial is unreadable; manager verified the equipment identifier.",
         )
     )
     assert approved["issued"] is True
