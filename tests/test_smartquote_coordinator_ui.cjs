@@ -36,8 +36,8 @@ function workspace(){
     discount_percent:0,contract_start:'',contract_end:'',
   });
   const equipmentForm=makeForm({
-    description:'Example Bench',item_code:'TEST-001',
-    serial:'SER-001',cover_start:'',quantity:1,
+    description:'',item_code:'',
+    serial:'',cover_start:'',quantity:1,
   });
   const guide={innerHTML:''},feedback={textContent:''},pricePanel={innerHTML:''};
   const buttons={};
@@ -184,6 +184,9 @@ test('invoice recognition is candidate evidence, never automatic equipment eligi
 
 test('invoice provenance remains on unchanged code and detaches on changed code',()=>{
   const w=workspace();
+  w.equipmentForm.elements.description.value='Example Bench';
+  w.equipmentForm.elements.item_code.value='TEST-001';
+  w.equipmentForm.elements.serial.value='SER-001';
   w.equipmentForm.dataset.invoiceSku='TEST-001';
   w.equipmentForm.dataset.invoiceSourceId='17';
   w.equipmentForm.dataset.invoicePages='[2,3]';
@@ -198,4 +201,22 @@ test('invoice provenance remains on unchanged code and detaches on changed code'
   item=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
   assert.equal(item.source_import_id,null);
   assert.deepEqual(item.source_pages,[]);
+});
+
+
+test('pending unadded machine is never silently lost or omitted from a saved quote',async()=>{
+  const w=workspace();
+  w.run('unifiedLastSavedDraftState=unifiedDraftSnapshot()');
+  assert.equal(w.run('unifiedDraftHasUnsavedChanges()'),false);
+  w.equipmentForm.elements.description.value='An unfinished treadmill';
+  w.equipmentForm.elements.item_code.value='UNFINISHED-1';
+  assert.equal(w.run('unifiedHasPendingEquipmentInput()'),true);
+  assert.equal(w.run('unifiedDraftHasUnsavedChanges()'),true);
+  const result=await w.run('unifiedSaveDraft()');
+  assert.equal(result,null);
+  assert.match(w.feedback.textContent,/Add equipment line first/);
+  w.ctx.confirmResult=false;
+  w.run('unifiedNewDraft()');
+  assert.equal(w.equipmentForm.elements.item_code.value,'UNFINISHED-1');
+  assert.match(w.confirms[0],/Discard unsaved changes/);
 });
