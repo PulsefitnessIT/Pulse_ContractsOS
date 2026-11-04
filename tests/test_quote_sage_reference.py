@@ -140,7 +140,11 @@ def test_sage_references_cannot_supersede_master_rrp_or_change_totals(monkeypatc
     assert result["annual_partial"] == 60.0
     assert result["priced_count"] == 1
     assert result["complete_price"] is False
-    assert "sage_reference" not in result["lines"][0]
+    # Sage is visible as price-comparison evidence, not substituted into
+    # the selected equipment amount or maintenance tariff.
+    assert result["lines"][0]["sage_reference"]["sage_sales_price"] == 5000
+    assert result["lines"][0]["rrp_source"] == "august_2026_master_list_price"
+    assert result["lines"][0]["source_price_comparison"]["requires_explicit_ack"] is True
     assert "sage_reference" not in result["lines"][1]  # Master always takes priority
     assert result["lines"][2]["sage_reference"]["sage_sales_price"] == 5000.0
     assert result["lines"][2]["sage_reference"]["quoted_annual_amount"] is None
