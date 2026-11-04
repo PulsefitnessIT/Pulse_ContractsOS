@@ -167,7 +167,7 @@ test('invoice recognition is candidate evidence, never automatic equipment eligi
     evidence:{equipment_codes:[
       {value:'test-001',pages:[2,3,2]},
       {value:'TEST-001',pages:[2]},
-      {value:''); alert(1)',pages:[9]},
+      {value:"'); alert(1)",pages:[9]},
       {value:'PART-2',pages:[4]},
     ]},
     catalogue_matches:{'TEST-001':{name:'Fictional Bike'}},
