@@ -501,6 +501,8 @@ async function unifiedPricePreview() {
       host.textContent = 'The draft has changed. Reopen it before pricing.';
       return;
     }
+    const varianceLines=preview.lines.filter(line=>
+      Boolean(line.source_price_comparison?.requires_explicit_ack));
     const lines = preview.lines.map(line =>
       '<tr><td>' + esc(line.line) + '</td><td>' + esc(line.item_code) +
       '</td><td>' + esc(line.quantity) + '</td><td>' +
@@ -511,11 +513,17 @@ async function unifiedPricePreview() {
       (line.sage_reference ? money(line.sage_reference.sage_sales_price) +
         ' · Sage source · ' + esc(line.sage_reference.source_date) +
         (line.sage_reference.review_overdue ? ' · Review overdue' : '') : '—') +
-      '</td><td>' + esc(line.exception || (line.coverage_review || []).join('; ') || 'Review commercial terms') +
+      '</td><td>' + esc(
+        (line.source_price_comparison?
+          'Master/Sage difference '+line.source_price_comparison.percentage_difference+
+          '%'+(line.source_price_comparison.requires_explicit_ack?
+            ' — manager must acknowledge':'')+'; ':'')+
+        (line.exception || (line.coverage_review || []).join('; ') || 'Review commercial terms')
+      ) +
       '</td></tr>').join('');
     host.innerHTML =
       '<section class="panel"><h3>INTERNAL tariff preview · Not an approved quotation</h3>' +
-      '<p><strong>RRP precedence:</strong> ' + esc(preview.rrp_source_priority) +
+      '<p><strong>Selected equipment price source:</strong> ' + esc(preview.rrp_source_priority) +
       '</p><p>Source tariff policy: ' + esc(preview.source_pricing_status) + ' · Snapshot ' +
       esc(preview.source_snapshot || 'not specified') + '</p>' +
       '<p><strong>' + esc(preview.priced_count) + ' of ' + esc(preview.line_count) +
@@ -525,12 +533,19 @@ async function unifiedPricePreview() {
         esc(preview.term_years) + '-year indicative total ') +
       (preview.term_partial === null ? 'Unavailable until both contract dates are set' : money(preview.term_partial)) +
       ' (partial if any line is unpriced).</p>' +
+      (varianceLines.length?
+        '<p class="notice warning">'+esc(varianceLines.length)+
+        ' selected line(s) have a Sage Sales Price differing by more than 5% '+
+        'from the August List Price. These prices may have different source '+
+        'meanings. An Administrator must review and explicitly attest the chosen '+
+        'quote basis before issuing the customer PDF. Use an audited price '+
+        'revision if the equipment price itself needs correcting.</p>':'')+
       (preview.staged.enabled ?
         '<h4>Staged cover — inclusive calendar-year prorating</h4><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Start date</th><th>Units</th><th>Period charge</th></tr></thead><tbody>' +
         preview.staged.stages.map(stage => '<tr><td>' + esc(stage.start) + '</td><td>' + esc(stage.count) + '</td><td>' + money(stage.amount) + '</td></tr>').join('') +
         '</tbody></table></div>' : '') +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>Line</th><th>SKU</th><th>Qty</th><th>Equipment RRP</th><th>RRP source/status</th><th>Annual/unit</th><th>Annual/line</th><th>Sage source price</th><th>Review</th>' +
+      '<th>Line</th><th>SKU</th><th>Qty</th><th>Selected equipment price</th><th>RRP source/status</th><th>Annual/unit</th><th>Annual/line</th><th>Sage source price</th><th>Review</th>' +
       '</tr></thead><tbody>' + lines + '</tbody></table></div>' +
       '<h4>Commercial controls and exceptions</h4><ul>' +
       preview.issues.map(issue => '<li>' + esc(issue) + '</li>').join('') +
