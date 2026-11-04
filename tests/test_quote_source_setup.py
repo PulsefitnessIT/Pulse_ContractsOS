@@ -308,12 +308,22 @@ def test_real_price_engine_to_manager_approved_customer_pdf_without_it_paths(tmp
         reason="Synthetic company details verified for automated pilot test",
         confirm_verified_company_details=True,
     ))
+    before_release=issuance.commercial_release_check()
+    assert before_release["required_ready"] is False
+    assert before_release["sage_fallback_ready"] is False
+    assert any(step["key"]=="customer_pdf_release" and not step["ready"]
+               for step in before_release["items"])
+
     approvals.set_issuance(approvals.EnableCustomerQuotes(
         enabled=True,
         approval_reference="FICTITIOUS-PILOT-RELEASE",
         reason="Synthetic end-to-end acceptance steps were fully exercised",
         confirm_customer_quote_acceptance_tests=True,
     ))
+    release=issuance.commercial_release_check()
+    assert release["required_ready"] is True
+    assert release["sage_fallback_ready"] is False  # August exact SKU still quotable.
+    assert sum(step["ready"] for step in release["items"] if step["required"])==6
     ready=issuance.customer_quote_readiness(record["id"])
     assert ready["customer_issue_configured"] is True
     assert ready["issues"]==[]
