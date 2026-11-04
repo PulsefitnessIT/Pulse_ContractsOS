@@ -29,6 +29,11 @@ function showCustomerQuotePanel(preview) {
     '<div id="quoteApprovalFormHost"></div>'+
     '<div id="quoteIssuedHistory"></div>';
   section.appendChild(holder);
+  const internalButton=holder.querySelector('#quoteInternalPdf');
+  internalButton.disabled=!preview.complete_price;
+  internalButton.title=preview.complete_price?
+    'Review the marked internal quotation before commercial approval':
+    'Resolve all missing equipment prices before generating a PDF';
   holder.querySelector('#quoteInternalPdf').addEventListener('click',()=>{
     if(!unifiedDraftSelected)return;
     window.open(quotePdfUrl(unifiedDraftSelected.id)+'/internal-preview.pdf',
@@ -162,7 +167,7 @@ async function quoteLoadIssuedHistory(){
   if(!selected||!host)return;
   try{
     const session=await api('/api/pilot/me');
-    if(!session.pilot||session.role!=='Admin')return;
+    if(!session.pilot||!['Admin','Coordinator'].includes(session.role))return;
     const data=await api('/api/quoting/drafts/'+encodeURIComponent(selected.id)+'/customer-quotes');
     if(view!=='quoting'||!document.querySelector('#quoteIssuedHistory'))return;
     if(!(data.items||[]).length)return;
