@@ -16,6 +16,32 @@ router = APIRouter(prefix="/api/quoting", tags=["Unified quotation drafts"])
 TIERS = {"Silver", "Gold", "Platinum"}
 MAX_LINES = 500
 
+# Shared physical-unit check for both coordinator draft readiness and final
+# commercial approval. Keep serial exception counts consistent across screens.
+SERIAL_PLACEHOLDERS = frozenset({"N/A", "NA", "NONE", "UNKNOWN", "TBC", "TBD", "-", "?"})
+
+
+def unconfirmed_serials(equipment):
+    """Return physical equipment units without unique verified serial numbers.
+
+    A quantity-two row with one serial verifies only one physical unit.
+    Historical drafts may contain duplicates; those cannot verify two units.
+    """
+    missing = []
+    seen = set()
+    for i, item in enumerate(equipment, 1):
+        quantity = item.get("quantity")
+        if type(quantity) is not int or quantity < 1:
+            continue
+        serial = " ".join(str(item.get("serial") or "").strip().upper().split())
+        valid = bool(serial) and serial not in SERIAL_PLACEHOLDERS and serial not in seen
+        if valid:
+            seen.add(serial)
+        remaining = quantity - int(valid)
+        if remaining:
+            missing.append({"line": i, "unconfirmed_units": remaining})
+    return {"total": sum(row["unconfirmed_units"] for row in missing), "lines": missing}
+
 def _check_access(write=False):
     identity = actor()
     if PILOT_MODE:
@@ -184,10 +210,7 @@ def draft_readiness(draft_id: str):
     missing_sku = sum(not line["item_code"] for line in record["equipment"])
     if missing_sku:
         issues.append(f"Confirm product codes for {missing_sku} equipment line(s).")
-    missing_serials = sum(
-        line["quantity"] if not line["serial"] else max(0, line["quantity"] - 1)
-        for line in record["equipment"]
-    )
+    missing_serials = unconfirmed_serials(record["equipment"])["total"]
     if missing_serials:
         issues.append(f"Verify {missing_serials} equipment serial number(s).")
     issues.append("Price all equipment using the approved SmartQuote pricing engine.")
