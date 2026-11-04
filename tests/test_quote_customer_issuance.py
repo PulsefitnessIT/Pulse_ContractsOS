@@ -86,6 +86,7 @@ def approval(draft=None):
         confirm_package_price_and_discount=True,
         confirm_maintenance_scope_and_terms=True,
         confirm_vat_basis=True,
+        serial_exception_reason="The second fictional machine serial is unreadable; site to verify on installation.",
     )
 
 
@@ -403,3 +404,43 @@ def test_stale_sage_reference_does_not_block_selected_current_master_price():
     assert not any("Sage" in error for error in issues._errors(record,price))
     price["lines"][0]["rrp_source"]="sage_exact_sku_price"
     assert any("Sage" in error for error in issues._errors(record,price))
+
+
+
+def test_missing_machine_serials_require_a_specific_manager_reason_and_archive_it(tmp_path, monkeypatch):
+    path=setup_database(tmp_path,monkeypatch)
+    readiness=issues.customer_quote_readiness(fake_draft()["id"])
+    assert readiness["serials_unconfirmed"]==1
+    assert readiness["serials_unconfirmed_lines"]==[{"line":1,"unconfirmed_units":1}]
+    assert readiness["serial_exception_reason_needed"] is True
+    blank=approval().model_copy(update={"serial_exception_reason":""})
+    with pytest.raises(HTTPException) as error:
+        issues.issue_customer_quotation(fake_draft()["id"],blank)
+    assert error.value.status_code==422
+    assert "serial" in str(error.value.detail).lower()
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM unified_customer_quotes").fetchone()[0]==0
+    issued=issues.issue_customer_quotation(fake_draft()["id"],approval())
+    assert issued["issued"] is True
+    with sqlite3.connect(path) as db:
+        frozen=json.loads(db.execute(
+            "SELECT snapshot_json FROM unified_customer_quotes WHERE quote_no=?",
+            (issued["quote_no"],)
+        ).fetchone()[0])
+    assert frozen["unconfirmed_serial_count"]==1
+    assert frozen["serial_exception_reason"].startswith("The second fictional machine serial")
+
+
+def test_all_individual_serials_confirmed_needs_no_manager_exception(tmp_path,monkeypatch):
+    fully= fake_draft()
+    fully["equipment"]=[
+        {**fully["equipment"][0],"quantity":1,"serial":"SERIAL-ONE"},
+        {**fully["equipment"][0],"quantity":1,"serial":"SERIAL-TWO"},
+    ]
+    setup_database(tmp_path,monkeypatch,draft=fully)
+    ready=issues.customer_quote_readiness(fully["id"])
+    assert ready["serials_unconfirmed"]==0
+    assert ready["serial_exception_reason_needed"] is False
+    approval_without_reason=approval().model_copy(update={"serial_exception_reason":""})
+    issued=issues.issue_customer_quotation(fully["id"],approval_without_reason)
+    assert issued["issued"] is True
