@@ -6,6 +6,7 @@ on:
     paths:
       - 'app/**'
       - 'scripts/prepare_factual_master.py'
+      - 'scripts/windows_pilot_smoke.py'
       - 'run_smartquote_windows_pilot.py'
       - 'windows/**'
       - '.github/workflows/smartquote-windows-pilot.yml'
