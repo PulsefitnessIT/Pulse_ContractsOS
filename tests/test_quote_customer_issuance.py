@@ -490,3 +490,32 @@ def test_customer_issue_rejects_swapped_quantity_sku_or_draft_revision():
             "snapshot" in text.lower() or "equipment line" in text.lower()
             for text in issues._errors(original,damaged)
         )
+
+
+def test_repeated_or_placeholder_serials_cannot_verify_multiple_machines():
+    """Serials are unique per physical unit, not merely non-empty text."""
+    draft = {"equipment": [
+        {"quantity": 1, "serial": "ABC-123"},
+        {"quantity": 1, "serial": " abc-123 "},
+        {"quantity": 1, "serial": "N/A"},
+        {"quantity": 1, "serial": "TBC"},
+        {"quantity": 2, "serial": "UNIQUE-456"},
+        {"quantity": 1, "serial": "OTHER-789"},
+    ]}
+    result = issues._unconfirmed_serials(draft)
+    assert result["total"] == 4
+    assert result["lines"] == [
+        {"line": 2, "unconfirmed_units": 1},
+        {"line": 3, "unconfirmed_units": 1},
+        {"line": 4, "unconfirmed_units": 1},
+        {"line": 5, "unconfirmed_units": 1},
+    ]
+
+
+def test_individual_unique_serials_remain_verified():
+    draft = {"equipment": [
+        {"quantity": 1, "serial": "S-001"},
+        {"quantity": 1, "serial": "S-002"},
+        {"quantity": 1, "serial": "S-003"},
+    ]}
+    assert issues._unconfirmed_serials(draft) == {"total": 0, "lines": []}
