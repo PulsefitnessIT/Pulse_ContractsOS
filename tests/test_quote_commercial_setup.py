@@ -250,6 +250,7 @@ def test_zero_price_or_unresolved_equipment_still_blocks_customer_issue(tmp_path
         confirm_package_price_and_discount=True,
         confirm_maintenance_scope_and_terms=True,
         confirm_vat_basis=True,
+        serial_exception_reason="A fictional machine serial is unreadable; manager verified the equipment identifier.",
     )
     with pytest.raises(HTTPException) as err:
         issue.issue_customer_quotation(draft["id"],approval)
@@ -287,7 +288,7 @@ def test_complete_self_service_commercial_setup_issues_real_pdf_to_archive(tmp_p
         )
     def synthetic_price(record):
         price={
-            "draft_id":draft["id"],"revision":1,
+            "draft_id":draft["id"],"revision":1,"tier":"Gold",
             "complete_price":True,"priced_count":1,"line_count":1,
             "annual_partial":225.00,"term_partial":225.00,
             "staged":{"issues":[]},
@@ -315,6 +316,7 @@ def test_complete_self_service_commercial_setup_issues_real_pdf_to_archive(tmp_p
         confirm_package_price_and_discount=True,
         confirm_maintenance_scope_and_terms=True,
         confirm_vat_basis=True,
+        serial_exception_reason="A fictional machine serial is unreadable; manager verified the equipment identifier.",
     )
     result=issue.issue_customer_quotation(draft["id"],approved)
     assert result["issued"]
