@@ -55,9 +55,10 @@ async function quotingWorkspacePage() {
     '<label>Quantity <input name="quantity" type="number" min="1" max="10000" step="1" value="1" required></label>' +
     '</div><button type="submit" class="button button-outline">Add equipment line</button></form>' +
     '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem">' +
-    '<button type="button" class="button button-primary" id="unifiedDraftSave">Save draft</button>' +
+    '<button type="button" class="button button-primary" id="unifiedSaveAndPrice">Save &amp; calculate price</button>' +
+    '<button type="button" class="button button-outline" id="unifiedDraftSave">Save draft only</button>' +
     '<button type="button" class="button button-outline" id="unifiedDraftNew">New draft</button>' +
-    '<button type="button" class="button button-outline" id="unifiedDraftPrice">Preview V10 price</button></div>' +
+    '<button type="button" class="button button-outline" id="unifiedDraftPrice">Recalculate saved price</button></div>' +
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
     '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
@@ -107,6 +108,7 @@ async function quotingWorkspacePage() {
   });
   document.querySelector('#unifiedCatalogueSearch').addEventListener('submit', unifiedSearchCatalogue);
   document.querySelector('#unifiedDraftSave').addEventListener('click', unifiedSaveDraft);
+  document.querySelector('#unifiedSaveAndPrice').addEventListener('click', unifiedSaveAndPrice);
   document.querySelector('#unifiedDraftNew').addEventListener('click', unifiedNewDraft);
   document.querySelector('#unifiedDraftPrice').addEventListener('click', unifiedPricePreview);
   document.querySelector('#quoteSourceAuditLoad').addEventListener('click', loadQuoteSourceAudit);
@@ -204,7 +206,8 @@ async function unifiedSaveDraft() {
   const form = document.querySelector('#unifiedDraftForm');
   const feedback = document.querySelector('#unifiedDraftFeedback');
   const button = document.querySelector('#unifiedDraftSave');
-  if (!form || !form.reportValidity() || !feedback || !button) return;
+  const combined = document.querySelector('#unifiedSaveAndPrice');
+  if (!form || !form.reportValidity() || !feedback || !button) return null;
   const data = Object.fromEntries(new FormData(form).entries());
   const payload = {
     customer:data.customer, site:data.site, contact:data.contact,
@@ -220,6 +223,7 @@ async function unifiedSaveDraft() {
     payload.revision = unifiedDraftSelected.revision;
   }
   button.disabled = true;
+  if (combined) combined.disabled = true;
   feedback.textContent = 'Saving…';
   try {
     const saved = await api(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
@@ -228,11 +232,21 @@ async function unifiedSaveDraft() {
     feedback.textContent = 'Saved. This quotation remains unpriced and cannot be issued yet.';
     document.querySelector('#unifiedDraftTitle').textContent = 'Edit quotation draft';
     await loadUnifiedDrafts();
+    return saved;
   } catch (error) {
     feedback.textContent = error.message + ' If another user saved changes, reload the draft.';
+    return null;
   } finally {
     button.disabled = false;
+    if (combined) combined.disabled = false;
   }
+}
+
+async function unifiedSaveAndPrice(){
+  const result=await unifiedSaveDraft();
+  // Never call the calculator when a save failed: otherwise the old
+  // revision might appear priced for a changed site or equipment list.
+  if (result) await unifiedPricePreview();
 }
 
 async function loadUnifiedDrafts() {
