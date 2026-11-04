@@ -1,0 +1,68 @@
+name: SmartQuote Windows private workstation pilot
+on:
+  push:
+    branches:
+      - feature/unified-smartquote-intake
+    paths:
+      - 'app/**'
+      - 'scripts/prepare_factual_master.py'
+      - 'run_smartquote_windows_pilot.py'
+      - 'windows/**'
+      - '.github/workflows/smartquote-windows-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-local-pilot:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - name: Checkout source only
+        uses: actions/checkout@v4
+      - name: Set up Python 3.12 for build runner
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build-only toolchain
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt "pyinstaller>=6.10,<7"
+      - name: Compile standalone local server (NO customer data)
+        shell: pwsh
+        run: |
+          python -m PyInstaller --clean --noconfirm --onefile --name Pulse_ContractsOS_SmartQuote_Pilot --hidden-import app.main --collect-submodules uvicorn --collect-all fitz --collect-all pymupdf --collect-all lxml --add-data "app/static;app/static" run_smartquote_windows_pilot.py
+      - name: Run packaged executable without input files
+        shell: pwsh
+        run: |
+          & .\dist\Pulse_ContractsOS_SmartQuote_Pilot.exe --self-test
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Packaged SmartQuote failed its offline self-test.'
+          }
+          & .\dist\Pulse_ContractsOS_SmartQuote_Pilot.exe --has-admin
+          if ($LASTEXITCODE -eq 0) {
+            throw 'A source-only executable claimed it has a live Admin account.'
+          }
+      - name: Assemble small private-data-free Windows staff package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .\windows_build | Out-Null
+          Copy-Item .\dist\Pulse_ContractsOS_SmartQuote_Pilot.exe .\windows_build\
+          Copy-Item .\windows\Start_SmartQuote_ContractsOS_Pilot.bat .\windows_build\
+          Copy-Item .\windows\README_SMARTQUOTE_WINDOWS_PILOT.txt .\windows_build\
+          $privateFiles = Get-ChildItem -Recurse .\windows_build -File |
+              Where-Object { $_.Extension -in '.xlsx','.db','.sqlite3','.pdf','.zip' }
+          if ($privateFiles) {
+            throw 'Refusing to publish private data or runtime files in a Windows build.'
+          }
+          $hash = (Get-FileHash .\windows_build\Pulse_ContractsOS_SmartQuote_Pilot.exe -Algorithm SHA256).Hash
+          Write-Host "Windows executable SHA256: $hash"
+      - name: Upload portable Windows local pilot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pulse-SmartQuote-ContractsOS-Windows-Private-Pilot
+          path: windows_build/*
+          if-no-files-found: error
+          retention-days: 30
