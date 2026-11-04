@@ -59,7 +59,7 @@ try {
         # Use Git blob API because the catalogue exceeds the Content API's
         # ordinary inline-content limit for private files above 1 MB.
         $metadataUrl = "repos/$Repository/contents/data/$filename" + "?ref=$encodedBranch"
-        $metadataJson = & gh api --method GET $metadataUrl
+        $metadataJson = (& gh api --method GET $metadataUrl) -join "`n"
         if ($LASTEXITCODE -ne 0 -or -not $metadataJson) {
             throw "Unable to locate original V10 source: $filename"
         }
@@ -67,7 +67,7 @@ try {
         if ($metadata.type -ne 'file' -or $metadata.sha -notmatch '^[a-f0-9]{40}$') {
             throw "GitHub did not return an auditable file blob for $filename"
         }
-        $blobJson = & gh api --method GET "repos/$Repository/git/blobs/$($metadata.sha)"
+        $blobJson = (& gh api --method GET "repos/$Repository/git/blobs/$($metadata.sha)") -join "`n"
         if ($LASTEXITCODE -ne 0 -or -not $blobJson) {
             throw "Unable to fetch the original blob for $filename"
         }
@@ -82,7 +82,7 @@ try {
         $destination = Join-Path $sourceFolder $filename
         [IO.File]::WriteAllBytes($destination, $raw)
         $sourceHashes[$filename] = (Get-FileHash -Path $destination -Algorithm SHA256).Hash.ToLowerInvariant()
-        Write-Host ("Verified source blob {0} : {1} bytes" -f $filename, $raw.Length)
+        Write-Host ("Verified source blob {0} : {1} bytes; SHA256 {2}" -f $filename, $raw.Length, $sourceHashes[$filename])
     }
 
     # These checks catch accidental test ZIPs before the Admin import preview.
