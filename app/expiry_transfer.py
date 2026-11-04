@@ -13,6 +13,7 @@ import json
 import re
 import sqlite3
 from contextlib import closing
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -102,9 +103,9 @@ def _view(row, fields, expiry, today):
 
 @router.get("/preview")
 def expiry_transfer_preview(
-    source_sheet: str = Query("Maintenance Database"),
-    limit: int = Query(100, ge=1, le=250),
-    offset: int = Query(0, ge=0),
+    source_sheet: Annotated[str, Query()] = "Maintenance Database",
+    limit: Annotated[int, Query(ge=1, le=250)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """Pure/read-only candidate discovery; dates never trigger auto-archiving."""
     _coordinator()
