@@ -249,11 +249,20 @@ def _unconfirmed_serials(draft):
     are permitted only with a recorded human commercial exception.
     """
     missing=[]
+    seen_serials=set()
+    # One physical machine serial must not silently verify two quoted units.
+    # Placeholders and repeated serials require the same explicit commercial
+    # exception as an absent or illegible serial.
+    placeholders={"N/A", "NA", "NONE", "UNKNOWN", "TBC", "TBD", "-", "?"}
     for i,item in enumerate(draft.get("equipment", []),1):
         quantity=item.get("quantity")
         if type(quantity) is not int or quantity<1:
             continue
-        confirmed=1 if str(item.get("serial") or "").strip() else 0
+        serial=" ".join(str(item.get("serial") or "").strip().upper().split())
+        confirmed=int(bool(serial) and serial not in placeholders
+                      and serial not in seen_serials)
+        if confirmed:
+            seen_serials.add(serial)
         if quantity>confirmed:
             missing.append({"line":i,"unconfirmed_units":quantity-confirmed})
     return {
