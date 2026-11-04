@@ -217,9 +217,9 @@ def test_batch_moves_mod_and_maintenance_without_overlapping_history(tmp_path,mo
     assert output["transferred"]==2
     assert [item["to_row"] for item in output["items"]]==[101,102]
     with conn() as db:
-        assert db.execute(
+        assert tuple(db.execute(
             "SELECT source_sheet,old_sheet FROM contracts WHERE id=4"
-        ).fetchone()==("Expired","MOD")
+        ).fetchone())==("Expired","MOD")
         assert db.execute(
             "SELECT COUNT(DISTINCT source_row) FROM contracts WHERE source_sheet='Expired'"
         ).fetchone()[0]==3
