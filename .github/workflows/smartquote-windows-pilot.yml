@@ -1,18 +1,8 @@
+# Release packaging is intentionally MANUAL. Product work must first pass
+# source/safety checks and a final founder-led acceptance review. Avoid
+# publishing a new EXE for every development commit.
 name: SmartQuote Windows private workstation pilot
 on:
-  push:
-    branches:
-      - feature/unified-smartquote-intake
-    paths:
-      - 'app/**'
-      - 'scripts/prepare_factual_master.py'
-      - 'scripts/windows_pilot_smoke.py'
-      - 'run_smartquote_windows_pilot.py'
-      - 'windows/**'
-      - '.github/workflows/smartquote-windows-pilot.yml'
-  pull_request:
-    branches:
-      - feature/real-data-pilot-readiness
   workflow_dispatch:
 
 permissions:
