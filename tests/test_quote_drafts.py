@@ -100,3 +100,74 @@ def test_pilot_requires_verified_session_role(monkeypatch):
     with pytest.raises(HTTPException) as error:
         quote_drafts._check_access(write=False)
     assert error.value.status_code == 401
+
+
+
+@pytest.mark.parametrize("source_id,pages",[
+    (True, [2]), ("17", [2]), (0,[2]), (17,["2"]),
+    (17,[0]), (17,[-1]), (17,[2]*31), (None,[2]),
+])
+def test_invoice_provenance_rejects_invalid_client_evidence(source_id, pages):
+    with pytest.raises(HTTPException) as err:
+        quote_drafts.validate_draft({
+            "customer":"Fictional Leisure","site":"Fictional Hall",
+            "equipment":[{"description":"Fictional Bike","item_code":"TEST-001",
+                "quantity":1,"source_import_id":source_id,"source_pages":pages}],
+        })
+    assert err.value.status_code==422
+
+
+def test_pdf_invoice_code_pages_are_checked_before_draft_write(tmp_path,monkeypatch):
+    import sqlite3,json
+    from pathlib import Path
+    db_path=tmp_path/"fictional.sqlite3"
+    def db():
+        con=sqlite3.connect(db_path)
+        con.row_factory=sqlite3.Row
+        return con
+    with db() as con:
+        con.execute("CREATE TABLE imports (id INTEGER PRIMARY KEY, type TEXT, evidence_json TEXT)")
+        con.execute("INSERT INTO imports (id,type,evidence_json) VALUES(17,?,?)",(
+            "pdf",json.dumps({"equipment_codes":[
+                {"value":"TEST-001","pages":[2,3]},
+                {"value":"OTHER-PART","pages":[1]},
+            ]}),
+        ))
+        con.execute("INSERT INTO imports (id,type,evidence_json) VALUES(18,?,?)",(
+            "xlsx",json.dumps({"equipment_codes":[{"value":"TEST-001","pages":[2]}]}),
+        ))
+    monkeypatch.setattr(quote_drafts,"connect",db)
+    monkeypatch.setattr(quote_drafts,"actor",lambda:"fictional-coordinator")
+    monkeypatch.setattr(quote_drafts,"PILOT_MODE",False)
+    payload={
+        "customer":"Fictional Leisure","site":"Fictional Hall","tier":"Gold",
+        "equipment":[{"description":"Fictional Bike","item_code":"TEST-001",
+            "serial":"FIC-SER-1","quantity":1,
+            "source_import_id":17,"source_pages":[3,2,2]}],
+    }
+    created=quote_drafts.create_draft(payload)
+    assert created["equipment"][0]["source_import_id"]==17
+    assert created["equipment"][0]["source_pages"]==[2,3]
+    stored=quote_drafts.get_draft(created["id"])
+    assert stored["equipment"][0]["serial"]=="FIC-SER-1"
+
+    failures=[
+        {**payload,"equipment":[{**payload["equipment"][0],"item_code":"UNSEEN-1"}]},
+        {**payload,"equipment":[{**payload["equipment"][0],"source_pages":[4]}]},
+        {**payload,"equipment":[{**payload["equipment"][0],"source_import_id":18}]},
+        {**payload,"equipment":[{**payload["equipment"][0],"source_import_id":19}]},
+    ]
+    for bad in failures:
+        with pytest.raises(HTTPException) as err:
+            quote_drafts.update_draft(created["id"],{**bad,"revision":1})
+        assert err.value.status_code==409
+    assert quote_drafts.get_draft(created["id"])["revision"]==1
+    # Manually confirmed alternatives are permitted, but no forged invoice
+    # provenance is retained on that equipment line.
+    updated=quote_drafts.update_draft(created["id"],{
+        **payload,"revision":1,
+        "equipment":[{**payload["equipment"][0],"item_code":"CORRECTED-SKU",
+            "source_import_id":None,"source_pages":[]}],
+    })
+    assert updated["equipment"][0]["source_import_id"] is None
+    assert updated["equipment"][0]["source_pages"]==[]
