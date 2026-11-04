@@ -1,8 +1,8 @@
 # Contracts OS — Verified Expired Contract Transfer
 
 **Development date:** 4 November 2026  
-**Feature branch:** \`feature/unified-smartquote-intake\` (draft PR #5)  
-**Source:** \`MASTER of Maintenance Contract Spreadsheet - NEW MASTER 3.11.xlsx\` and its aligned Expired register
+**Feature branch:** `feature/unified-smartquote-intake` (draft PR #5)  
+**Source:** `MASTER of Maintenance Contract Spreadsheet - NEW MASTER 3.11.xlsx` and its aligned Expired register
 
 ## Why this exists
 
@@ -11,8 +11,8 @@ from **Maintenance Database** into **Expired**. This requires identical column
 positions and preservation of years of historic contract notes.
 
 The approved working Master contains:
-- **31 shared ordered columns, A–AE**, identical on \`Maintenance Database\`,
-  \`MOD\` and \`Expired\`.
+- **31 shared ordered columns, A–AE**, identical on `Maintenance Database`,
+  `MOD` and `Expired`.
 - **12 additional Expired-only historical columns, AF–AQ**. These remain at
   the right-hand end; existing historical content must not be overwritten.
 - **8,381 historical data records in Expired** (the workbook contains 8,382
@@ -53,7 +53,7 @@ and appends beyond the end of the historical Excel template.
 - Every source record retains its **stable Record ID** and the source
   **31 fields** including site notes, financial data, actions and invoice
   references. Only status, source register, source row, and computed
-  \`Renewal status\` change.
+  `Renewal status` change.
 - The app stores the original register and row number and appends the
   moved contract **after the last historical Excel row**, never over a
   previously populated Expired row.
@@ -80,24 +80,24 @@ Viewer accounts cannot move records. An approved database backup must be
 created before the batch is written.
 
 A real-source deployment must replace the pilot's existing private
-\`approved_master.xlsx\` with the validated latest Master and be reconciled
+`approved_master.xlsx` with the validated latest Master and be reconciled
 against its current SQLite snapshot before use. This PR **does not** stage
 the user's private customer records or workbook in GitHub.
 
 ## Code and testing
 
-- \`app/register_layout.py\` — exact header-order validation and protected
+- `app/register_layout.py` — exact header-order validation and protected
   template last-row lookup.
-- \`app/expiry_transfer.py\` — read-only candidate worklist and versioned
+- `app/expiry_transfer.py` — read-only candidate worklist and versioned
   audited batch transfer with backup and atomic SQLite updates.
-- \`app/static/expiry-transfer.js\` — coordinator UI, individual selection,
+- `app/static/expiry-transfer.js` — coordinator UI, individual selection,
   confirmation and post-transfer refresh.
-- \`app/main.py\` — registration, and safe append index for existing
+- `app/main.py` — registration, and safe append index for existing
   single-record archives.
-- \`app/excel_io.py\` — MOD style transfer support when exporting to Expired.
-- \`app/master_sync.py\` — current ten-tab Master layout validation on
+- `app/excel_io.py` — MOD style transfer support when exporting to Expired.
+- `app/master_sync.py` — current ten-tab Master layout validation on
   recurring uploads.
-- \`tests/test_expiry_transfer.py\` — fictional 31+12-column layout,
+- `tests/test_expiry_transfer.py` — fictional 31+12-column layout,
   role, expiry, immutable historical data, backup, conflict and source
   export tests. Includes synthetic OOXML round-trip verifying existing
   Expired-only notes are retained and table ranges grow correctly.
