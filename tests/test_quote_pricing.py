@@ -354,3 +354,39 @@ def test_tier_comparison_uses_sage_for_valid_legacy_sku_without_master_row(monke
     assert result["sage_source_sha256"] == "a" * 64
     assert [x["annual_gbp"] for x in result["options"]] == [144, 180, 234]
     assert all(x["complete_price"] for x in result["options"])
+
+
+def test_tier_comparison_rejects_below_minimum_discount_without_showing_partial_price(monkeypatch):
+    saved = _set_comparison_sources(
+        monkeypatch, source_draft=draft("Gold", discount=75)
+    )
+    results = quote_pricing.draft_tier_comparison(saved["id"])["options"]
+    assert all(not item["complete_price"] for item in results)
+    assert all(item["annual_gbp"] is None for item in results)
+    assert all(item["blockers"] for item in results)
+    assert any(
+        "minimum" in issue.lower()
+        for item in results for issue in item["blockers"]
+    )
+
+
+def test_tier_comparison_rejects_overdue_sage_fallback_for_all_packages(monkeypatch):
+    from app import quote_rrp_priority
+    saved = _set_comparison_sources(monkeypatch)
+    monkeypatch.setattr(quote_rrp_priority, "source_snapshot", lambda: {
+        "rows": [], "source_date": quote_rrp_priority.MASTER_DATE,
+        "source_file_sha256": quote_rrp_priority.MASTER_ORIGINAL_SHA256,
+        "snapshot_sha256": "b" * 64,
+    })
+    monkeypatch.setattr(quote_pricing, "sage_snapshot", lambda: {
+        "prices": {
+            "TEST-100": {"sku": "TEST-100", "sales_price": 3000, "name": "Example Bike"}
+        },
+        "source_date": "2024-01-01", "review_due": "2025-01-01",
+        "review_overdue": True, "source_file_sha256": "a" * 64,
+        "source": "Fictional stale Sage snapshot",
+    })
+    result = quote_pricing.draft_tier_comparison(saved["id"])
+    assert all(item["annual_gbp"] is None for item in result["options"])
+    assert all(not item["complete_price"] for item in result["options"])
+    assert all(any("overdue" in text for text in item["blockers"]) for item in result["options"])
