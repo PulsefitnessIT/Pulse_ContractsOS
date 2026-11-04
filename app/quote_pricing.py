@@ -585,3 +585,104 @@ def draft_price_preview(draft_id: str):
         "rules, terms and customer quote approval are separate."
     )
     return result
+
+
+@router.get("/drafts/{draft_id}/tier-comparison")
+def draft_tier_comparison(draft_id: str):
+    """Side-by-side Silver/Gold/Platinum INTERNAL price comparison.
+
+    Reprice the SAME saved equipment/serials, term, discount, source snapshots
+    and reviewed overrides. Do not persist a new draft, approve a maintenance
+    tariff, or issue a customer quote. Missing equipment prices are visibly
+    incomplete; no partial value is described as a final contract amount.
+    """
+    actor()
+    draft = get_draft(draft_id)
+    catalogue, configs, policy, fingerprints = source_snapshot()
+    from .quote_rrp_priority import source_snapshot as august_snapshot, index
+    from .quote_price_overrides import active_overrides
+
+    august = august_snapshot()
+    try:
+        sage = sage_snapshot()
+    except HTTPException:
+        sage = None
+    codes = [str(item.get("item_code") or "") for item in draft.get("equipment", [])]
+    price_overrides = active_overrides(codes)
+    indexed = index(august)
+    options = []
+    for tier in ("Silver", "Gold", "Platinum"):
+        if tier not in policy.get("tiers", {}):
+            options.append({
+                "tier": tier, "available": False, "complete_price": False,
+                "annual_gbp": None, "monthly_gbp": None, "term_gbp": None,
+                "priced_lines": 0, "total_lines": len(draft.get("equipment", [])),
+                "blockers": ["This tier has no original V10 price rule."],
+            })
+            continue
+        quoted = preview(
+            {**draft, "tier": tier}, catalogue, configs, policy, fingerprints,
+            master_by_sku=indexed, sage_source=sage,
+            overrides=price_overrides, august_source=august,
+        )
+        # The original engine can calculate partial amounts, which MUST NOT
+        # be presented as a complete option in this staff comparison.
+        complete = bool(quoted["complete_price"]) and all(
+            not line.get("exception") and
+            not any(
+                reason not in (
+                    "August 2026 source List Price used; commercial maintenance tariff approval remains separate.",
+                    "Price taken from exact Sage item code; maintenance tariff approval remains separate.",
+                    "Administrator-adjusted equipment price; source revision recorded in price audit.",
+                )
+                for reason in line.get("coverage_review", [])
+            ) and not line.get("review_required_below_minimum", False)
+            and (line.get("annual", 0) >= line.get("minimum_annual", 0) - .01)
+            for line in quoted["lines"]
+        ) and not quoted["staged"]["issues"]
+        blockers = [
+            f'Line {line["line"]}: ' + (
+                str(line.get("exception") or
+                    "; ".join(line.get("coverage_review") or []) or
+                    "Price is below the permitted minimum.")
+            )[:220]
+            for line in quoted["lines"]
+            if not line["priced"] or line.get("exception")
+            or any(
+                reason not in (
+                    "August 2026 source List Price used; commercial maintenance tariff approval remains separate.",
+                    "Price taken from exact Sage item code; maintenance tariff approval remains separate.",
+                    "Administrator-adjusted equipment price; source revision recorded in price audit.",
+                )
+                for reason in line.get("coverage_review", [])
+            ) or line.get("annual", 0) < line.get("minimum_annual", 0) - .01
+        ][:8]
+        if quoted["staged"]["issues"]:
+            blockers.extend(str(x)[:180] for x in quoted["staged"]["issues"][:3])
+        options.append({
+            "tier": tier,
+            "available": True,
+            "complete_price": complete,
+            "annual_gbp": quoted["annual_partial"] if complete else None,
+            "monthly_gbp": quoted["monthly_partial"] if complete else None,
+            "term_gbp": quoted["term_partial"] if complete else None,
+            "priced_lines": quoted["priced_count"],
+            "total_lines": quoted["line_count"],
+            "blockers": blockers if not complete else [],
+        })
+    return {
+        "draft_id": draft["id"],
+        "revision": draft["revision"],
+        "selected_tier": draft["tier"],
+        "discount_percent": draft["discount_percent"],
+        "term_years": draft["term_years"],
+        "currency": "GBP",
+        "options": options,
+        "source_sha256": fingerprints,
+        "august_master_sha256": august["snapshot_sha256"],
+        "sage_source_sha256": sage["source_file_sha256"] if sage else None,
+        "indicative_only": True,
+        "commercially_approved": False,
+        "customer_quote_issued": False,
+        "note": "Internal comparison of identical equipment and contract terms. Save the chosen tier, review equipment scope, and obtain approved tariff, terms and manager sign-off before issuing a customer PDF.",
+    }
