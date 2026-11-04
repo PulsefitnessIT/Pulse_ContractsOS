@@ -287,6 +287,22 @@ def _master_console_identity(product, master):
         return True
     if not master_name or not product_name or _source_title(master_name)!=_source_title(product_name):
         return False
+    # Both sources show an identical full product description and a UNIQUE
+    # exact SKU. For a machine with no console described at all, V10 records
+    # "No Console / N/A" while the August extract says "Console not stated".
+    # This is a *terminology* difference, NOT proof of an installed option.
+    # Reject anything that hints at a screen, electronics or control console;
+    # even exact title/price matches cannot approve that physical variant.
+    if (master_console.casefold() == "console not stated"
+            and catalogue_console.casefold() == "no console / n/a"):
+        import re
+        if re.search(
+            r"\\b(?:console|screen|touchscreen|display|lcd|monitor|tablet|"
+            r"smartcard|smart-card|pm5|nfc|touch[- ]?key)\\b",
+            master_name, flags=re.IGNORECASE
+        ):
+            return False
+        return True
     # The only physical-description / V10-group equivalences observed
     # unambiguously in the original 2026 source's exact SKU and full name.
     # Do not generalise from similar-looking equipment or from a console
