@@ -111,7 +111,8 @@ def _row(page, top, label, value, width=190):
 
 def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
                      valid_until, approval_ref, approved_by,
-                     terms_pdf=None, issuer=None, internal_draft=False):
+                     terms_pdf=None, issuer=None, internal_draft=False,
+                     unconfirmed_serial_count=0):
     """Produce immutable PDF bytes for complete, source-priced quote input.
 
     \`pricing\` is the server-generated V10 snapshot, not client-provided money.
@@ -122,6 +123,9 @@ def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
     if (not internal_draft and
             (not terms_pdf or not approval_ref or not approved_by or not issuer)):
         raise ValueError("Customer PDF needs real approved terms and sign-off.")
+    if (type(unconfirmed_serial_count) is not int
+            or unconfirmed_serial_count < 0):
+        raise ValueError("Unconfirmed serial count must be a non-negative integer.")
     doc = fitz.open()
     page = _page(doc, quote_no, internal_draft)
     y = 153 if internal_draft else 137
@@ -208,7 +212,7 @@ def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
              _money(line["annual"]), 9, INK, "hebo")
         y += h+3
 
-    if y+100 > H-94:
+    if y + (125 if unconfirmed_serial_count else 100) > H-94:
         page = _page(doc, quote_no, internal_draft)
         y = 149 if not internal_draft else 159
     y += 16
@@ -220,6 +224,11 @@ def render_quote_pdf(*, draft, pricing, quote_no, prepared_date,
         "Pulse Fitness maintenance terms. No maintenance contract is active until agreed.",
         "Changes to equipment or quantities may require a revised quotation.",
     ]
+    if unconfirmed_serial_count:
+        notes.extend([
+            f"Serial numbers for {unconfirmed_serial_count} equipment unit(s) are not yet verified.",
+            "The equipment schedule must be confirmed before cover is activated.",
+        ])
     for note in notes:
         _txt(page, (MARGIN, y), note, 8.6, MUTED)
         y += 13
