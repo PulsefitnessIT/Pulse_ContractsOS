@@ -592,6 +592,10 @@ async function loadRrpPriorityStatus() {
   host.textContent='Checking private August master and Sage source coverage…';
   try {
     const data=await api('/api/quoting/rrp-source/status');
+    // A current master price alone is not a maintenance-quotable product.
+    // The new summary also requires exact service identity, approved-source
+    // eligibility and explicit console-variant evidence for the preview tier.
+    const coverage=await api('/api/quoting/candidate-coverage').catch(()=>null);
     if(view!=='quoting'||!document.querySelector('#rrpPriorityStatus'))return;
     const labels={
       original_v10_catalogue_distinct_skus:'Original V10 distinct SKUs',
@@ -612,6 +616,19 @@ async function loadRrpPriorityStatus() {
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
       '<th>Source coverage</th><th>SKUs / rows</th></tr></thead><tbody>'+
       rows+'</tbody></table></div>'+
+      (coverage?
+        '<h4>Equipment candidates with unambiguous source-based maintenance pricing</h4>'+
+        '<p><strong>'+esc(coverage.candidate_current_master_skus)+
+        '</strong> current-master SKU candidates · <strong>'+
+        esc(coverage.candidate_sage_fallback_skus)+
+        '</strong> legacy Sage-fallback SKU candidates</p>'+
+        '<p>'+esc(Object.entries(coverage.review_categories||{}).map(
+          ([reason,count])=>count+' '+reason.replaceAll('_',' ')
+        ).join(' · ')||'No additional source exceptions')+'</p>'+
+        '<p class="fine-print">This count uses Gold, one unit, no discount. '+
+        'It is NOT a quotation approval; every source, cover, customer, serial, '+
+        'term and package still requires confirmation.</p>'
+        :'<p class="fine-print">Quotable-equipment candidate count is unavailable.</p>')+
       '<p class="fine-print">The source precedence is confirmed. '+
       'Sage prices may calculate internal previews for legacy equipment. '+
       'Maintenance tariffs and customer quotation issuance are still separate release gates.</p>';
