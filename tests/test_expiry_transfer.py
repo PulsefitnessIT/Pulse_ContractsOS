@@ -384,7 +384,7 @@ def test_excel_export_moves_full_row_and_preserves_expired_history_columns(tmp_p
         assert historic["fields"]["Price reviews / contract history"]=="Do not lose historical pricing notes"
         assert new["fields"]["Customer / site"]=="Fictional MOD Station"
         assert new["fields"]["Record ID"]=="FIC-MOD-1"
-        assert new["fields"]["Contract amount (£)"]=="777.35"
+        assert str(new["fields"]["Contract amount (£)"])=="777.35"
         assert new["fields"]["Site notes"]=="MOD notes"
         assert new["fields"]["Renewal status"]=="Historical / archived"
         assert not new["fields"]["Price reviews / contract history"]
