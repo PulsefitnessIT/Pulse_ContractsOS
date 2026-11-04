@@ -361,3 +361,42 @@ def test_unstated_master_console_does_not_override_screen_clues(text):
     assert result["lines"][0]["master_console_evidence"]["identity_reconciled"] is False
     assert any("console variant" in s for s in result["lines"][0]["coverage_review"])
     assert _errors(example_draft(), result)
+
+
+
+def test_exact_master_source_price_displays_sage_difference_without_substitution():
+    from app import quote_pricing
+    cat,cfg,policy,hashes=example_sources()
+    sage=sage_source()
+    sage["prices"]["EXAMPLE-SKU"]={
+        "sku":"EXAMPLE-SKU","sales_price":2500,
+        "name":"Fictional equipment","group":"Strength Equipment",
+    }
+    preview=quote_pricing.preview(
+        example_draft(),cat,cfg,policy,hashes,
+        master_by_sku=rrp.index(staged([line("EXAMPLE-SKU",3000)])),
+        sage_source=sage,
+    )
+    item=preview["lines"][0]
+    assert item["rrp"]==3000.0
+    assert item["source_price_comparison"]["sage_sales_price_gbp"]==2500.0
+    assert item["source_price_comparison"]["percentage_difference"]==-16.67
+    assert item["source_price_comparison"]["requires_explicit_ack"] is True
+    assert item["source_price_comparison"]["not_a_new_or_approved_tariff"] is True
+    assert preview["annual_partial"]==90.0
+
+
+def test_small_source_price_difference_does_not_trigger_extra_approval():
+    from app import quote_pricing
+    cat,cfg,policy,hashes=example_sources()
+    sage=sage_source()
+    sage["prices"]["EXAMPLE-SKU"]={
+        "sku":"EXAMPLE-SKU","sales_price":2900,"name":"Fictional equipment",
+    }
+    preview=quote_pricing.preview(
+        example_draft(),cat,cfg,policy,hashes,
+        master_by_sku=rrp.index(staged([line("EXAMPLE-SKU",3000)])),
+        sage_source=sage,
+    )
+    assert preview["lines"][0]["source_price_comparison"]["requires_explicit_ack"] is False
+    assert preview["annual_partial"]==90.0
