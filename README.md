@@ -2,6 +2,33 @@
 
 **Source-only development checkout.** The existing V12 pilot's operational database, approved eight-tab Excel template, equipment catalogue and confidential documents are intentionally **not** in GitHub. This repository does not provide a pre-populated installation.
 
+## SmartQuote quotation pilot (feature branch, not yet deployed)
+
+The unified SmartQuote workspace on `feature/unified-smartquote-intake`
+now supports exact V10 equipment search, privately imported August 2026
+Master and Sage price sources, source-derived Silver/Gold/Platinum pricing,
+internal draft PDFs, administrator commercial sign-off, numbered customer
+PDFs and read-only issued-quote downloads for coordinators.
+
+**The complete, end-to-end source-to-PDF workflow is regression-tested with
+fictional data.** Production/customer use still requires an IT-deployed
+protected Contracts OS pilot, current private customer data, source-file
+staging and genuine commercial tariff/terms approval. No customer quote
+has been issued by this source repository. Nothing in the original SmartQuote,
+Sage 200 or Sicon is written by the quoting workflow.
+
+For the fastest setup:
+
+- Run `scripts/prepare_smartquote_v10_bundle.ps1` from a Windows IT
+  workstation with authenticated GitHub CLI access to the private V10
+  source repository. Upload the four-file ZIP in the app's Admin source setup.
+- Upload the complete Sage export in the Admin Sage Refresh panel.
+- Approve the actual price policy, terms and supplier details, then explicitly
+  enable customer PDF issuance after real-data acceptance testing.
+- Use **SmartQuote → Customer quotation readiness** to view any remaining
+  setup blockers, and read
+  [Customer quotation release guide](docs/SMARTQUOTE_CUSTOMER_QUOTE_RELEASE.md).
+
 ## What is here?
 
 - `app/`: FastAPI backend, coordinator-facing web interface and Windows PWA installation assets.
