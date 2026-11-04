@@ -297,8 +297,8 @@ def _master_console_identity(product, master):
             and catalogue_console.casefold() == "no console / n/a"):
         import re
         if re.search(
-            r"\\b(?:console|screen|touchscreen|display|lcd|monitor|tablet|"
-            r"smartcard|smart-card|pm5|nfc|touch[- ]?key)\\b",
+            r"\b(?:console|screen|touchscreen|display|lcd|monitor|tablet|"
+            r"smartcard|smart-card|pm5|nfc|touch[- ]?key)\b",
             master_name, flags=re.IGNORECASE
         ):
             return False
