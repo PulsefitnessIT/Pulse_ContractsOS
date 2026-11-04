@@ -48,7 +48,7 @@ def test_exact_master_list_price_always_wins_over_sage():
     assert result["basis"] == "august_2026_master_list_price"
     assert result["rrp"] == 3000
     assert "sage_reference" not in result
-    assert result["review_required"] is True
+    assert result["review_required"] is False
 
 
 def test_unchanged_duplicates_of_exact_master_row_are_safe_to_identify():
@@ -381,7 +381,8 @@ def test_exact_master_source_price_displays_sage_difference_without_substitution
     assert item["rrp"]==3000.0
     assert item["source_price_comparison"]["sage_sales_price_gbp"]==2500.0
     assert item["source_price_comparison"]["percentage_difference"]==-16.67
-    assert item["source_price_comparison"]["requires_explicit_ack"] is True
+    assert item["source_price_comparison"]["requires_explicit_ack"] is False
+    assert item["source_price_comparison"]["comparison_for_information_only"] is True
     assert item["source_price_comparison"]["not_a_new_or_approved_tariff"] is True
     assert preview["annual_partial"]==90.0
 
