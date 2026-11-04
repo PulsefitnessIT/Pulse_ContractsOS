@@ -242,33 +242,8 @@ def _errors(draft, preview):
 
 
 def _unconfirmed_serials(draft):
-    """One line can establish only one machine serial, even when quantity > 1.
-
-    The application must not invent serials from invoice OCR or imply every
-    unit was identified by a single serial number. Missing/illegible numbers
-    are permitted only with a recorded human commercial exception.
-    """
-    missing=[]
-    seen_serials=set()
-    # One physical machine serial must not silently verify two quoted units.
-    # Placeholders and repeated serials require the same explicit commercial
-    # exception as an absent or illegible serial.
-    placeholders={"N/A", "NA", "NONE", "UNKNOWN", "TBC", "TBD", "-", "?"}
-    for i,item in enumerate(draft.get("equipment", []),1):
-        quantity=item.get("quantity")
-        if type(quantity) is not int or quantity<1:
-            continue
-        serial=" ".join(str(item.get("serial") or "").strip().upper().split())
-        confirmed=int(bool(serial) and serial not in placeholders
-                      and serial not in seen_serials)
-        if confirmed:
-            seen_serials.add(serial)
-        if quantity>confirmed:
-            missing.append({"line":i,"unconfirmed_units":quantity-confirmed})
-    return {
-        "total":sum(row["unconfirmed_units"] for row in missing),
-        "lines":missing,
-    }
+    """Use the same physical-unit serial assessment shown to coordinators."""
+    return quote_drafts.unconfirmed_serials(draft.get("equipment", []))
 
 
 def _quote_flags(fingerprints, errors, terms_ready):
