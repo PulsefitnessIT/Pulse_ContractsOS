@@ -423,3 +423,15 @@ approved actual exports in the protected pilot and download the complete
 CSV. Date, signature, review status and any item-specific manual source
 decisions must be recorded by a responsible Pulse pricing owner before
 normal staff release.
+
+## Sage is an inventory price list, not the machine catalogue
+
+Pulse Fitness has confirmed that most Sage rows are spare parts or other non-machine inventory. The entire original Sage export must still be imported unchanged for price provenance, but coordinators should not be asked to assess every spare part as a potential service contract.
+
+The normal SmartQuote equipment picker now uses `/api/quoting/sage/search?equipment_only=true` alongside original V10 catalogue results. This search limits Sage-only suggestions to a conservative list of potential equipment groups. The existing `/api/quoting/sage/search` remains the full source lookup when inventory research is needed. A Sage item being in an equipment group is NOT evidence of an installed or serviceable machine and does not approve its maintenance price.
+
+The Admin reconciliation panel offers **Review machine prices** through `/api/quoting/source-reconciliation/equipment.csv`. This report includes all existing V10 catalogue codes, all current-Master codes and Sage-only codes from potential equipment groups. Unrelated Sage-only spare parts and inventory do not enter the default manager worklist. The complete original Sage inventory comparison remains available separately through `/api/quoting/source-reconciliation.csv` for an audit.
+
+Master and V10 evidence retain priority. An item may only be priced and issued after an exact unique product identity, valid active V10 maintenance configuration, approved price source, tariff, terms and commercial release controls are separately satisfied. Items such as **Base Units**, **Free Weights**, spare consoles, parts, upholstery and service/labour lines are not automatically considered complete maintainable machines based on Sage group labels. A properly verified V10 or Master record is still included for review even if its Sage classification is incomplete or wrong.
+
+The review filters do not delete or modify the original 21,120-item Sage source and do not alter historical issued quotations. Export permissions remain limited to named pilot Administrators; contract coordinators can search equipment candidates but cannot approve tariff exceptions.
