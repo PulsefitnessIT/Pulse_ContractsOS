@@ -582,3 +582,42 @@ def test_quotation_amount_reconciliation_rejects_non_finite_amounts():
     priced["lines"][0]["annual"] = float("nan")
     assert any("invalid" in message for message in
                issues._reconcile_quotation_amounts(draft, priced))
+
+
+@pytest.mark.parametrize("changed_field", [
+    "term_partial", "coverage_review", "staged_issues",
+])
+def test_issue_rechecks_complete_financial_and_coverage_snapshot(
+        tmp_path, monkeypatch, changed_field):
+    """No PDF may survive a changed result after its initial price snapshot."""
+    path = setup_database(tmp_path, monkeypatch)
+    calls = {"n": 0}
+
+    def changing_price(draft):
+        calls["n"] += 1
+        result = fake_price()
+        if calls["n"] == 2:
+            if changed_field == "term_partial":
+                result["term_partial"] = 451.00
+            elif changed_field == "coverage_review":
+                result["lines"][0]["coverage_review"].append(
+                    "New source coverage exception during issue."
+                )
+            else:
+                result["staged"]["issues"] = [
+                    "Contract staging evidence changed during issue."
+                ]
+        return result, {
+            "pricing": "a" * 64, "catalog": "b" * 64,
+            "configs": "c" * 64,
+        }
+
+    monkeypatch.setattr(issues, "_price", changing_price)
+    with pytest.raises(HTTPException) as error:
+        issues.issue_customer_quotation(fake_draft()["id"], approval())
+    assert error.value.status_code == 409
+    assert calls["n"] == 2
+    with sqlite3.connect(path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM unified_customer_quotes"
+        ).fetchone()[0] == 0
