@@ -647,14 +647,16 @@ def issue_customer_quotation(draft_id: str, payload: QuoteApproval):
                 or _terms()[1] != terms_sha
                 or _issuer()[1] != issuer_sha):
             raise HTTPException(409, "Commercial release, terms or issuer changed during issue. Recheck the quotation.")
-        if (next_fingerprints != fingerprints
-                or next_preview["rrp_master"] != preview["rrp_master"]
-                or next_preview["sage_sha256"] != preview["sage_sha256"]
-                or [(r.get("rrp"), r.get("annual"), r.get("rrp_source"),
-                     r.get("price_override")) for r in next_preview["lines"]]
-                   != [(r.get("rrp"), r.get("annual"), r.get("rrp_source"),
-                        r.get("price_override")) for r in preview["lines"]]):
-            raise HTTPException(409, "Equipment, Sage or Master price source changed while issuing. Recheck quotation.")
+        # Compare the ENTIRE calculated document basis, not merely annual
+        # equipment prices. A tariff calculation, staggered-cover date, term
+        # total, coverage exception or source approval changing during PDF
+        # creation must fail closed rather than archive a stale quotation.
+        if next_fingerprints != fingerprints or next_preview != preview:
+            raise HTTPException(
+                409,
+                "Quotation calculation or price source changed while issuing. "
+                "Recheck every equipment line and proposed contract total."
+            )
         con.commit()
         return {
             "issued": True, "quote_no": quote_no, "draft_id": draft_id,
