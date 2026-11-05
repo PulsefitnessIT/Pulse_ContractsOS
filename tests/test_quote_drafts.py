@@ -149,6 +149,9 @@ def test_pdf_invoice_code_pages_are_checked_before_draft_write(tmp_path,monkeypa
     created=quote_drafts.create_draft(payload)
     assert created["equipment"][0]["source_import_id"]==17
     assert created["equipment"][0]["source_pages"]==[2,3]
+    assert created["equipment"][0]["invoice_match_confirmed"] is True
+    assert created["equipment"][0]["invoice_match_confirmed_by"]=="fictional-coordinator"
+    assert created["equipment"][0]["invoice_match_confirmed_at"]
     stored=quote_drafts.get_draft(created["id"])
     assert stored["equipment"][0]["serial"]=="FIC-SER-1"
 
@@ -273,3 +276,38 @@ def test_invoice_code_match_must_be_explicitly_confirmed_even_with_valid_source(
                          "invoice_match_confirmed":True}],
         })
     assert error.value.status_code==422
+
+
+def test_invoice_confirmation_audit_is_server_owned_and_preserved_for_unchanged_match():
+    source={
+        "source_import_id":17,"source_pages":[2,3],
+        "item_code":"TEST-001","description":"Fictional Bike",
+        "invoice_match_confirmed":True,
+        "invoice_match_confirmed_by":"spoofed-from-client",
+        "invoice_match_confirmed_at":"2000-01-01T00:00:00Z"
+    }
+    raw={"customer":"Fictional","site":"Fictional Hall",
+         "equipment":[source]}
+    clean=quote_drafts.validate_draft(raw)
+    line=clean["equipment"][0]
+    assert "invoice_match_confirmed_by" not in line
+    assert "invoice_match_confirmed_at" not in line
+
+    quote_drafts._stamp_invoice_match_decisions(clean,"coordinator-one")
+    assert line["invoice_match_confirmed_by"]=="coordinator-one"
+    assert line["invoice_match_confirmed_at"]
+    original=clean["equipment"][0].copy()
+    later=quote_drafts.validate_draft(raw)
+    quote_drafts._stamp_invoice_match_decisions(
+        later, "coordinator-two", {"equipment":[original]}
+    )
+    assert later["equipment"][0]["invoice_match_confirmed_by"]=="coordinator-one"
+    assert later["equipment"][0]["invoice_match_confirmed_at"] == original["invoice_match_confirmed_at"]
+
+    changed=quote_drafts.validate_draft({
+        **raw, "equipment":[{**source,"description":"Different console variant"}]
+    })
+    quote_drafts._stamp_invoice_match_decisions(
+        changed, "coordinator-two", {"equipment":[original]}
+    )
+    assert changed["equipment"][0]["invoice_match_confirmed_by"]=="coordinator-two"
