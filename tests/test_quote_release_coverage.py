@@ -277,3 +277,39 @@ def test_full_reconciliation_requires_sage_source_for_download(monkeypatch):
     assert summary["full_three_source_comparison_available"] is False
     assert summary["sources"]["sage_item_codes"] is None
     assert summary["commercial_tariffs_approved_by_this_report"] is False
+
+
+def test_master_only_variant_conflict_not_listed_as_ready_for_mapping():
+    args = list(_fixture())
+    args[3]["rows"].extend([
+        {"sku": "NEW-CONSOLE", "name": "New equipment variant",
+         "console": "10.1-inch cardio tactile-key", "rrp": "5000.00",
+         "sheet": "Synthetic", "row": 140},
+        {"sku": "NEW-CONSOLE", "name": "New equipment variant",
+         "console": "18.5-inch cardio touchscreen", "rrp": "5000.00",
+         "sheet": "Synthetic", "row": 141},
+    ])
+    row = {
+        item["SKU"]: item for item in released._reconciliation_rows(*args)
+    }["NEW-CONSOLE"]
+    assert row["Selected equipment price basis"] == "master_variant_conflict"
+    assert row["Selected equipment price GBP"] == ""
+    assert row["Quote status"] == "master_price_or_variant_conflict"
+    assert row["Master source rows"] == 2
+
+
+def test_full_reconciliation_csv_escapes_spreadsheet_formulas(monkeypatch):
+    args = list(_fixture())
+    args[0][-2]["name"] = '=HYPERLINK("https://bad.invalid","OPEN")'
+    monkeypatch.setattr(released, "_reconciliation_data", lambda: (
+        *args[:3], {"pricing": "f"*64}, args[3], args[4]
+    ))
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Admin")
+    monkeypatch.setattr(released.pilot_access, "actor", lambda default="": "pilot-admin")
+    response = released.source_reconciliation_csv()
+    import csv
+    import io
+    rows = list(csv.DictReader(io.StringIO(response.body.decode("utf-8-sig"))))
+    affected = next(row for row in rows if row["SKU"] == "FIC-DUP")
+    assert affected["V10 description"].startswith("'=HYPERLINK")
