@@ -77,3 +77,27 @@ def test_proprietary_fonts_not_accidentally_published_to_public_source():
         path.suffix.lower() in {".otf", ".ttf", ".woff", ".woff2"}
         for path in STATIC.rglob("*") if path.is_file()
     )
+
+
+def test_customer_pdf_uses_official_vector_signature_and_brand_colours():
+    import fitz
+    from app import quote_customer_pdf as pdf
+
+    assert pdf.NAVY == (27 / 255, 28 / 255, 29 / 255)
+    assert pdf.ACCENT == (25 / 255, 205 / 255, 255 / 255)
+    original = pdf._official_logo_pdf()
+    assert original is not None
+    with fitz.open(stream=original, filetype="pdf") as logo:
+        assert logo.page_count == 1
+        assert logo[0].rect.width == 324
+        assert logo[0].rect.height == 70
+
+    with fitz.open() as doc:
+        pdf._page(doc, "PFQ-2026-000001", draft=True)
+        assert doc.page_count == 1
+        text = doc[0].get_text()
+        assert "SERVICE & AFTERSALES" in text
+        assert "PULSE FITNESS" in text
+        assert "INTERNAL DRAFT ONLY" in text
+        # The official vector logo is shown as a placed PDF object.
+        assert doc[0].get_xobjects()
