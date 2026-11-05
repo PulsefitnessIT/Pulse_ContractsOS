@@ -166,15 +166,18 @@ def _price(draft):
     from .quote_rrp_priority import source_snapshot as august_snapshot, index
     from .quote_sage_reference import snapshot as sage_snapshot
     from .quote_price_overrides import active_overrides
+    from .quote_price_book import active_book
 
     catalog, configs, policy, fingerprints = quote_pricing.source_snapshot()
     august = august_snapshot()   # Verifies the August source against manifest.
     sage = sage_snapshot()
+    current_price_book = active_book()
     codes = [str(line.get("item_code") or "") for line in draft["equipment"]]
     preview = quote_pricing.preview(
         draft, catalog, configs, policy, fingerprints,
         master_by_sku=index(august), sage_source=sage,
-        overrides=active_overrides(codes), august_source=august,
+        overrides=active_overrides(codes) if current_price_book is None else None,
+        august_source=august, price_book=current_price_book,
     )
     preview["rrp_master"] = {
         "original_sha256": august["source_file_sha256"],
