@@ -329,3 +329,19 @@ test('source-backed automatic match survives equipment edits without requiring a
   assert.equal(row.source_import_id,81);
   assert.deepEqual(row.source_pages,[2]);
 });
+
+
+test('automatched machine description can be refined without asking for code reconfirmation',()=>{
+  const w=workspace();
+  const input='[{"sku":"BIKE-001","source_import_id":81,"source_pages":[2],'+
+    '"master_description":"Example Bike","status":"matched_equipment","auto_add_equipment":true}]';
+  w.run('unifiedApplyExactInvoiceMatches('+input+')');
+  w.buttons['[data-edit-line]0'].click();
+  w.equipmentForm.elements.description.value='Example Bike with revised console details';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  const line=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(line.source_import_id,81);
+  assert.equal(line.invoice_match_confirmed,true);
+  assert.equal(line.invoice_match_method,'auto_exact_master');
+  assert.match(line.description,/revised console details/);
+});
