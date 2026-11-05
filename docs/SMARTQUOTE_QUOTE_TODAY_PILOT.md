@@ -67,3 +67,12 @@ manually agreed exceptions independently.
 **No production deployment or live commercial release has been performed.**
 Do not treat a passing CI test as a signed-off customer contract. Existing
 issued PDF snapshots and price audit versions remain unchanged.
+
+
+## Invoice code confirmation required
+
+In the integrated Contract OS, PDF invoice matching is a coordinator-controlled step. Drag in the invoice PDF, compare the extracted code and source page with the exact unified Master machine, then explicitly tick the confirmation that the machine and variant match before using that item. A rejected or ambiguous match must be corrected manually without retaining false invoice provenance.
+
+The backend refuses invoice-linked equipment that lacks explicit confirmation. Confirmations are recorded with the named staff account and timestamp; editing an invoice/code/description/page reference requires re-confirmation. This is equipment identity evidence only, not an approval of the cover or maintenance tariff.
+
+The standalone HTML pilot currently has no automatic PDF text extraction. Its equipment search and manual-entry tools remain available for preparing an internal quote.
