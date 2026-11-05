@@ -1158,6 +1158,19 @@ async function loadRrpPriorityStatus() {
           'Source differences are evidence for review, never automatic tariff overrides.';
         host.appendChild(caveat);
       }
+      // The historical quote workbook provides rate-band evidence only.
+      // Do not treat matching percentages as approved Silver/Gold/Platinum.
+      const parity=await api('/api/quoting/legacy-method-parity').catch(()=>null);
+      if(parity && view==='quoting' && document.querySelector('#rrpPriorityStatus')===host){
+        const audit=document.createElement('p');
+        audit.className='fine-print';
+        audit.textContent='Historical maintenance rate comparison: '+
+          parity.matching_rate_patterns+' of '+
+          parity.historical_rate_groups_tested+' group bands match the old quote workbook. '+
+          (parity.rate_review_required?'Rate discrepancies need manager review. ':'')+
+          'This does not approve tariffs, Stepmill exceptions or Silver/Gold/Platinum package factors.';
+        host.appendChild(audit);
+      }
     }
   } catch(error) {
     host.textContent='Source coverage unavailable: '+error.message+
