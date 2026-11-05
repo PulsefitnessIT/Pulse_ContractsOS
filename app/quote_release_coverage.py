@@ -179,6 +179,11 @@ def _reconciliation_rows(catalog, configs, pricing, master, sage=None):
         row["sku"]: row for row in
         candidate_assessments(catalog, configs, pricing, master, sage)
     }
+    catalogue_counts = Counter(
+        str(row.get("sku") or "").strip().upper()
+        for row in catalog if isinstance(row, dict)
+        and str(row.get("sku") or "").strip()
+    )
     by_master = master_index(master)
     sage_by_code = defaultdict(list)
     if sage and isinstance(sage.get("prices"), dict):
@@ -261,10 +266,7 @@ def _reconciliation_rows(catalog, configs, pricing, master, sage=None):
                 )
         yield {
             "SKU": sku,
-            "V10 catalogue rows": sum(
-                str(row.get("sku") or "").strip().upper() == sku
-                for row in catalog if isinstance(row, dict)
-            ) if current is not None else 0,
+            "V10 catalogue rows": catalogue_counts.get(sku, 0),
             "V10 description": current["description"] if current else "",
             "V10 console": current["console"] if current else "",
             "V10 service configuration": current["service_key"] if current else "",
