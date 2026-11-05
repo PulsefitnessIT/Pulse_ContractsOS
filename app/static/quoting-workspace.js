@@ -762,7 +762,7 @@ async function unifiedImportInvoiceEvidence(event) {
         '<td>'+esc(candidate.description||'Model not yet confirmed')+'</td>'+
         '<td>'+esc(candidate.pages.join(', ')||'Check original invoice')+'</td>'+
         '<td><button class="button button-outline" type="button" '+
-        'data-invoice-code-index="'+(base+i)+'">Use code for new line</button></td></tr>'
+        'data-invoice-code-index="'+(base+i)+'">Compare with Master</button></td></tr>'
       ).join('');
       return '<section class="panel"><h4>'+esc(item.filename||'Invoice')+'</h4>'+
         (item.error?'<p class="notice warning">'+esc(item.error)+'</p>':'')+
@@ -782,10 +782,11 @@ async function unifiedImportInvoiceEvidence(event) {
           'record and confirm any additional items manually.</p>':'')+
         '</section>';
     }).join('');
-    feedback.innerHTML='<p><strong>Invoice evidence only.</strong> Item codes can '+
-      'include spare parts or unrelated items. Select a candidate to check '+
-      'its exact V10 model, then confirm serials and quantity before adding it. '+
-      'No invoices or equipment have been converted into contract records.</p>'+cards;
+    feedback.innerHTML='<p><strong>Invoice evidence only.</strong> An extracted code is '+
+      'not a verified equipment match. The coordinator must compare the invoice '+
+      'against the exact unified Master record and expressly confirm that the '+
+      'product codes and machines match. Unmatched items require manual review.</p>'+
+      '<div id="unifiedInvoiceMatchReview" role="status" aria-live="polite"></div>'+cards;
     feedback.querySelectorAll('[data-invoice-code-index]').forEach(button=>
       button.addEventListener('click',async()=>{
         const selected=suggestions[Number(button.dataset.invoiceCodeIndex)];
@@ -797,37 +798,84 @@ async function unifiedImportInvoiceEvidence(event) {
           return;
         }
         button.disabled=true;
-        try {
-          // The current unified Master is price authority. Old V10
-          // remains an identity fallback only if the Master is not staged.
-          const found=await api('/api/quoting/quick-draft/search?q='+
-            encodeURIComponent(selected.sku)+'&limit=30').catch(()=>null);
-          const legacy=found?null:await api('/api/quoting/catalogue/search?q='+
-            encodeURIComponent(selected.sku)+'&limit=30').catch(()=>null);
-          const exact=((found?.results||legacy?.results)||[]).filter(row=>
-            String(row.sku||'').trim().toUpperCase()===selected.sku &&
-            !row.duplicate_sku);
-          addForm.elements.item_code.value=selected.sku;
-          addForm.dataset.invoiceSku=selected.sku;
-          addForm.dataset.invoiceSourceId=String(selected.source_import_id);
-          addForm.dataset.invoicePages=JSON.stringify(selected.pages);
-          addForm.elements.description.value=exact.length===1?
-            String(exact[0].name||''):'';
-          addForm.elements.serial.value='';
-          addForm.elements.quantity.value='1';
-          addForm.elements.cover_start.value='';
-          unifiedCoordinatorGuidance();
-          const note=document.querySelector('#unifiedDraftFeedback');
-          if(note)note.textContent=exact.length===1?
-            'Exact equipment price code found. Verify the physical machine, serials and '+
-            'quantity, then select Add equipment line. No equipment is added automatically.':
-            'The invoice code is not a confirmed maintainable machine. Check the '+
-            'model against the equipment list and enter it manually if verified.';
-          addForm.elements.serial.focus();
-        }catch(error) {
-          const note=document.querySelector('#unifiedDraftFeedback');
-          if(note)note.textContent='Cannot verify this equipment code: '+error.message+
-            '. Enter the machine only after confirming its identity.';
+        const review=document.querySelector('#unifiedInvoiceMatchReview');
+        if(!review){button.disabled=false;return;}
+        review.textContent='Checking the exact invoice code against the unified Master…';
+        // The Master, not V10, is the only proposed match for invoice evidence.
+        // Exact SKU identity is a suggestion and requires coordinator review.
+        try{
+          const search=await api('/api/quoting/quick-draft/search?q='+
+            encodeURIComponent(selected.sku)+'&limit=50');
+          const exact=(search.results||[]).filter(row=>
+            String(row.sku||'').trim().toUpperCase()===selected.sku);
+          const confirmed=exact.length===1?exact[0]:null;
+          review.innerHTML=
+            '<h4>Coordinator check — invoice against unified Master</h4>'+
+            '<p>Invoice #'+esc(selected.source_import_id)+' · printed code: <strong>'+
+            esc(selected.sku)+'</strong> · pages '+esc(selected.pages.join(', ')||'not identified')+'</p>'+
+            (confirmed?
+              '<p>Unified Master exact code: <strong>'+esc(confirmed.sku)+
+              '</strong> · equipment: '+esc(confirmed.name)+
+              ' · group: '+esc(confirmed.group||'')+'</p>'+
+              '<p class="notice warning">An exact item-code match does not prove '+
+              'the invoice contains this machine. Verify model, variant, '+
+              'console and whether this is the complete equipment.</p>':
+              '<p class="notice warning">No unique, positive-price machine match '+
+              'in the unified Master. Do not accept this as confirmed equipment.</p>')+
+            (confirmed?
+              '<label><input type="checkbox" id="invoiceConfirmMatch"> '+
+              'I have checked the original invoice and confirm this code is '+
+              'the same equipment and variant as the Master record above.</label> '+
+              '<button type="button" class="button button-primary" '+
+              'id="invoiceApplyMatch" disabled>Confirm match &amp; prepare equipment</button>':'')+
+            '<button type="button" class="button button-outline" '+
+            'id="invoiceRejectMatch">Does not match — enter corrected machine manually</button>';
+          const reject=review.querySelector('#invoiceRejectMatch');
+          reject.addEventListener('click',()=>{
+            delete addForm.dataset.invoiceSku;
+            delete addForm.dataset.invoiceSourceId;
+            delete addForm.dataset.invoicePages;
+            delete addForm.dataset.invoiceMatchConfirmed;
+            delete addForm.dataset.invoiceConfirmedDescription;
+            addForm.elements.item_code.value='';
+            addForm.elements.description.value='';
+            addForm.elements.serial.value='';
+            addForm.elements.quantity.value='1';
+            const note=document.querySelector('#unifiedDraftFeedback');
+            if(note)note.textContent='Invoice match rejected. Find the correct product '+
+              'in the unified Master or enter it manually. No invoice match is claimed.';
+            review.textContent='Not a match — invoice code has not been linked to equipment.';
+            addForm.elements.item_code.focus();
+          });
+          if(confirmed){
+            const tick=review.querySelector('#invoiceConfirmMatch');
+            const use=review.querySelector('#invoiceApplyMatch');
+            tick.addEventListener('change',()=>{use.disabled=!tick.checked;});
+            use.addEventListener('click',()=>{
+              if(!tick.checked)return;
+              addForm.elements.item_code.value=selected.sku;
+              addForm.elements.description.value=String(confirmed.name||'');
+              addForm.elements.serial.value='';
+              addForm.elements.quantity.value='1';
+              addForm.elements.cover_start.value='';
+              addForm.dataset.invoiceSku=selected.sku;
+              addForm.dataset.invoiceSourceId=String(selected.source_import_id);
+              addForm.dataset.invoicePages=JSON.stringify(selected.pages);
+              addForm.dataset.invoiceMatchConfirmed='yes';
+              addForm.dataset.invoiceConfirmedDescription=String(confirmed.name||'');
+              unifiedCoordinatorGuidance();
+              const note=document.querySelector('#unifiedDraftFeedback');
+              if(note)note.textContent='Invoice and Master code confirmed. '+
+                'Now check quantity and machine serial numbers, then Add equipment line. '+
+                'The machine has not been added or commercially approved yet.';
+              review.textContent='Coordinator confirmed the exact invoice/Master match; '+
+                'awaiting equipment quantity and serial verification.';
+              addForm.elements.serial.focus();
+            });
+          }
+        }catch(error){
+          review.textContent='The unified Master lookup failed: '+error.message+
+            '. Do not confirm an invoice match; enter corrected equipment manually.';
         }finally{button.disabled=false;}
       }));
     fileInput.value='';
