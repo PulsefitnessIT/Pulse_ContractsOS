@@ -750,6 +750,40 @@ function initUnifiedInvoiceDropzone(){
   });
 }
 
+function unifiedApplyExactInvoiceMatches(matches){
+  // One click to import; only exact positively-priced machine SKUs are added.
+  // The backend independently rechecks this match on save. A second upload of
+  // the same PDF cannot silently double-count existing invoice source codes.
+  const existing=new Set(unifiedEquipment.filter(line=>line.source_import_id)
+    .map(line=>String(line.source_import_id)+'/'+String(line.item_code||'').trim().toUpperCase()));
+  let added=0,already=0,limitReached=0;
+  for(const match of (matches||[])){
+    if(!match.auto_add_equipment || match.status!=='matched_equipment')continue;
+    const code=String(match.sku||'').trim().toUpperCase();
+    if(!code || !Number.isSafeInteger(match.source_import_id) || match.source_import_id<1)continue;
+    const key=String(match.source_import_id)+'/'+code;
+    if(existing.has(key)){already++;continue;}
+    if(unifiedEquipment.length>=500){limitReached++;continue;}
+    unifiedEquipment.push({
+      item_code:code,
+      description:String(match.master_description||code).slice(0,400),
+      serial:'', cover_start:'', quantity:1,
+      source_import_id:match.source_import_id,
+      source_pages:Array.isArray(match.source_pages)?match.source_pages:[],
+      invoice_match_confirmed:true,
+      invoice_match_method:'auto_exact_master'
+    });
+    existing.add(key);
+    added++;
+  }
+  if(added){
+    unifiedClearPrice();
+    renderUnifiedEquipment();
+  }
+  return {added,already,limitReached};
+}
+
+
 async function unifiedImportInvoiceEvidence(event) {
   event.preventDefault();
   const fileInput=event.currentTarget.elements.files;
@@ -795,28 +829,7 @@ async function unifiedImportInvoiceEvidence(event) {
     });
     if(view!=='quoting'||!document.querySelector('#unifiedInvoiceResults'))return;
     const matches=matching.results||[];
-    const existing=new Set(unifiedEquipment.filter(line=>line.source_import_id)
-      .map(line=>String(line.source_import_id)+'/'+String(line.item_code||'').trim().toUpperCase()));
-    let added=0,already=0,limitReached=0;
-    for(const match of matches){
-      if(!match.auto_add_equipment)continue;
-      const key=String(match.source_import_id)+'/'+match.sku;
-      if(existing.has(key)){already++;continue;}
-      if(unifiedEquipment.length>=500){limitReached++;continue;}
-      unifiedEquipment.push({
-        item_code:match.sku,
-        description:String(match.master_description||match.sku).slice(0,400),
-        serial:'', cover_start:'', quantity:1,
-        source_import_id:match.source_import_id,
-        source_pages:match.source_pages,
-        invoice_match_confirmed:true,
-        invoice_match_method:'auto_exact_master'
-      });
-      existing.add(key);
-      added++;
-    }
-    unifiedClearPrice();
-    renderUnifiedEquipment();
+    const {added,already,limitReached}=unifiedApplyExactInvoiceMatches(matches);
     const filesById=new Map(analysed.map(x=>[x.id,x]));
     const statusLabel={
       matched_equipment:'Matched — added to equipment draft',
