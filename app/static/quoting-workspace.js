@@ -1131,6 +1131,20 @@ async function loadRrpPriorityStatus() {
       'machines absent from the August Master. No extra Master-versus-Sage percentage '+
       'approval is needed. Approved maintenance rates and individual customer '+
       'quotation sign-off remain separate release gates.</p>';
+    // The aggregate candidate count alone does not identify which SKUs
+    // need administrator reconciliation. Expose the review-only CSV here;
+    // the server independently enforces a named Admin and never exports
+    // equipment prices, real customer data or issued quotations.
+    const session=await api('/api/pilot/me').catch(()=>null);
+    if(session?.pilot && session.role==='Admin' && view==='quoting' &&
+       document.querySelector('#rrpPriorityStatus')===host){
+      const link=document.createElement('a');
+      link.href='/api/quoting/candidate-review.csv';
+      link.download='Pulse_SmartQuote_Catalogue_Review.csv';
+      link.className='button button-outline';
+      link.textContent='Download SKUs requiring pricing and catalogue review';
+      host.appendChild(link);
+    }
   } catch(error) {
     host.textContent='Source coverage unavailable: '+error.message+
       '. Stage and pin the original August 2026 source before relying on RRP prices.';
