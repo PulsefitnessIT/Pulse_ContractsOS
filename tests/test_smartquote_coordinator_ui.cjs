@@ -280,3 +280,52 @@ test('coordinator code corrections cannot retain an earlier invoice match',()=>{
   assert.equal(line.invoice_match_confirmed,false);
   assert.deepEqual(line.source_pages,[]);
 });
+
+
+test('exact Master machine SKU is automatically accepted without coordinator ticking a box',()=>{
+  const w=workspace();
+  const result=JSON.parse(w.run('JSON.stringify(unifiedApplyExactInvoiceMatches(['+
+    '{"sku":"BIKE-001","source_import_id":81,"source_pages":[2],"master_description":"Example Bike","status":"matched_equipment","auto_add_equipment":true},'+
+    '{"sku":"PART-008","source_import_id":81,"source_pages":[2],"master_description":"Bike Spare Belt","status":"matched_inventory_not_machine","auto_add_equipment":false},'+
+    '{"sku":"UNMATCHED-1","source_import_id":81,"source_pages":[3],"status":"unmatched","auto_add_equipment":false}'+
+  ']))'));
+  assert.equal(result.added,1);
+  assert.equal(w.run('unifiedEquipment.length'),1);
+  const row=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(row.item_code,'BIKE-001');
+  assert.equal(row.invoice_match_confirmed,true);
+  assert.equal(row.invoice_match_method,'auto_exact_master');
+  assert.equal(row.source_import_id,81);
+  assert.deepEqual(row.source_pages,[2]);
+  assert.equal(row.serial,'');
+  assert.equal(row.quantity,1);
+  assert.match(w.table.innerHTML,/Automatically matched exact Master code/);
+});
+
+test('dropping the same invoice again does not duplicate automatically matched machine',()=>{
+  const w=workspace();
+  const input='[{"sku":"BIKE-001","source_import_id":81,"source_pages":[2],'+
+    '"master_description":"Example Bike","status":"matched_equipment","auto_add_equipment":true}]';
+  w.run('unifiedApplyExactInvoiceMatches('+input+')');
+  const second=JSON.parse(w.run('JSON.stringify(unifiedApplyExactInvoiceMatches('+input+'))'));
+  assert.equal(second.added,0);
+  assert.equal(second.already,1);
+  assert.equal(w.run('unifiedEquipment.length'),1);
+});
+
+test('source-backed automatic match survives equipment edits without requiring a human checkbox',()=>{
+  const w=workspace();
+  const input='[{"sku":"BIKE-001","source_import_id":81,"source_pages":[2],'+
+    '"master_description":"Example Bike","status":"matched_equipment","auto_add_equipment":true}]';
+  w.run('unifiedApplyExactInvoiceMatches('+input+')');
+  w.buttons['[data-edit-line]0'].click();
+  w.equipmentForm.elements.quantity.value='2';
+  w.equipmentForm.elements.serial.value='FIC-001';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  const row=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(row.quantity,2);
+  assert.equal(row.invoice_match_confirmed,true);
+  assert.equal(row.invoice_match_method,'auto_exact_master');
+  assert.equal(row.source_import_id,81);
+  assert.deepEqual(row.source_pages,[2]);
+});
