@@ -18,7 +18,7 @@ from fastapi.responses import Response
 from . import pilot_access
 from .data_readiness import safe_excel_csv_cell
 from .quote_pricing import (
-    _line_price, _master_console_identity, source_snapshot,
+    _line_price, _master_console_identity, _source_title, source_snapshot,
 )
 from .quote_rrp_priority import (
     _amount as source_amount, index as master_index, resolve,
@@ -184,6 +184,10 @@ def _reconciliation_rows(catalog, configs, pricing, master, sage=None):
         for row in catalog if isinstance(row, dict)
         and str(row.get("sku") or "").strip()
     )
+    first_product = {}
+    for row in catalog:
+        if isinstance(row, dict) and str(row.get("sku") or "").strip():
+            first_product.setdefault(str(row["sku"]).strip().upper(), row)
     by_master = master_index(master)
     sage_by_code = defaultdict(list)
     if sage and isinstance(sage.get("prices"), dict):
@@ -267,8 +271,25 @@ def _reconciliation_rows(catalog, configs, pricing, master, sage=None):
                     "Sage has a zero or invalid equipment price; verify and "
                     "classify, never use £0 as approved maintenance RRP."
                 )
+        master_name = str(master_rows[0].get("name") or "") if master_rows else ""
+        name_match = (
+            "Yes" if _source_title(current["description"]) == _source_title(master_name)
+            else "No"
+        ) if current is not None and master_rows else ""
+        if current is not None and master_rows:
+            console_status = (
+                "Verified" if (basis == "august_2026_master_list_price"
+                    and _master_console_identity(first_product[sku], selected))
+                else ("Master conflict" if basis in (
+                    "master_price_conflict", "master_variant_conflict"
+                ) else "Needs review")
+            )
+        else:
+            console_status = ""
         yield {
             "SKU": sku,
+            "Master/V10 description exact match": name_match,
+            "Master/V10 console identity": console_status,
             "V10 catalogue rows": catalogue_counts.get(sku, 0),
             "V10 description": current["description"] if current else "",
             "V10 console": current["console"] if current else "",
@@ -375,7 +396,8 @@ def source_reconciliation_csv():
         )
     fields = (
         "SKU", "V10 catalogue rows", "V10 description", "V10 console",
-        "V10 service configuration", "Master source rows",
+        "V10 service configuration", "Master/V10 description exact match",
+        "Master/V10 console identity", "Master source rows",
         "Master source locations", "Master equipment name", "Master console",
         "Master list price GBP", "Sage source rows", "Sage product name",
         "Sage product group", "Sage Sales Price GBP",
