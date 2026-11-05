@@ -644,7 +644,9 @@ def draft_tier_comparison(draft_id: str):
     except HTTPException:
         sage = None
     codes = [str(item.get("item_code") or "") for item in draft.get("equipment", [])]
-    price_overrides = active_overrides(codes)
+    from .quote_price_book import active_book
+    current_price_book = active_book()
+    price_overrides = active_overrides(codes) if current_price_book is None else None
     indexed = index(august)
     options = []
     for tier in ("Silver", "Gold", "Platinum"):
@@ -660,6 +662,7 @@ def draft_tier_comparison(draft_id: str):
             {**draft, "tier": tier}, catalogue, configs, policy, fingerprints,
             master_by_sku=indexed, sage_source=sage,
             overrides=price_overrides, august_source=august,
+            price_book=current_price_book,
         )
         # Reuse the EXACT per-equipment commercial release checks for all
         # tiers, rather than inventing weaker comparison-only criteria.
