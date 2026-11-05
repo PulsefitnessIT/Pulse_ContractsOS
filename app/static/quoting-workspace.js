@@ -152,7 +152,15 @@ async function quotingWorkspacePage() {
     'found on the documents. You still confirm the correct machines, quantities ' +
     'and serials; no equipment is automatically added or approved.</p>' +
     '<form id="unifiedInvoiceImport"><label>Sales invoice PDF files ' +
-    '<input name="files" type="file" accept=".pdf,application/pdf" multiple required></label> ' +
+    '<input name="files" type="file" accept=".pdf,application/pdf" multiple required></label>' +
+    '<div id="unifiedInvoiceDropzone" role="button" tabindex="0" ' +
+    'aria-label="Drop one or more invoice PDFs here or press Enter to choose PDF files" ' +
+    'style="margin:12px 0;padding:24px;text-align:center;border:2px dashed #879bb3;' +
+    'border-radius:12px;cursor:pointer;background:#f7f9fc">' +
+    '<strong>Drag and drop your sales invoice PDFs here</strong>' +
+    '<p class="fine-print">Or click to select files. Maximum 12 PDF invoices, ' +
+    '20 MB each and 60 MB total. Equipment will not be added without your confirmation.</p>' +
+    '</div>' +
     '<button class="button button-outline" type="submit">Find equipment on invoices</button></form>' +
     '<div id="unifiedInvoiceResults" role="status" aria-live="polite"></div>' +
     '<h4>Equipment lines</h4>' +
@@ -229,6 +237,7 @@ async function quotingWorkspacePage() {
   document.querySelector('#unifiedEquipmentAdd').addEventListener('input', unifiedCoordinatorGuidance);
   document.querySelector('#unifiedEquipmentAdd').addEventListener('change', unifiedCoordinatorGuidance);
   document.querySelector('#unifiedInvoiceImport').addEventListener('submit', unifiedImportInvoiceEvidence);
+  initUnifiedInvoiceDropzone();
   document.querySelector('#unifiedCancelEquipmentEdit').addEventListener('click', unifiedStopEquipmentEdit);
   document.querySelector('#unifiedSiteSearch').addEventListener('submit', unifiedSearchSites);
   document.querySelector('#unifiedDraftForm').elements.site.addEventListener('input', () => {
@@ -661,6 +670,50 @@ function unifiedInvoiceCandidates(record) {
   return candidates;
 }
 
+function initUnifiedInvoiceDropzone(){
+  const zone=document.querySelector('#unifiedInvoiceDropzone');
+  const form=document.querySelector('#unifiedInvoiceImport');
+  const input=form?.elements.files;
+  if(!zone||!input)return;
+  const originalBackground=zone.style.background;
+  const highlight=(active)=>{
+    zone.style.background=active?'#e6f1fb':originalBackground;
+    zone.style.borderColor=active?'#1e6ba8':'#879bb3';
+  };
+  zone.addEventListener('click',()=>input.click());
+  zone.addEventListener('keydown',event=>{
+    if(event.key==='Enter'||event.key===' '){
+      event.preventDefault();input.click();
+    }
+  });
+  for(const name of ['dragenter','dragover']){
+    zone.addEventListener(name,event=>{
+      event.preventDefault();event.stopPropagation();
+      if(event.dataTransfer)event.dataTransfer.dropEffect='copy';
+      highlight(true);
+    });
+  }
+  zone.addEventListener('dragleave',event=>{
+    event.preventDefault();event.stopPropagation();highlight(false);
+  });
+  zone.addEventListener('drop',event=>{
+    event.preventDefault();event.stopPropagation();highlight(false);
+    const files=Array.from(event.dataTransfer?.files||[]);
+    const feedback=document.querySelector('#unifiedInvoiceResults');
+    if(!files.length)return;
+    if(files.some(file=>!/\\.pdf$/i.test(file.name))){
+      if(feedback)feedback.textContent='Drop PDF invoices only. Other file types cannot be read.';
+      return;
+    }
+    const upload=new DataTransfer();
+    for(const file of files)upload.items.add(file);
+    input.files=upload.files;
+    if(feedback)feedback.textContent=files.length+' PDF invoice(s) selected. Analysing…';
+    // Reuse the existing guarded PDF reader, rather than a second parser.
+    form.requestSubmit();
+  });
+}
+
 async function unifiedImportInvoiceEvidence(event) {
   event.preventDefault();
   const fileInput=event.currentTarget.elements.files;
@@ -745,9 +798,13 @@ async function unifiedImportInvoiceEvidence(event) {
         }
         button.disabled=true;
         try {
-          const found=await api('/api/quoting/catalogue/search?q='+
-            encodeURIComponent(selected.sku)+'&limit=30');
-          const exact=(found.results||[]).filter(row=>
+          // The current unified Master is price authority. Old V10
+          // remains an identity fallback only if the Master is not staged.
+          const found=await api('/api/quoting/quick-draft/search?q='+
+            encodeURIComponent(selected.sku)+'&limit=30').catch(()=>null);
+          const legacy=found?null:await api('/api/quoting/catalogue/search?q='+
+            encodeURIComponent(selected.sku)+'&limit=30').catch(()=>null);
+          const exact=((found?.results||legacy?.results)||[]).filter(row=>
             String(row.sku||'').trim().toUpperCase()===selected.sku &&
             !row.duplicate_sku);
           addForm.elements.item_code.value=selected.sku;
@@ -762,14 +819,14 @@ async function unifiedImportInvoiceEvidence(event) {
           unifiedCoordinatorGuidance();
           const note=document.querySelector('#unifiedDraftFeedback');
           if(note)note.textContent=exact.length===1?
-            'Exact V10 code found. Verify machine, add its serial and quantity, '+
-            'then select Add equipment line. No item is added until you confirm.':
-            'The printed code is not an unambiguous V10 machine. Confirm its model '+
-            'and service mapping with the technical team before using it in a quote.';
+            'Exact equipment price code found. Verify the physical machine, serials and '+
+            'quantity, then select Add equipment line. No equipment is added automatically.':
+            'The invoice code is not a confirmed maintainable machine. Check the '+
+            'model against the equipment list and enter it manually if verified.';
           addForm.elements.serial.focus();
         }catch(error) {
           const note=document.querySelector('#unifiedDraftFeedback');
-          if(note)note.textContent='Cannot verify this item code in V10: '+error.message+
+          if(note)note.textContent='Cannot verify this equipment code: '+error.message+
             '. Enter the machine only after confirming its identity.';
         }finally{button.disabled=false;}
       }));
