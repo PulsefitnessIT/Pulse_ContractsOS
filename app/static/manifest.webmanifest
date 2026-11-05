@@ -1,16 +1,16 @@
 {
   "id": "/",
-  "name": "Pulse Contracts OS",
-  "short_name": "Contracts OS",
-  "description": "Independent Pulse Fitness maintenance contract management for authorised staff.",
+  "name": "Pulse Fitness | Contracts OS & SmartQuote",
+  "short_name": "Pulse Fitness",
+  "description": "Pulse Fitness Service & Aftersales — maintenance contracts and equipment quotations.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": [
     "standalone"
   ],
-  "background_color": "#f2f5f8",
-  "theme_color": "#121a25",
+  "background_color": "#f5f7f8",
+  "theme_color": "#1B1C1D",
   "icons": [
     {
       "src": "/static/icons/contracts-192.png",
