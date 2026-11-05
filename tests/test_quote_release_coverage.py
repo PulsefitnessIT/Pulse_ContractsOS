@@ -348,3 +348,49 @@ def test_full_source_reconciliation_handles_large_sage_inventory_without_quoting
                for row in rows) == 21120
     assert sum(row["Quote status"].startswith("source_price_candidate_")
                for row in rows) == 1
+
+
+def test_legacy_quote_rate_patterns_match_v10_without_granting_approval():
+    pricing = {
+        "rates": [
+            {
+                "group": group,
+                "standard": float(values[0]),
+                "preferred": float(values[1]),
+                "minimum": float(values[2]),
+                "status": "Active",
+            }
+            for group, values in released.LEGACY_RATE_BANDS.items()
+        ],
+        "tiers": {"Silver": 0.8, "Gold": 1.0, "Platinum": 1.3},
+    }
+    result = released.legacy_rate_parity(pricing)
+    assert result["historical_rate_groups_tested"] == 5
+    assert result["matching_rate_patterns"] == 5
+    assert result["rate_review_required"] is False
+    assert result["not_a_tariff_approval"] is True
+    assert result["silver_gold_platinum_multipliers_not_authorised_by_historical_workbook"] is True
+    assert result["historical_model_specific_exclusions_unresolved"] is True
+    assert all(row["commercially_approved_by_parity"] is False for row in result["groups"])
+
+
+def test_legacy_quote_rate_change_or_missing_group_requires_review():
+    pricing = {"rates": [
+        {"group": "Standard Equipment",
+         "standard": 0.03, "preferred": 0.0275,
+         "minimum": 0.02, "status": "Active"}
+    ]}
+    result = released.legacy_rate_parity(pricing)
+    assert result["rate_review_required"] is True
+    assert result["matching_rate_patterns"] == 0
+    assert result["groups"][0]["matches_historical_pattern"] is False
+    assert result["groups"][0]["source_percent"] == ["3.00", "2.7500", "2.00"]
+    assert result["not_a_tariff_approval"] is True
+
+
+def test_legacy_quote_rate_parity_is_admin_only(monkeypatch):
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Coordinator")
+    with pytest.raises(HTTPException) as error:
+        released.legacy_method_parity()
+    assert error.value.status_code == 403
