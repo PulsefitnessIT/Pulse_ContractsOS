@@ -10,7 +10,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import Counter, defaultdict
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -423,6 +423,82 @@ def source_reconciliation_csv():
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+
+# Historical Quote spreadsheet v5 (last saved October 2026) used these
+# standard, half-discount and floor percentage patterns. These are
+# comparison-only evidence, NOT live tariff approvals or customer prices.
+# No private item-level costs, employee notes or client data are bundled.
+LEGACY_RATE_BANDS = {
+    "Standard Equipment": ("0.03", "0.0275", "0.025"),
+    "Treadmill / Elliptical": ("0.0375", "0.035", "0.0325"),
+    "Fluid Rower": ("0.13", "0.1275", "0.125"),
+    "Fluid UBE / Recumbent": ("0.10", "0.0975", "0.095"),
+    "Concept2 / Third Party": ("0.09", "0.0875", "0.085"),
+}
+
+
+def legacy_rate_parity(policy):
+    """Compare live source tariff bands with historic quoting evidence.
+
+    This is a read-only signal for director review, not authority to set,
+    approve or issue Silver/Gold/Platinum prices. Historical manual
+    machine-specific exceptions must be reviewed separately.
+    """
+    rows=[]
+    rates = policy.get("rates", []) if isinstance(policy, dict) else []
+    for group, historical in LEGACY_RATE_BANDS.items():
+        matches = [
+            item for item in rates if isinstance(item, dict)
+            and str(item.get("group") or "") == group
+        ]
+        actual=[]
+        for field in ("standard", "preferred", "minimum"):
+            try:
+                if len(matches)!=1:
+                    raise InvalidOperation()
+                value=Decimal(str(matches[0].get(field)))
+                if not value.is_finite() or value<0:
+                    raise InvalidOperation()
+                actual.append(value)
+            except (InvalidOperation, ValueError, TypeError):
+                actual.append(None)
+        expected=[Decimal(value) for value in historical]
+        same = actual == expected
+        rows.append({
+            "group":group,
+            "historical_percent": [str(x * 100) for x in expected],
+            "source_percent": [
+                str(x * 100) if x is not None else None for x in actual
+            ],
+            "matches_historical_pattern": same,
+            "source_rate_status": (
+                str(matches[0].get("status") or "") if len(matches)==1
+                else "Missing / ambiguous"
+            ),
+            "commercially_approved_by_parity": False,
+        })
+    return {
+        "historical_rate_groups_tested": len(LEGACY_RATE_BANDS),
+        "matching_rate_patterns": sum(r["matches_historical_pattern"] for r in rows),
+        "rate_review_required": any(not r["matches_historical_pattern"] for r in rows),
+        "groups":rows,
+        "stepmill_fixed_charge_exceptions": (
+            "Historical Stepmill charges include manually agreed annual amounts; "
+            "no automatic historic percentage should be inferred."
+        ),
+        "historical_model_specific_exclusions_unresolved": True,
+        "silver_gold_platinum_multipliers_not_authorised_by_historical_workbook": True,
+        "not_a_tariff_approval": True,
+    }
+
+
+@router.get("/legacy-method-parity")
+def legacy_method_parity():
+    _reconciliation_admin()
+    _, _, pricing, _ = source_snapshot()
+    return legacy_rate_parity(pricing)
 
 
 @router.get("/candidate-coverage")
