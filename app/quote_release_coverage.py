@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import Counter, defaultdict
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -20,7 +21,8 @@ from .quote_pricing import (
     _line_price, _master_console_identity, source_snapshot,
 )
 from .quote_rrp_priority import (
-    index as master_index, resolve, source_snapshot as august_snapshot,
+    _amount as source_amount, index as master_index, resolve,
+    source_snapshot as august_snapshot,
 )
 from .quote_sage_reference import snapshot as sage_snapshot
 
@@ -163,6 +165,237 @@ def coverage(catalog, configs, pricing, master, sage=None):
         "no_customer_data_returned": True,
         "no_source_pricing_returned": True,
     }
+
+
+
+def _reconciliation_rows(catalog, configs, pricing, master, sage=None):
+    """Full cross-source evidence ledger, including non-maintenance Sage codes.
+
+    Never equate Sage Sales Price with August Master List Price or silently
+    convert an inventory/parts line into an eligible maintenance product.
+    Source priority is determined solely by quote_rrp_priority.resolve().
+    """
+    assessment = {
+        row["sku"]: row for row in
+        candidate_assessments(catalog, configs, pricing, master, sage)
+    }
+    by_master = master_index(master)
+    sage_by_code = defaultdict(list)
+    if sage and isinstance(sage.get("prices"), dict):
+        for code, record in sage["prices"].items():
+            canonical = str(code or "").strip().upper()
+            if canonical and isinstance(record, dict):
+                sage_by_code[canonical].append(record)
+    for sku in sorted(set(assessment) | set(by_master) | set(sage_by_code)):
+        current = assessment.get(sku)
+        master_rows = by_master.get(sku, [])
+        raw_sage = sage_by_code.get(sku, [])
+        sage_row = raw_sage[0] if len(raw_sage) == 1 else None
+        sage_matches_code = bool(
+            sage_row and str(sage_row.get("sku") or "").strip().upper() == sku
+        )
+        master_prices = {
+            source_amount(row.get("rrp")) for row in master_rows
+        }
+        master_price = (
+            next(iter(master_prices))
+            if master_rows and len(master_prices) == 1
+            else None
+        )
+        sage_amount = (
+            source_amount(sage_row.get("sales_price"))
+            if sage_matches_code else None
+        )
+        selected = resolve(sku, by_master, sage)
+        basis = str(selected.get("basis") or "")
+        selected_amount = source_amount(selected.get("rrp"))
+        difference = (
+            sage_amount - master_price
+            if sage_amount is not None and master_price is not None else None
+        )
+        if current is not None:
+            category = current["category"]
+            action = (
+                "No automatic change; source-only candidate still requires "
+                "real equipment, package tariff and commercial quote approval."
+                if current["potentially_quotable"] else
+                NEXT_ACTION.get(category, "Review equipment source identity.")
+            )
+        elif master_rows:
+            category = "master_only_not_in_v10_catalogue"
+            action = (
+                "Verify whether this current Master item is maintainable; "
+                "do not add its source price to V10 until equipment and "
+                "service configuration are approved."
+            )
+        else:
+            category = "sage_only_inventory_not_v10_maintenance_equipment"
+            action = (
+                "Identify equipment versus spare parts or other inventory. "
+                "Sage price alone does not authorise maintenance cover."
+            )
+        if len(raw_sage) > 1:
+            category = "duplicate_sage_item_code"
+            action = "Resolve duplicate Sage codes against the original export."
+        elif sage_row and not sage_matches_code:
+            category = "sage_item_code_identity_conflict"
+            action = "Verify mismatched Sage item code before using its price."
+        elif (master_rows and (
+                None in master_prices or len(master_prices) > 1)
+                and current is None):
+            category = "master_price_missing_or_conflicting"
+            action = "Reconcile original Master list price and variant rows."
+        elif sage_row and sage_matches_code and sage_amount is None:
+            # Distinguish zero/missing from positive Sage prices; never use
+            # these to create artificial zero-priced maintenance contracts.
+            raw_value = sage_row.get("sales_price")
+            try:
+                zero = Decimal(str(raw_value)) == 0
+            except (ValueError, ArithmeticError, TypeError):
+                zero = False
+            if current is None and not master_rows:
+                category = "sage_zero_or_invalid_price"
+                action = (
+                    "Sage has a zero or invalid equipment price; verify and "
+                    "classify, never use £0 as approved maintenance RRP."
+                )
+        yield {
+            "SKU": sku,
+            "V10 catalogue rows": sum(
+                str(row.get("sku") or "").strip().upper() == sku
+                for row in catalog if isinstance(row, dict)
+            ) if current is not None else 0,
+            "V10 description": current["description"] if current else "",
+            "V10 console": current["console"] if current else "",
+            "V10 service configuration": current["service_key"] if current else "",
+            "Master source rows": len(master_rows),
+            "Master source locations": "; ".join(
+                str(row.get("sheet") or "")[:80] + " row " +
+                str(row.get("row") or "")[:15] for row in master_rows[:15]
+            ),
+            "Master equipment name": str(master_rows[0].get("name") or "")[:350]
+            if master_rows else "",
+            "Master console": str(master_rows[0].get("console") or "")[:120]
+            if master_rows else "",
+            "Master list price GBP": (
+                "; ".join(
+                    str(value) if value is not None else "(not positive)"
+                    for value in sorted(master_prices, key=lambda x: (x is None, str(x)))
+                ) if master_rows else ""
+            ),
+            "Sage source rows": len(raw_sage),
+            "Sage product name": str(sage_row.get("name") or "")[:350]
+            if sage_row else "",
+            "Sage product group": str(sage_row.get("group") or "")[:120]
+            if sage_row else "",
+            "Sage Sales Price GBP": (
+                str(sage_row.get("sales_price")) if sage_matches_code else ""
+            ),
+            "Selected equipment price basis": basis,
+            "Selected equipment price GBP": (
+                str(selected_amount) if selected_amount is not None else ""
+            ),
+            "Sage less Master GBP": str(difference) if difference is not None else "",
+            "Quote status": category,
+            "Manager next action": action,
+        }
+
+
+def _reconciliation_data():
+    products, configs, policy, hashes = source_snapshot()
+    master = august_snapshot()
+    sage = sage_snapshot()
+    return products, configs, policy, hashes, master, sage
+
+
+def _reconciliation_admin():
+    if not pilot_access.PILOT_MODE or pilot_access.current_role() != "Admin":
+        raise HTTPException(403, "Protected SmartQuote Administrator required.")
+    identity = pilot_access.actor("")
+    if not isinstance(identity, str) or len(identity.strip()) < 2 or identity.strip() in (
+        "Admin", "Coordinator", "Viewer"
+    ):
+        raise HTTPException(403, "A named SmartQuote Administrator is required.")
+
+
+@router.get("/source-reconciliation/summary")
+def source_reconciliation_summary():
+    """Count every SKU from the three sources without declaring prices approved."""
+    _reconciliation_admin()
+    products, configs, policy, hashes, master, sage = _reconciliation_data()
+    categories = Counter(
+        row["Quote status"] for row in
+        _reconciliation_rows(products, configs, policy, master, sage)
+    )
+    candidates = (
+        categories["source_price_candidate_august_master"] +
+        categories["source_price_candidate_sage"]
+    )
+    return {
+        "sources": {
+            "v10_catalogue_rows": len(products),
+            "august_master_rows": len(master["rows"]),
+            "sage_loaded": sage is not None,
+            "sage_item_codes": len(sage["prices"]) if sage else None,
+            "sage_export_date": sage["source_date"] if sage else None,
+            "sage_review_overdue": sage["review_overdue"] if sage else None,
+            "august_master_original_sha256": master["source_file_sha256"],
+            "sage_export_sha256": sage["source_file_sha256"] if sage else None,
+            "v10_source_sha256": hashes,
+        },
+        "distinct_source_skus": sum(categories.values()),
+        "potentially_quotable_gold_skus": candidates,
+        "review_categories": dict(sorted(categories.items())),
+        "full_three_source_comparison_available": sage is not None,
+        "commercial_tariffs_approved_by_this_report": False,
+        "customer_quotes_approved_by_this_report": False,
+        "warning": (
+            "Exact source evidence only. Sage and August prices are different "
+            "price bases; differences are informational, not automatic errors. "
+            "Gold-candidate counts do not verify Silver/Platinum or customer terms."
+        ),
+    }
+
+
+@router.get("/source-reconciliation.csv")
+def source_reconciliation_csv():
+    """Admin-only full SKU ledger with prices and review decisions, no customers."""
+    _reconciliation_admin()
+    products, configs, policy, _, master, sage = _reconciliation_data()
+    if sage is None:
+        raise HTTPException(
+            409,
+            "Import and activate the full Sage export before downloading "
+            "the three-source reconciliation report."
+        )
+    fields = (
+        "SKU", "V10 catalogue rows", "V10 description", "V10 console",
+        "V10 service configuration", "Master source rows",
+        "Master source locations", "Master equipment name", "Master console",
+        "Master list price GBP", "Sage source rows", "Sage product name",
+        "Sage product group", "Sage Sales Price GBP",
+        "Selected equipment price basis", "Selected equipment price GBP",
+        "Sage less Master GBP", "Quote status", "Manager next action",
+    )
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=fields)
+    writer.writeheader()
+    for row in _reconciliation_rows(
+        products, configs, policy, master, sage
+    ):
+        writer.writerow({
+            key: safe_excel_csv_cell(row[key]) for key in fields
+        })
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                'attachment; filename="Pulse_SmartQuote_Sage_Master_Full_Reconciliation.csv"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/candidate-coverage")
