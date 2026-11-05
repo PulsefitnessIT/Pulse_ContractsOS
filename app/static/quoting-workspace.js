@@ -39,6 +39,7 @@ function unifiedDraftSnapshot() {
       invoice_match_method:String(e.invoice_match_method||''),
       annual_rate_percent:e.annual_rate_percent??null,
       fixed_annual_unit_gbp:e.fixed_annual_unit_gbp??null,
+      quantity_verified:e.quantity_verified!==false,
     }))
   });
 }
@@ -333,7 +334,9 @@ function renderUnifiedEquipment() {
         (item.invoice_match_confirmed_by?' · '+esc(item.invoice_match_confirmed_by):'')+
         '</p>':'<p class="notice warning">Invoice match not confirmed</p>'):'')+'</td>'+
     '<td>'+esc(item.serial||'Not confirmed')+'</td><td>'+
-    esc(item.cover_start||'Contract start')+'</td><td>'+esc(item.quantity)+'</td>'+
+    esc(item.cover_start||'Contract start')+'</td><td>'+esc(item.quantity)+
+    (item.quantity_verified===false?'<p class="fine-print">Quantity to verify</p>':'')+
+    '</td>'+
     '<td><button class="button button-outline" type="button" data-edit-line="'+i+'">Edit</button> '+
     '<button class="button button-outline" type="button" data-remove-line="'+i+'">Remove</button></td></tr>'
   ).join('');
@@ -469,6 +472,7 @@ function unifiedAddEquipment(event) {
     quantity,
     annual_rate_percent:prior?.annual_rate_percent??null,
     fixed_annual_unit_gbp:prior?.fixed_annual_unit_gbp??null,
+    quantity_verified:true,
     source_import_id:invoiceLinked?invoiceId:null,
     source_pages:invoiceLinked&&Array.isArray(invoicePages)?
       invoicePages:[],
@@ -795,7 +799,8 @@ function unifiedApplyExactInvoiceMatches(matches){
       source_import_id:match.source_import_id,
       source_pages:Array.isArray(match.source_pages)?match.source_pages:[],
       invoice_match_confirmed:true,
-      invoice_match_method:'auto_exact_master'
+      invoice_match_method:'auto_exact_master',
+      quantity_verified:false
     });
     existing.add(key);
     added++;
