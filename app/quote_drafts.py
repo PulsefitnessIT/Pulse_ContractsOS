@@ -136,6 +136,24 @@ def validate_draft(data):
             source_id = None
         elif type(source_id) is not int or source_id < 1:
             raise HTTPException(422, f"Equipment line {i+1}: invalid invoice source ID.")
+        # Invoice machine identity must be explicitly accepted by the
+        # coordinator. A detected PDF code is never automatically a confirmed
+        # match, even if its SKU exists in the unified Master price list.
+        confirmed = line.get("invoice_match_confirmed", False)
+        if type(confirmed) is not bool:
+            raise HTTPException(422, f"Equipment line {i+1}: invalid invoice confirmation.")
+        if source_id is not None and not confirmed:
+            raise HTTPException(
+                422,
+                f"Equipment line {i+1}: coordinator must explicitly confirm "
+                "the invoice code matches the exact equipment before attaching invoice evidence."
+            )
+        if source_id is None and confirmed:
+            raise HTTPException(
+                422,
+                f"Equipment line {i+1}: an invoice confirmation must reference "
+                "the actual source PDF."
+            )
         pages = line.get("source_pages", [])
         if not isinstance(pages, list) or len(pages)>30 or any(
             type(page) is not int or not 1 <= page <= 9999 for page in pages
@@ -157,7 +175,8 @@ def validate_draft(data):
                        "description":_clean(line.get("description",""),"description",400,required=True),
                        "serial":serial,
                        "cover_start":cover_start, "quantity":qty,
-                       "source_import_id":source_id, "source_pages":pages})
+                       "source_import_id":source_id, "source_pages":pages,
+                       "invoice_match_confirmed":confirmed})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
             "contract_start":contract_start,"contract_end":contract_end,
@@ -250,8 +269,9 @@ def verify_source_site_link(data):
 def verify_invoice_evidence_link(data):
     """Only allow PDF/source references that actually contain this exact code.
 
-    This does not certify the extracted SKU, equipment identity, maintenance
-    suitability, quantity, ownership, warranty or service pricing. It only
+    A separate coordinator confirmation is required before these source
+    references can be attached to an equipment line. This still does not
+    certify maintenance suitability, ownership, warranties or tariffs. It only
     proves the source PDF was uploaded and its code extraction is preserved
     for later staff audit. A manual correction drops its invoice link unless
     the corrected code also exists on the source evidence.
