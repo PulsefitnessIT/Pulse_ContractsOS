@@ -245,6 +245,10 @@ def _errors(draft, preview):
         errors.extend(_reconcile_quotation_amounts(draft, preview))
     if not draft["equipment"]:
         errors.append("Add the customer's equipment before issuing a quote.")
+    for index, line in enumerate(draft.get("equipment", []), 1):
+        if (line.get("invoice_match_method") == "auto_exact_master"
+                and not line.get("quantity_verified", False)):
+            errors.append(f"Line {index}: coordinator must verify imported equipment quantity.")
     # The saved quote, not just the source price engine's self-reported count,
     # is the authoritative customer equipment list. Guard against a truncated
     # or stale result that could otherwise issue a cheaper incomplete offer.
