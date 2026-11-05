@@ -378,7 +378,7 @@ def _readiness(draft):
             "Maintenance eligibility, package tariffs, terms and individual "
             "customer quotations still require approval."
             if preview.get("price_book_sha256") else
-            "Legacy source preview before activation of the unified price book."
+            "Legacy Master/Sage source preview before unified-book activation; source differences are informational, not a separate approval requirement."
         ),
     }
 
