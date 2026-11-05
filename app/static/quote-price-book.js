@@ -108,7 +108,7 @@ async function quoteActivateUnifiedPriceBook(event){
   try{
     const formData=new FormData(form);
     const result=await api('/api/quoting/price-book/activate',{
-      method:'POST',
+      method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         preview_token:priceBookPending.preview_token,
         reason:String(formData.get('reason')||''),
