@@ -28,7 +28,7 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q app scripts tests
       - name: Check coordinator JavaScript syntax
-        run: node --check app/static/app.js && node --check app/static/expiry-transfer.js && node --check app/static/accepted-quotes.js && node --check app/static/quoting-workspace.js && node --check app/static/quote-sage-refresh.js && node --check app/static/quote-customer-issue.js && node --check app/static/quote-commercial-setup.js && node --check app/static/quote-v10-source-setup.js && node --check app/static/quote-source-audit.js && node --check app/static/source-audit.js && node --check app/static/action-centre.js
+        run: node --check app/static/app.js && node --check app/static/expiry-transfer.js && node --check app/static/accepted-quotes.js && node --check app/static/quoting-workspace.js && node --check app/static/quote-sage-refresh.js && node --check app/static/quote-price-book.js && node --check app/static/quote-customer-issue.js && node --check app/static/quote-commercial-setup.js && node --check app/static/quote-v10-source-setup.js && node --check app/static/quote-source-audit.js && node --check app/static/source-audit.js && node --check app/static/action-centre.js
       - name: Test beginner SmartQuote workflow in Node
         run: node --test tests/test_smartquote_coordinator_ui.cjs
       - name: Unified SmartQuote draft and register regression tests
