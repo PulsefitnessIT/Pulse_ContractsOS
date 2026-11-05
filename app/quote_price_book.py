@@ -17,6 +17,7 @@ import secrets
 import sqlite3
 import zlib
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -115,7 +116,16 @@ def _pack(rows):
 
 def active_book():
     """Read current immutable snapshot; no implicit source fallback after activation."""
-    con = connect()
+    try:
+        con = connect()
+    except sqlite3.OperationalError as exc:
+        from .store import DB
+        if ("unable to open database file" in str(exc).lower()
+                and not Path(DB).parent.is_dir()):
+            # Synthetic/unit tests and source-only checkouts have no pilot DB.
+            # An existing protected DB that fails to open must still fail closed.
+            return None
+        raise HTTPException(503, "Unified price master database unavailable.") from exc
     try:
         try:
             record = con.execute(
@@ -245,7 +255,7 @@ def preview_import(filename, raw):
     try:
         _tables(con)
         con.execute(
-            "INSERT INTO unified_price_book_previews VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO unified_price_book_previews VALUES(?,?,?,?,?,?,?,?,?)",
             (token, dt.datetime.now(dt.timezone.utc).isoformat(), who,
              previous["revision"] if previous else 0,
              previous["sha256"] if previous else None,
