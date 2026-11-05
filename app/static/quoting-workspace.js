@@ -190,6 +190,12 @@ async function quotingWorkspacePage() {
     '<section class="panel" id="quoteCommercialSetupPanel" hidden>' +
     '<h3>Customer Quotation — Commercial Setup</h3>' +
     '<div id="quoteCommercialSetupHost"></div></section>' +
+    '<section class="panel" id="quoteUnifiedBookPanel" hidden>' +
+    '<h3>Unified Master Price List</h3>' +
+    '<p>One exact-code price source for Pulse Fitness. The initial combined list ' +
+    'contains Sage items and preferred Master List Prices. Later imports update only ' +
+    'matching product codes, with permanent version history.</p>' +
+    '<div id="quoteUnifiedBookHost"></div></section>' +
     '<section class="panel" id="quoteSageRefreshPanel" hidden>' +
     '<h3>Sage Price List Refresh</h3>' +
     '<p>Upload a complete Sage Sales Price export, review price changes and activate ' +
@@ -1213,6 +1219,14 @@ async function showQuotePriceEditorIfAdmin() {
       initQuoteCommercialSetup().catch(error=>{
         const host=document.querySelector('#quoteCommercialSetupHost');
         if(host)host.textContent=error.message;
+      });
+    }
+    const priceBookPanel=document.querySelector('#quoteUnifiedBookPanel');
+    if(priceBookPanel && typeof initQuotePriceBook==='function'){
+      priceBookPanel.hidden=false;
+      initQuotePriceBook().catch(error=>{
+        const host=document.querySelector('#quoteUnifiedBookHost');
+        if(host)host.textContent='Unified Master unavailable: '+error.message;
       });
     }
     const refreshPanel=document.querySelector('#quoteSageRefreshPanel');
