@@ -311,3 +311,62 @@ def test_invoice_confirmation_audit_is_server_owned_and_preserved_for_unchanged_
         changed, "coordinator-two", {"equipment":[original]}
     )
     assert changed["equipment"][0]["invoice_match_confirmed_by"]=="coordinator-two"
+
+
+def test_coordinator_service_rate_values_persist_but_never_approve_tariff():
+    result=quote_drafts.validate_draft({
+        "customer":"Demo","site":"Gym","equipment":[{
+            "item_code":"BIKE-100","description":"Fictional Exercise Bike",
+            "quantity":2, "serial":"DEMO-1",
+            "annual_rate_percent":"3.75",
+            "fixed_annual_unit_gbp":"125.95",
+            "quantity_verified":True,
+        }]
+    })
+    line=result["equipment"][0]
+    assert line["annual_rate_percent"] == "3.75"
+    assert line["fixed_annual_unit_gbp"] == "125.95"
+    assert line["quantity_verified"] is True
+    assert result["price"] is None
+    assert result["approved"] is False
+
+
+@pytest.mark.parametrize(("rate","fixed"), [
+    ("NaN",None),("101",None),("-1",None),("2.12345",None),
+    (None,"Infinity"),(None,"1000001"),(None,"1.001"),
+])
+def test_invalid_manual_internal_rate_is_rejected(rate, fixed):
+    with pytest.raises(HTTPException) as error:
+        quote_drafts.validate_draft({
+            "customer":"Demo","site":"Gym","equipment":[{
+                "item_code":"BIKE-1","description":"Bike","quantity":1,
+                "annual_rate_percent":rate,"fixed_annual_unit_gbp":fixed,
+            }]
+        })
+    assert error.value.status_code == 422
+
+
+def test_auto_import_quantity_stays_provisional_until_coordinator_review():
+    source={
+        "customer":"Demo","site":"Gym","equipment":[{
+            "item_code":"BIKE-1","description":"Bike","quantity":1,
+            "source_import_id":19,"source_pages":[2],
+            "invoice_match_confirmed":True,
+            "invoice_match_method":"auto_exact_master",
+        }]
+    }
+    parsed=quote_drafts.validate_draft(source)
+    assert parsed["equipment"][0]["quantity_verified"] is False
+    assert parsed["approved"] is False
+    checked=quote_drafts.validate_draft({
+        **source,
+        "equipment":[{**source["equipment"][0],
+                     "quantity":3,"quantity_verified":True}],
+    })
+    assert checked["equipment"][0]["quantity"] == 3
+    assert checked["equipment"][0]["quantity_verified"] is True
+    with pytest.raises(HTTPException):
+        quote_drafts.validate_draft({
+            **source,"equipment":[{**source["equipment"][0],
+                                   "quantity_verified":"yes"}],
+        })
