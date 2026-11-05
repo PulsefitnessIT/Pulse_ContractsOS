@@ -241,16 +241,22 @@ async function quickPrintInternal(){
     .slice(0,2500);
   const doc='<!doctype html><html><head><meta charset="utf-8">'+
     '<title>INTERNAL '+escHtml(result.draft_reference)+'</title>'+
-    '<style>@page{size:A4;margin:14mm}body{font:13px Arial;color:#15202d}'+
-    'header{border-bottom:3px solid #15202d;padding-bottom:15px;display:flex;justify-content:space-between}'+
-    'h1{font-size:24px;letter-spacing:2px;margin:0}h2{font-size:17px;margin-top:30px}'+
-    '.small{font-size:11px;color:#5b6877}.draft{color:#bd3030;font-weight:900}'+
+    '<style>@page{size:A4;margin:14mm}*{box-sizing:border-box}'+
+    'body{font:13px Arial,sans-serif;color:#1B1C1D}'+
+    'header{background:#1B1C1D;color:#fff;border-bottom:5px solid #19CDFF;'+
+    'padding:15px 18px;display:flex;align-items:center;justify-content:space-between;gap:24px;'+
+    '-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+    'header img{width:196px;max-height:48px;object-fit:contain;display:block}'+
+    'h1{font-size:23px;letter-spacing:.01em;margin:0}h2{font-size:17px;margin-top:26px}'+
+    '.small{font-size:11px;color:#d6ecf3}.draft{color:#19CDFF;font-weight:900}'+
     'table{width:100%;border-collapse:collapse;margin-top:15px}td,th{padding:9px;'+
-    'border-bottom:1px solid #d9e1e8;text-align:left;vertical-align:top}th{background:#f1f4f7}'+
-    'footer{border-top:1px solid #bbc;padding-top:15px;margin-top:36px;font-size:11px}'+
-    '.code{font:11px monospace;color:#64748b}tr{page-break-inside:avoid}'+
+    'border-bottom:1px solid #d9e1e8;text-align:left;vertical-align:top}'+
+    'th{background:#e8f9ff;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+    'footer{border-top:2px solid #19CDFF;padding-top:15px;margin-top:36px;font-size:11px}'+
+    '.code{font:11px monospace;color:#6E7476}tr{page-break-inside:avoid}'+
     '.right{text-align:right}h2{page-break-after:avoid}</style></head><body>'+
-    '<header><div><h1>PULSE FITNESS</h1><div>Maintenance quotation proposal</div></div>'+
+    '<header><div><img src="/static/brand/pulse-fitness-reverse.svg" '+
+    'alt="Pulse Fitness"><span class="small">SERVICE &amp; AFTERSALES · MAINTENANCE PROPOSAL</span></div>'+
     '<div class="right draft">INTERNAL DRAFT<br><span class="small">'+
     escHtml(result.draft_reference)+'</span></div></header>'+
     '<h2>Prepared for</h2><p><strong>'+escHtml(result.customer)+
@@ -271,5 +277,12 @@ async function quickPrintInternal(){
   opened.document.write(doc);
   opened.document.close();
   opened.focus();
-  opened.print();
+  // Do not print before the supplied corporate logo has loaded.
+  const logo=opened.document.querySelector('header img');
+  if(logo && !logo.complete){
+    logo.addEventListener('load',()=>opened.print(),{once:true});
+    logo.addEventListener('error',()=>opened.print(),{once:true});
+  }else{
+    opened.print();
+  }
 }
