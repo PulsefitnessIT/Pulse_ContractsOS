@@ -186,3 +186,26 @@ def test_import_pins_source_sha_and_rejects_corrupted_active_snapshot(administra
     with pytest.raises(HTTPException) as error:
         book.active_book()
     assert error.value.status_code == 503
+
+
+def test_price_only_import_keeps_existing_equipment_identity(administrator):
+    base = book.preview_import("first.csv", _data([
+        ("MACHINE-A", "1450", "Model with known console", "Strength Equipment",
+         "August master", "REFERENCE")
+    ]))
+    book.activate_import(book.ActivatePriceImport(
+        preview_token=base["preview_token"],
+        reason="Approved first reference list",
+    ))
+    change = ("SKU,Price GBP\nMACHINE-A,1900.00\n").encode("utf-8")
+    staged = book.preview_import("newprices.csv", change)
+    assert staged["changes"]["updated_codes"] == 1
+    book.activate_import(book.ActivatePriceImport(
+        preview_token=staged["preview_token"],
+        reason="Approved replacement equipment price",
+    ))
+    updated = book.active_book()["rows"]["MACHINE-A"]
+    assert updated["price_pence"] == 190000
+    assert updated["description"] == "Model with known console"
+    assert updated["group"] == "Strength Equipment"
+    assert updated["origin"] == "Price import"
