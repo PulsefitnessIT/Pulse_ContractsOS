@@ -313,3 +313,19 @@ def test_full_reconciliation_csv_escapes_spreadsheet_formulas(monkeypatch):
     rows = list(csv.DictReader(io.StringIO(response.body.decode("utf-8-sig"))))
     affected = next(row for row in rows if row["SKU"] == "FIC-DUP")
     assert affected["V10 description"].startswith("'=HYPERLINK")
+
+
+def test_full_reconciliation_separates_name_and_console_evidence():
+    rows = {row["SKU"]: row for row in
+            released._reconciliation_rows(*_fixture())}
+    assert rows["FIC-TREAD"]["Master/V10 description exact match"] == "Yes"
+    assert rows["FIC-TREAD"]["Master/V10 console identity"] == "Verified"
+    assert rows["FIC-UNCERTAIN"]["Master/V10 description exact match"] == "Yes"
+    assert rows["FIC-UNCERTAIN"]["Master/V10 console identity"] == "Needs review"
+
+    args = list(_fixture())
+    args[3]["rows"][0]["name"] = "Different equipment name"
+    changed = {row["SKU"]: row for row in
+               released._reconciliation_rows(*args)}
+    assert changed["FIC-TREAD"]["Master/V10 description exact match"] == "No"
+    assert changed["FIC-TREAD"]["Master/V10 console identity"] == "Needs review"
