@@ -185,6 +185,9 @@ def validate_draft(data):
             )
         if serial_key:
             seen_serials[serial_key]=i+1
+        qty_verified = line.get("quantity_verified", match_method != "auto_exact_master")
+        if type(qty_verified) is not bool:
+            raise HTTPException(422, f"Equipment line {i+1}: invalid quantity confirmation.")
         # Rates are user-selected INTERNAL draft assumptions, never approved tariffs.
         rate_raw = line.get("annual_rate_percent")
         fixed_raw = line.get("fixed_annual_unit_gbp")
@@ -210,7 +213,7 @@ def validate_draft(data):
                        "invoice_match_method":match_method,
                        "annual_rate_percent":rate,
                        "fixed_annual_unit_gbp":fixed,
-                       "quantity_verified":line.get("quantity_verified", match_method != "auto_exact_master")})
+                       "quantity_verified":qty_verified})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
             "contract_start":contract_start,"contract_end":contract_end,
