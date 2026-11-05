@@ -317,7 +317,7 @@ def _master_console_identity(product, master):
 
 
 def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_source=None,
-            overrides=None, august_source=None):
+            overrides=None, august_source=None, price_book=None):
     tier = draft["tier"]
     term = int(draft.get("term_years", 1))
     discount = float(draft.get("discount_percent", 0))
@@ -342,8 +342,26 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
         decision = None
         if master_by_sku is not None:
             from .quote_rrp_priority import resolve
-            decision = resolve(code, master_by_sku, sage_source)
-            if overrides and code in overrides:
+            original_decision = resolve(code, master_by_sku, sage_source)
+            decision = original_decision
+            if price_book is not None:
+                item = price_book["rows"].get(code)
+                cents = item.get("price_pence") if isinstance(item, dict) else None
+                if type(cents) is int and cents > 0 and item.get("status") == "REFERENCE":
+                    decision = {
+                        "basis": "unified_master_price",
+                        "rrp": cents / 100,
+                        "review_required": False,
+                        "price_book_revision": price_book["revision"],
+                    }
+                else:
+                    decision = {
+                        "basis": "unified_price_hold_or_missing",
+                        "rrp": None, "review_required": True,
+                        "price_book_revision": price_book["revision"],
+                    }
+                line["price_book_revision"] = price_book["revision"]
+            if price_book is None and overrides and code in overrides:
                 from .quote_price_overrides import effective
                 decision = effective(decision, overrides[code], august_source or {}, sage_source)
                 line["price_override"] = {
