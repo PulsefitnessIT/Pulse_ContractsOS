@@ -180,3 +180,55 @@ def test_full_sage_search_returns_legacy_identity_without_false_maintenance_appr
     assert parts["results"][0]["source_price_is_not_maintenance_eligibility"] is True
     zeros=sage.search_sage_items(q="zero",limit=20)
     assert zeros["results"][0]["sage_sales_price"]==0
+
+
+def test_machine_only_sage_search_excludes_unrelated_spare_parts_but_preserves_full_reference(monkeypatch):
+    monkeypatch.setattr(sage, "actor", lambda: "fictional-coordinator")
+    monkeypatch.setattr(sage, "snapshot", lambda: {
+        "source_date": "2026-11-05",
+        "prices": {
+            "GYM-101": {
+                "sku": "GYM-101", "name": "Example treadmill",
+                "group": "Cardiovascular Equipment", "sales_price": 4000,
+            },
+            "PART-101": {
+                "sku": "PART-101", "name": "Treadmill drive belt",
+                "group": "CV Parts", "sales_price": 120,
+            },
+            "BASE-101": {
+                "sku": "BASE-101", "name": "Treadmill base assembly",
+                "group": "Base Units", "sales_price": 850,
+            },
+            "WEIGHTS-101": {
+                "sku": "WEIGHTS-101", "name": "Treadmill accessory weight",
+                "group": "Free Weights", "sales_price": 50,
+            },
+            "UNKNOWN-101": {
+                "sku": "UNKNOWN-101", "name": "Treadmill mystery item",
+                "group": "Other Items", "sales_price": 90,
+            },
+        },
+    })
+    equipment = sage.search_sage_items(
+        q="treadmill", limit=20, equipment_only=True
+    )
+    assert equipment["equipment_only"] is True
+    assert [item["sku"] for item in equipment["results"]] == ["GYM-101"]
+    assert equipment["results"][0]["requires_service_mapping"] is True
+    assert equipment["results"][0]["pricing_approved"] is False
+    full = sage.search_sage_items(q="treadmill", limit=20)
+    assert full["equipment_only"] is False
+    assert {item["sku"] for item in full["results"]} == {
+        "GYM-101", "PART-101", "BASE-101", "WEIGHTS-101", "UNKNOWN-101"
+    }
+
+
+def test_sage_group_filter_is_evidence_only_not_machine_certification():
+    assert sage.sage_machine_group_candidate(" Strength Equipment ") is True
+    assert sage.sage_machine_group_candidate("CV Parts") is False
+    assert sage.sage_machine_group_candidate("Strength Parts") is False
+    assert sage.sage_machine_group_candidate("Console Parts") is False
+    assert sage.sage_machine_group_candidate("Non Pulse Parts") is False
+    assert sage.sage_machine_group_candidate("Service & Labour") is False
+    assert sage.sage_machine_group_candidate("Free Weights") is False
+    assert sage.sage_machine_group_candidate(None) is False
