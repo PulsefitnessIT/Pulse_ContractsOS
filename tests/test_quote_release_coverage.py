@@ -103,3 +103,58 @@ def test_coverage_endpoint_requires_named_protected_pilot_roles(monkeypatch):
     with pytest.raises(HTTPException) as err:
         released.candidate_coverage()
     assert err.value.status_code==403
+
+
+def test_candidate_review_rows_reconcile_to_aggregate_counts():
+    result = released.coverage(*_fixture())
+    rows = list(released.candidate_assessments(*_fixture()))
+    assert len(rows) == result["distinct_v10_skus"]
+    assert sum(not row["potentially_quotable"] for row in rows) == sum(
+        result["review_categories"].values()
+    )
+    assert [row["sku"] for row in rows] == sorted(row["sku"] for row in rows)
+    assert {row["category"] for row in rows if not row["potentially_quotable"]} == {
+        "duplicate_v10_sku", "master_description_or_console_requires_review",
+    }
+    assert all("rrp" not in row and "sales_price" not in row for row in rows)
+
+
+def test_candidate_review_csv_requires_named_admin(monkeypatch):
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Coordinator")
+    with pytest.raises(HTTPException) as err:
+        released.candidate_review_csv()
+    assert err.value.status_code == 403
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Admin")
+    monkeypatch.setattr(released.pilot_access, "actor", lambda default="": "")
+    with pytest.raises(HTTPException) as err:
+        released.candidate_review_csv()
+    assert err.value.status_code == 403
+
+
+def test_admin_review_export_contains_review_reasons_not_commercial_amounts(monkeypatch):
+    import csv
+    import io
+
+    fixture = list(_fixture())
+    fixture[0][-1]["name"] = "=HYPERLINK(\\\"https://bad.invalid\\\",\\\"OPEN\\\")"
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Admin")
+    monkeypatch.setattr(released.pilot_access, "actor", lambda default="": "pilot-admin")
+    monkeypatch.setattr(released, "source_snapshot", lambda: (*fixture[:3], {}))
+    monkeypatch.setattr(released, "august_snapshot", lambda: fixture[3])
+    monkeypatch.setattr(released, "sage_snapshot", lambda: fixture[4])
+
+    response = released.candidate_review_csv()
+    report = response.body.decode("utf-8-sig")
+    rows = list(csv.DictReader(io.StringIO(report)))
+    assert len(rows) == 2
+    assert {row["SKU"] for row in rows} == {"FIC-DUP", "FIC-UNCERTAIN"}
+    assert {row["Review category"] for row in rows} == {
+        "duplicate_v10_sku", "master_description_or_console_requires_review",
+    }
+    assert rows[0]["Equipment"].startswith("'=HYPERLINK")
+    assert all(row["Recommended next action"] for row in rows)
+    assert "4000" not in report and "2100" not in report
+    assert "FIC-SAGE" not in report and "FIC-TREAD" not in report
+    assert response.headers["cache-control"] == "private, no-store"
