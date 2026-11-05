@@ -10,15 +10,18 @@ import datetime as dt
 import io
 import re
 from decimal import Decimal
+from functools import lru_cache
+from pathlib import Path
 from typing import Mapping
 
 import fitz
 
-NAVY = (0.055, 0.12, 0.21)
-INK = (0.11, 0.18, 0.28)
-MUTED = (0.36, 0.43, 0.50)
-ACCENT = (0.13, 0.41, 0.68)
-PALE = (0.94, 0.96, 0.98)
+# Approved application palette from the supplied Pulse Fitness UI guide.
+NAVY = (27 / 255, 28 / 255, 29 / 255)       # Soft Black #1B1C1D
+INK = NAVY
+MUTED = (110 / 255, 116 / 255, 118 / 255)  # Slate #6E7476
+ACCENT = (25 / 255, 205 / 255, 255 / 255)  # Core Blue #19CDFF
+PALE = (243 / 255, 249 / 255, 251 / 255)
 WHITE = (1, 1, 1)
 W, H = fitz.paper_size("a4")
 MARGIN = 45
@@ -81,17 +84,45 @@ def _rect(page, left, top, right, bottom, fill, stroke=None):
                    color=stroke, fill=fill, overlay=True)
 
 
+@lru_cache(maxsize=1)
+def _official_logo_pdf():
+    """Preserve the supplied master signature geometry; no logo redraw."""
+    path = (Path(__file__).resolve().parent / "static" / "brand" /
+            "pulse-fitness-reverse.svg")
+    try:
+        source = fitz.open(stream=path.read_bytes(), filetype="svg")
+        try:
+            return source.convert_to_pdf()
+        finally:
+            source.close()
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
 def _page(doc, quote_no, draft=False):
     page = doc.new_page(width=W, height=H)
     _rect(page, 0, 0, W, 92, NAVY)
     _rect(page, 0, 92, W, 96, ACCENT)
-    _txt(page, (MARGIN, 37), "PULSE FITNESS", 19, WHITE, "hebo")
-    _txt(page, (MARGIN, 59), "MAINTENANCE SERVICES", 9, (0.75, 0.85, 0.95))
+    logo = _official_logo_pdf()
+    if logo:
+        official = fitz.open(stream=logo, filetype="pdf")
+        try:
+            page.show_pdf_page(
+                fitz.Rect(MARGIN - 13, 9, MARGIN + 241, 66),
+                official, 0, keep_proportion=True
+            )
+        finally:
+            official.close()
+    else:
+        # Source-only tests can render without binary assets; a real
+        # deployment contains the original SVG and uses it above.
+        _txt(page, (MARGIN, 38), "PULSE FITNESS", 19, WHITE, "hebo")
+    _txt(page, (MARGIN, 81), "SERVICE & AFTERSALES", 8.5, WHITE, "hebo")
     _txt(page, (W-212, 39), "EQUIPMENT MAINTENANCE QUOTATION",
          8.6, WHITE, "hebo")
     _txt(page, (W-212, 60), quote_no, 10, WHITE, "hebo")
     _rect(page, MARGIN, H-44, RIGHT, H-43, (0.83, 0.87, 0.91))
-    _txt(page, (MARGIN, H-29), "Pulse Fitness | Service & Aftersales",
+    _txt(page, (MARGIN, H-29), "PULSE FITNESS | Service & Aftersales",
          8, MUTED)
     _txt(page, (RIGHT-161, H-29),
          "DRAFT - NOT FOR CUSTOMER" if draft else "Customer quotation",
