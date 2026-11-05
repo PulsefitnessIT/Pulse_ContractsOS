@@ -25,6 +25,26 @@ MAX_COMPRESSED = 10 * 1024 * 1024
 MAX_UNCOMPRESSED = 32 * 1024 * 1024
 SKU = re.compile(r"^[A-Z0-9][A-Z0-9 ._/#*()&+\-]{0,99}$")
 
+# These are *potential equipment* groups from Pulse's genuine Sage export,
+# not proof of installed machines, maintenance suitability or service rates.
+# The complete Sage export remains available for forensic/internal reference.
+# Spare parts, consoles sold as parts, upholstery, accessories, wages and
+# service items are never promoted merely because they have a Sales Price.
+SAGE_MACHINE_REVIEW_GROUPS = frozenset({
+    "strength equipment",
+    "cardiovascular equipment",
+    "functional equipment",
+    "non pulse equipment",
+    "studio/circuit equipment",
+    "free weight benches & racks",
+})
+
+
+def sage_machine_group_candidate(group):
+    """Conservative group-based candidate filter; never a quote approval."""
+    return str(group or "").strip().casefold() in SAGE_MACHINE_REVIEW_GROUPS
+
+
 
 def _unpack(raw: bytes) -> dict:
     if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_COMPRESSED:
@@ -163,7 +183,8 @@ def sage_reference_status():
 
 @router.get("/sage/search")
 def search_sage_items(q: str = Query(..., min_length=2, max_length=100),
-                      limit: int = Query(20, ge=1, le=50)):
+                      limit: int = Query(20, ge=1, le=50),
+                      equipment_only: bool = False):
     """Search all exact Sage inventory codes, including legacy equipment.
 
     Sage is a price/identity source, NOT an equipment service entitlement.
@@ -180,6 +201,8 @@ def search_sage_items(q: str = Query(..., min_length=2, max_length=100),
     products = []
     for sku, item in source["prices"].items():
         if not isinstance(item, dict):
+            continue
+        if equipment_only and not sage_machine_group_candidate(item.get("group")):
             continue
         code = str(sku).casefold()
         description = str(item.get("name") or "").casefold()
@@ -207,6 +230,7 @@ def search_sage_items(q: str = Query(..., min_length=2, max_length=100),
             "source": "Sage item-price reference",
             "duplicate_sku": False,
             "requires_service_mapping": True,
+            "sage_group_equipment_candidate": sage_machine_group_candidate(item.get("group")),
             "pricing_approved": False,
             "source_price_is_not_maintenance_eligibility": True,
         }))
@@ -215,5 +239,7 @@ def search_sage_items(q: str = Query(..., min_length=2, max_length=100),
         "results": [item for _,__,item in products[:limit]],
         "total": len(products),
         "read_only": True,
+        "equipment_only": equipment_only,
+        "sage_group_is_not_proof_of_machine_or_cover": True,
         "requires_independent_maintenance_eligibility": True,
     }
