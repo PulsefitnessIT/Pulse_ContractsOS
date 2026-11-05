@@ -317,12 +317,42 @@ def verify_invoice_evidence_link(data):
             raise HTTPException(409, "This equipment page reference does not match the invoice evidence.")
 
 
+def _stamp_invoice_match_decisions(data, coordinator, previous=None):
+    """Server-owned actor/time evidence for explicitly confirmed PDF matches.
+
+    Confirmation is tied to the exact source PDF, SKU, description and pages.
+    Editing any of those details requires a fresh coordinator confirmation.
+    Client-provided audit fields are ignored by validate_draft().
+    """
+    prior = previous.get("equipment", []) if isinstance(previous, dict) else []
+    stamped = now()
+    for line in data["equipment"]:
+        if not line.get("source_import_id") or not line.get("invoice_match_confirmed"):
+            continue
+        original = next((old for old in prior if (
+            old.get("invoice_match_confirmed") is True and
+            old.get("source_import_id") == line["source_import_id"] and
+            str(old.get("item_code") or "").strip().upper() == line["item_code"].strip().upper() and
+            old.get("description") == line["description"] and
+            old.get("source_pages") == line["source_pages"] and
+            old.get("invoice_match_confirmed_by") and
+            old.get("invoice_match_confirmed_at")
+        )), None)
+        if original:
+            line["invoice_match_confirmed_by"] = original["invoice_match_confirmed_by"]
+            line["invoice_match_confirmed_at"] = original["invoice_match_confirmed_at"]
+        else:
+            line["invoice_match_confirmed_by"] = str(coordinator)[:120]
+            line["invoice_match_confirmed_at"] = stamped
+
+
 @router.post("/drafts",status_code=201)
 def create_draft(payload:dict=Body(...)):
     user=_check_access(write=True)
     data=validate_draft(payload)
     verify_source_site_link(data)
     verify_invoice_evidence_link(data)
+    _stamp_invoice_match_decisions(data, user)
     ref=uuid.uuid4().hex
     with connect() as con:
         _init(con)
@@ -332,7 +362,7 @@ def create_draft(payload:dict=Body(...)):
 
 @router.put("/drafts/{draft_id}")
 def update_draft(draft_id:str,payload:dict=Body(...)):
-    _check_access(write=True)
+    user=_check_access(write=True)
     _validate_id(draft_id)
     revision=payload.get("revision")
     if type(revision) is not int or revision<1:
@@ -342,6 +372,12 @@ def update_draft(draft_id:str,payload:dict=Body(...)):
     verify_invoice_evidence_link(data)
     with connect() as con:
         _init(con)
+        old=con.execute(
+            "SELECT revision,payload_json FROM unified_quote_drafts WHERE id=?",
+            (draft_id,)
+        ).fetchone()
+        previous=json.loads(old["payload_json"]) if old and old["revision"] == revision else None
+        _stamp_invoice_match_decisions(data, user, previous)
         cur=con.execute("UPDATE unified_quote_drafts SET payload_json=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?",
                         (json.dumps(data),now(),draft_id,revision))
         if cur.rowcount!=1:
