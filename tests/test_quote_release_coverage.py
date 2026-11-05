@@ -137,7 +137,7 @@ def test_admin_review_export_contains_review_reasons_not_commercial_amounts(monk
     import io
 
     fixture = list(_fixture())
-    fixture[0][-1]["name"] = "=HYPERLINK(\\\"https://bad.invalid\\\",\\\"OPEN\\\")"
+    fixture[0][-2]["name"] = "=HYPERLINK(\\\"https://bad.invalid\\\",\\\"OPEN\\\")"
     monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
     monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Admin")
     monkeypatch.setattr(released.pilot_access, "actor", lambda default="": "pilot-admin")
