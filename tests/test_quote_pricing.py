@@ -390,3 +390,53 @@ def test_tier_comparison_rejects_overdue_sage_fallback_for_all_packages(monkeypa
     assert all(item["annual_gbp"] is None for item in result["options"])
     assert all(not item["complete_price"] for item in result["options"])
     assert all(any("overdue" in text for text in item["blockers"]) for item in result["options"])
+
+
+def test_unified_master_replaces_both_historical_master_and_sage_prices():
+    catalogue, configs, policy, hashes = example()
+    old_master = {
+        "TEST-100": [{"sku": "TEST-100", "rrp": 2000, "name": "Example Bike",
+                      "console": "No Console / N/A", "sheet": "Synthetic", "row": 5}]
+    }
+    source = {
+        "revision": 3, "sha256": "a" * 64,
+        "rows": {"TEST-100": {"price_pence": 350000,
+                              "status": "REFERENCE", "origin": "2027 price refresh"}},
+    }
+    price = quote_pricing.preview(
+        draft(), catalogue, configs, policy, hashes,
+        master_by_sku=old_master, sage_source=None, price_book=source,
+    )
+    assert price["complete_price"] is True
+    assert price["annual_partial"] == 210.00
+    assert price["lines"][0]["rrp"] == 3500.00
+    assert price["lines"][0]["rrp_source"] == "unified_master_price"
+    assert price["price_book_sha256"] == "a" * 64
+    assert price["price_book_revision"] == 3
+    assert price["commercially_approved"] is False
+    assert price["issue_quote_enabled"] is False
+
+
+def test_unified_master_missing_or_held_sku_does_not_fall_back():
+    catalogue, configs, policy, hashes = example()
+    master = {
+        "TEST-100": [{"sku": "TEST-100", "rrp": 2000, "name": "Example Bike",
+                      "console": "No Console / N/A"}]
+    }
+    for rows in ({}, {"TEST-100": {
+        "price_pence": None, "status": "HOLD",
+        "origin": "Source conflict"
+    }}, {"TEST-100": {
+        "price_pence": 0, "status": "UNPRICED",
+        "origin": "Unpriced Sage reference"
+    }}):
+        price = quote_pricing.preview(
+            draft(), catalogue, configs, policy, hashes,
+            master_by_sku=master, price_book={
+                "revision": 1, "sha256": "b" * 64, "rows": rows
+            },
+        )
+        assert price["complete_price"] is False
+        assert price["priced_count"] == 0
+        assert price["lines"][0]["rrp_source"] == "unified_price_hold_or_missing"
+        assert "unified price list" in price["lines"][0]["exception"]
