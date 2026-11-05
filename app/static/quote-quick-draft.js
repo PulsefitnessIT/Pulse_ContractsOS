@@ -85,8 +85,10 @@ function quickCopyEquipment(){
     description:String(line.description||''),
     quantity:Number(line.quantity)||1,
     serials:String(line.serial||''),
-    rate:quickQuoteHistoricRate(line.description||''),
-    fixed:''
+    rate:line.annual_rate_percent!==null&&line.annual_rate_percent!==undefined?
+      String(line.annual_rate_percent):quickQuoteHistoricRate(line.description||''),
+    fixed:line.fixed_annual_unit_gbp!==null&&line.fixed_annual_unit_gbp!==undefined?
+      String(line.fixed_annual_unit_gbp):''
   }));
   quickDraftResult=null;
   const button=document.querySelector('#quickGetPrice');
@@ -113,7 +115,10 @@ function quickCopyEquipment(){
     ).join('')+'</tbody></table></div>';
   host.querySelectorAll('[data-quick-rate]').forEach(input=>{
     input.addEventListener('input',()=>{
-      quickDraftLines[Number(input.dataset.quickRate)].rate=input.value;
+      const index=Number(input.dataset.quickRate);
+      quickDraftLines[index].rate=input.value;
+      if(unifiedEquipment[index])unifiedEquipment[index].annual_rate_percent=
+        input.value.trim()===''?null:input.value;
       quickDraftResult=null;
       const p=document.querySelector('#quickPrint');
       if(p)p.disabled=true;
@@ -121,7 +126,10 @@ function quickCopyEquipment(){
   });
   host.querySelectorAll('[data-quick-fixed]').forEach(input=>{
     input.addEventListener('input',()=>{
-      quickDraftLines[Number(input.dataset.quickFixed)].fixed=input.value;
+      const index=Number(input.dataset.quickFixed);
+      quickDraftLines[index].fixed=input.value;
+      if(unifiedEquipment[index])unifiedEquipment[index].fixed_annual_unit_gbp=
+        input.value.trim()===''?null:input.value;
       quickDraftResult=null;
       const p=document.querySelector('#quickPrint');
       if(p)p.disabled=true;
@@ -143,6 +151,16 @@ async function quickCalculate(){
   if(!quickDraftLines.length){
     status.textContent='Load the current equipment lines first.';
     return;
+  }
+  // Re-save only if the coordinator changed a customer, machine or rate.
+  // Saved draft rate fields are reloaded on a subsequent visit.
+  if(typeof unifiedDraftHasUnsavedChanges==='function' &&
+     (!unifiedDraftSelected||unifiedDraftHasUnsavedChanges())){
+    const saved=await unifiedSaveDraft();
+    if(!saved){
+      status.textContent='Save the customer and equipment changes before calculating.';
+      return;
+    }
   }
   button.disabled=true;
   status.textContent='Calculating against the latest unified Master price version…';
