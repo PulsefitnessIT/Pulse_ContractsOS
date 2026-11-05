@@ -38,6 +38,7 @@ from .native_quote_handover import router as native_quote_handover_router
 from .quote_pricing import router as quote_pricing_router
 from .quote_sage_reference import router as sage_reference_router
 from .quote_price_overrides import router as price_overrides_router
+from .quote_price_book import router as unified_price_book_router
 from .quote_sage_refresh import router as sage_refresh_router
 from .quote_customer_issuance import router as customer_quote_issuance_router
 from .quote_commercial_setup import router as quote_commercial_setup_router
@@ -131,6 +132,7 @@ app.include_router(native_quote_handover_router)
 app.include_router(quote_pricing_router)
 app.include_router(sage_reference_router)
 app.include_router(price_overrides_router)
+app.include_router(unified_price_book_router)
 app.include_router(sage_refresh_router)
 app.include_router(customer_quote_issuance_router)
 app.include_router(quote_commercial_setup_router)
