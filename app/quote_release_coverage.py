@@ -245,11 +245,14 @@ def _reconciliation_rows(catalog, configs, pricing, master, sage=None):
         elif sage_row and not sage_matches_code:
             category = "sage_item_code_identity_conflict"
             action = "Verify mismatched Sage item code before using its price."
-        elif (master_rows and (
-                None in master_prices or len(master_prices) > 1)
+        elif (master_rows and
+                basis in ("master_price_conflict", "master_variant_conflict")
                 and current is None):
-            category = "master_price_missing_or_conflicting"
-            action = "Reconcile original Master list price and variant rows."
+            category = "master_price_or_variant_conflict"
+            action = (
+                "Resolve Master source price or equipment-console variant "
+                "conflicts before this SKU can be used for any quotation."
+            )
         elif sage_row and sage_matches_code and sage_amount is None:
             # Distinguish zero/missing from positive Sage prices; never use
             # these to create artificial zero-priced maintenance contracts.
