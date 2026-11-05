@@ -178,6 +178,11 @@ async function quotingWorkspacePage() {
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
     '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
+    '<section class="panel" id="quoteQuickDraftPanel">' +
+    '<h3>Fast SmartQuote — price a maintenance contract today</h3>' +
+    '<p>Price the customer and machine schedule above using the one Master. ' +
+    'Does not require the old V10 service configuration. Internal draft only.</p>' +
+    '<div id="quoteQuickDraftHost"></div></section>' +
     '<section class="panel"><h3>Equipment price source evidence</h3>' +
     '<p>The unified Master is the active price authority after administrator activation. ' +
     'Historical August Master and Sage source comparisons remain available for audit, ' +
@@ -241,6 +246,7 @@ async function quotingWorkspacePage() {
   document.querySelector('#rrpPriorityStatusLoad').addEventListener('click', loadRrpPriorityStatus);
   document.querySelector('#quotePriceLookupForm').addEventListener('submit', quotePriceLookup);
   showQuotePriceEditorIfAdmin().catch(()=>{});
+  if(typeof initQuoteQuickDraft==='function')initQuoteQuickDraft();
   document.querySelector('#unifiedDraftForm').addEventListener('input', unifiedClearPrice);
   document.querySelector('#unifiedDraftForm').addEventListener('change', unifiedClearPrice);
   // A renewal from Action Centre may pass only a source site label and its
