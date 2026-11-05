@@ -737,7 +737,7 @@ function initUnifiedInvoiceDropzone(){
     const files=Array.from(event.dataTransfer?.files||[]);
     const feedback=document.querySelector('#unifiedInvoiceResults');
     if(!files.length)return;
-    if(files.some(file=>!/\\.pdf$/i.test(file.name))){
+    if(files.some(file=>!/\.pdf$/i.test(file.name))){
       if(feedback)feedback.textContent='Drop PDF invoices only. Other file types cannot be read.';
       return;
     }
