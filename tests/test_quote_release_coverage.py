@@ -158,3 +158,121 @@ def test_admin_review_export_contains_review_reasons_not_commercial_amounts(monk
     assert "4000" not in report and "2100" not in report
     assert "FIC-SAGE" not in report and "FIC-TREAD" not in report
     assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_full_reconciliation_preserves_master_precedence_and_sage_difference():
+    args = list(_fixture())
+    args[4]["prices"]["FIC-TREAD"] = {
+        "sku": "FIC-TREAD", "name": "Same item in Sage",
+        "sales_price": 3550.00, "group": "Cardiovascular Equipment"
+    }
+    rows = {
+        row["SKU"]: row for row in released._reconciliation_rows(*args)
+    }
+    assert len(rows) == 4
+    current = rows["FIC-TREAD"]
+    assert current["Master list price GBP"] == "4000.00"
+    assert current["Sage Sales Price GBP"] == "3550.0"
+    assert current["Sage less Master GBP"] == "-450.00"
+    assert current["Selected equipment price GBP"] == "4000.00"
+    assert current["Selected equipment price basis"] == "august_2026_master_list_price"
+    assert current["Quote status"] == "source_price_candidate_august_master"
+    # The Sage amount is informational: different bases do not cancel an
+    # otherwise uniquely identified current Master machine price.
+    legacy = rows["FIC-SAGE"]
+    assert legacy["Selected equipment price basis"] == "sage_exact_sku_price"
+    assert legacy["Selected equipment price GBP"] == "2100.00"
+
+
+def test_full_reconciliation_keeps_noncatalogue_inventory_and_zero_prices_separate():
+    args = list(_fixture())
+    args[3]["rows"].append({
+        "sku": "MASTER-ONLY", "name": "Fictional current-model SKU",
+        "console": "Console not stated", "rrp": "7000.00",
+        "sheet": "Synthetic", "row": 75,
+    })
+    args[4]["prices"]["SAGE-ONLY"] = {
+        "sku": "SAGE-ONLY", "name": "Sage-only machine",
+        "sales_price": 600.0, "group": "Strength Equipment"
+    }
+    args[4]["prices"]["SAGE-ZERO"] = {
+        "sku": "SAGE-ZERO", "name": "Unpriced inventory",
+        "sales_price": 0.0, "group": "Spare Parts"
+    }
+    rows = {
+        row["SKU"]: row for row in released._reconciliation_rows(*args)
+    }
+    assert len(rows) == 7
+    assert rows["MASTER-ONLY"]["Quote status"] == "master_only_not_in_v10_catalogue"
+    assert rows["SAGE-ONLY"]["Quote status"] == (
+        "sage_only_inventory_not_v10_maintenance_equipment"
+    )
+    assert rows["SAGE-ZERO"]["Quote status"] == "sage_zero_or_invalid_price"
+    assert rows["SAGE-ZERO"]["Selected equipment price GBP"] == ""
+    assert rows["SAGE-ONLY"]["Selected equipment price basis"] == "sage_exact_sku_price"
+    assert "maintenance" in rows["SAGE-ONLY"]["Manager next action"].lower()
+
+
+def test_full_reconciliation_blocks_conflicting_master_price_even_with_sage():
+    args = list(_fixture())
+    args[3]["rows"].append({
+        "sku": "FIC-TREAD", "name": args[0][0]["name"],
+        "console": "10.1-inch cardio tactile-key",
+        "rrp": "4001.00", "sheet": "Synthetic", "row": 76
+    })
+    args[4]["prices"]["FIC-TREAD"] = {
+        "sku": "FIC-TREAD", "name": "Treadmill",
+        "sales_price": 3900.0, "group": "Cardiovascular Equipment"
+    }
+    row = {
+        result["SKU"]: result
+        for result in released._reconciliation_rows(*args)
+    }["FIC-TREAD"]
+    assert row["Master source rows"] == 2
+    assert "4000.00" in row["Master list price GBP"]
+    assert "4001.00" in row["Master list price GBP"]
+    assert row["Selected equipment price GBP"] == ""
+    assert row["Selected equipment price basis"] == "master_price_conflict"
+
+
+def test_full_reconciliation_csv_does_not_leak_prices_without_named_admin(monkeypatch):
+    args = list(_fixture())
+    monkeypatch.setattr(released, "_reconciliation_data", lambda: (
+        *args[:3], {"pricing": "f" * 64}, args[3], args[4]
+    ))
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Coordinator")
+    with pytest.raises(HTTPException) as error:
+        released.source_reconciliation_csv()
+    assert error.value.status_code == 403
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Admin")
+    monkeypatch.setattr(released.pilot_access, "actor", lambda default="": "pilot-admin")
+    response = released.source_reconciliation_csv()
+    import csv
+    import io
+    output = response.body.decode("utf-8-sig")
+    rows = list(csv.DictReader(io.StringIO(output)))
+    assert len(rows) == 4
+    assert {row["SKU"] for row in rows} == {
+        "FIC-TREAD", "FIC-UNCERTAIN", "FIC-DUP", "FIC-SAGE"
+    }
+    assert response.headers["cache-control"] == "private, no-store"
+    assert rows[0]["Manager next action"]
+    assert all("customer" not in heading.lower() for heading in rows[0])
+
+
+def test_full_reconciliation_requires_sage_source_for_download(monkeypatch):
+    args = list(_fixture())
+    monkeypatch.setattr(released, "_reconciliation_data", lambda: (
+        *args[:3], {"pricing": "f" * 64}, args[3], None
+    ))
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Admin")
+    monkeypatch.setattr(released.pilot_access, "actor", lambda default="": "pilot-admin")
+    with pytest.raises(HTTPException) as error:
+        released.source_reconciliation_csv()
+    assert error.value.status_code == 409
+    summary = released.source_reconciliation_summary()
+    assert summary["full_three_source_comparison_available"] is False
+    assert summary["sources"]["sage_item_codes"] is None
+    assert summary["commercial_tariffs_approved_by_this_report"] is False
