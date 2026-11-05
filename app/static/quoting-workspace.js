@@ -294,6 +294,8 @@ function unifiedStopEquipmentEdit() {
 function renderUnifiedEquipment() {
   const host=document.querySelector('#unifiedEquipmentTable');
   if(!host || view!=='quoting')return;
+  // A coordinator edit must invalidate any previously calculated quick quote.
+  if(typeof quickInvalidate==='function')quickInvalidate();
   const rows=unifiedEquipment.map((item,i)=>
     '<tr><td>'+esc(item.description)+'</td><td>'+
     esc(item.item_code)+
