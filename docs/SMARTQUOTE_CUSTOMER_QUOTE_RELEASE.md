@@ -374,3 +374,52 @@ Only a named signed-in pilot Administrator can download
 `GET /api/quoting/candidate-review.csv`; Coordinator and Viewer accounts
 are denied by the backend. Excel review files should be treated as sensitive
 internal equipment catalogue material and stored according to Pulse policy.
+
+
+## Full Sage / August Master / V10 reconciliation — administrator workbench
+
+The protected SmartQuote Admin pricing panel now provides a **full three-source
+reconciliation CSV** once the original V10 bundle and the *complete* Sage export
+are staged and activated:
+
+- \`GET /api/quoting/source-reconciliation/summary\` — source counts,
+  fingerprints, review-status breakdown, and whether full three-source
+  evidence is currently available. Restricted to named pilot Administrators.
+- \`GET /api/quoting/source-reconciliation.csv\` — one row per distinct
+  original V10, August Master or Sage item code; includes exact identifiers,
+  original Master sheet/row references, V10 model and console, **both source
+  prices**, the chosen price basis, the informational Sage-minus-Master
+  difference, and a recommended action. Restricted to named pilot
+  Administrators, exported as formula-safe CSV with no customer data.
+
+**Authoritative pricing hierarchy:** current August Master exact SKU first.
+For genuine machines missing entirely from the current Master, positive
+Sage Sales Price is an accepted *equipment* price source if a unique,
+eligible, active V10 maintenance configuration exists. A Master source
+price/variant conflict is NEVER silently resolved by falling back to Sage.
+A £0 or missing Sage price must not be converted into a zero-value
+maintenance quote. Sage-only inventory SKUs are catalogued as
+**not automatically maintenance-eligible**, even when they show a
+positive sales price. Master-only SKUs likewise need a verified V10
+configuration before quoting. Master/Sage price differences are
+informational because the two source lists have different purposes;
+there is **no arbitrary discrepancy threshold**.
+
+**Reconciliation is not approval:** the full CSV is an evidence ledger for
+the Pulse product/pricing owner. It records unresolved console, description,
+missing service mapping, duplicate SKU, zero Sage price, expired Sage
+snapshot and source conflict cases without inventing pricing decisions.
+Approve the Silver/Gold/Platinum commercial tariffs, exclusions, terms,
+supplier details and individual customer quote *separately* before enabling
+customer PDF issuance.
+
+**Real-source execution still required:** these endpoints read protected
+application source snapshots. The public source-code repository contains
+neither the original full Sage workbook nor live database or approved
+customer pricing decisions. The source-only CI fixtures cannot certify
+the genuine 21,120 Sage items. Do not infer from a successful code test
+that all source exceptions have been commercially reconciled. Stage the
+approved actual exports in the protected pilot and download the complete
+CSV. Date, signature, review status and any item-specific manual source
+decisions must be recorded by a responsible Pulse pricing owner before
+normal staff release.
