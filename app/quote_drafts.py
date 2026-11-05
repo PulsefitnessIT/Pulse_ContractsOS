@@ -154,6 +154,20 @@ def validate_draft(data):
                 f"Equipment line {i+1}: an invoice confirmation must reference "
                 "the actual source PDF."
             )
+        match_method = line.get(
+            "invoice_match_method",
+            "manual_confirmed" if confirmed else "",
+        )
+        if not isinstance(match_method, str) or match_method not in (
+                "", "manual_confirmed", "auto_exact_master"):
+            raise HTTPException(
+                422, f"Equipment line {i+1}: invalid invoice match method."
+            )
+        if (confirmed and not match_method
+                or not confirmed and match_method):
+            raise HTTPException(
+                422, f"Equipment line {i+1}: invoice match state is inconsistent."
+            )
         pages = line.get("source_pages", [])
         if not isinstance(pages, list) or len(pages)>30 or any(
             type(page) is not int or not 1 <= page <= 9999 for page in pages
@@ -176,7 +190,8 @@ def validate_draft(data):
                        "serial":serial,
                        "cover_start":cover_start, "quantity":qty,
                        "source_import_id":source_id, "source_pages":pages,
-                       "invoice_match_confirmed":confirmed})
+                       "invoice_match_confirmed":confirmed,
+                       "invoice_match_method":match_method})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
             "contract_start":contract_start,"contract_end":contract_end,
@@ -305,6 +320,30 @@ def verify_invoice_evidence_link(data):
                 }
                 found.setdefault(code,set()).update(pages)
             rows[source_id]=found
+    auto_lines = [line for line in sourced
+                  if line.get("invoice_match_method") == "auto_exact_master"]
+    if auto_lines:
+        from .quote_price_book import active_book
+        from .quote_invoice_match import classify_sku
+        price_book = active_book()
+        if price_book is None:
+            raise HTTPException(
+                409, "Cannot verify automatic invoice matches: the unified "
+                "Master Price List is not active."
+            )
+        for line in auto_lines:
+            matched = classify_sku(
+                str(line["item_code"]).strip().upper(), price_book
+            )
+            if not matched["auto_add_equipment"]:
+                raise HTTPException(
+                    409, "An automatically matched invoice code is no longer "
+                    "a uniquely priced equipment code in the active Master. "
+                    "Re-import or review this line before saving."
+                )
+            # The Master evidence is server-owned, not accepted from client.
+            line["invoice_match_master_revision"] = price_book["revision"]
+            line["invoice_match_master_sha256"] = price_book["sha256"]
     for line in sourced:
         code=str(line["item_code"]).strip().upper()
         pages=rows[line["source_import_id"]].get(code)
@@ -335,6 +374,10 @@ def _stamp_invoice_match_decisions(data, coordinator, previous=None):
             str(old.get("item_code") or "").strip().upper() == line["item_code"].strip().upper() and
             old.get("description") == line["description"] and
             old.get("source_pages") == line["source_pages"] and
+            old.get("invoice_match_method", "manual_confirmed") ==
+                line.get("invoice_match_method") and
+            old.get("invoice_match_master_sha256") ==
+                line.get("invoice_match_master_sha256") and
             old.get("invoice_match_confirmed_by") and
             old.get("invoice_match_confirmed_at")
         )), None)
@@ -342,7 +385,11 @@ def _stamp_invoice_match_decisions(data, coordinator, previous=None):
             line["invoice_match_confirmed_by"] = original["invoice_match_confirmed_by"]
             line["invoice_match_confirmed_at"] = original["invoice_match_confirmed_at"]
         else:
-            line["invoice_match_confirmed_by"] = str(coordinator)[:120]
+            line["invoice_match_confirmed_by"] = (
+                "Automatic exact Master SKU match"
+                if line.get("invoice_match_method") == "auto_exact_master"
+                else str(coordinator)[:120]
+            )
             line["invoice_match_confirmed_at"] = stamped
 
 
