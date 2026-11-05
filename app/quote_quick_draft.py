@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from . import pilot_access
@@ -265,6 +266,34 @@ def calculate(draft: QuickDraft, book):
             "machine eligibility, package scope, serials and agreed terms."
         ),
     }
+
+
+@router.post("/internal-preview.pdf")
+def quick_internal_pdf(draft: QuickDraft):
+    """Download a branded internal estimate, never an authorised customer quote."""
+    _staff()
+    if not draft.expected_price_book_sha256:
+        raise HTTPException(409, "Recalculate before downloading to lock price version.")
+    current = _book()
+    calculated = calculate(draft, current)
+    if not calculated["complete_calculation"]:
+        raise HTTPException(409, "Resolve all equipment prices/rates before downloading.")
+    from .quote_quick_pdf import render_quick_internal_pdf
+    pdf = render_quick_internal_pdf(draft, calculated)
+    # Avoid returning stale pricing if an administrator changed the price
+    # book while the branded document was being prepared.
+    newest = _book()
+    if newest["sha256"] != current["sha256"]:
+        raise HTTPException(409, "Unified Master changed during PDF creation. Recalculate.")
+    name = "Pulse_Fitness_Internal_" + calculated["draft_reference"] + ".pdf"
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/preview")
