@@ -179,6 +179,13 @@ def source_for_code(code):
 
 def write_price(code, data, *, revert=False):
     person = _admin()
+    from .quote_price_book import active_book
+    if active_book() is not None:
+        raise HTTPException(
+            409,
+            "The unified Master price list is active. Use its audited price import "
+            "rather than the retired source-specific override editor."
+        )
     code = _code(code)
     reason = _reason(data.reason)
     if type(data.expected_revision) is not int or not 0 <= data.expected_revision < 1000000:
