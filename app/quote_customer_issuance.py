@@ -39,6 +39,7 @@ ALLOWED_PRICE_NOTES = {
     "August 2026 source List Price used; commercial maintenance tariff approval remains separate.",
     "Price taken from exact Sage item code; maintenance tariff approval remains separate.",
     "Administrator-adjusted equipment price; source revision recorded in price audit.",
+    "Unified Master equipment price used; commercial maintenance tariff approval remains separate.",
 }
 NUMBER = re.compile(r"^PFQ-\d{4}-\d{6,9}$")
 
@@ -274,7 +275,7 @@ def _errors(draft, preview):
             errors.append(f"Line {number}: rate group is not approved in the source.")
         if line.get("rrp_source") not in (
             "august_2026_master_list_price", "sage_exact_sku_price",
-            "managed_price_override",
+            "managed_price_override", "unified_master_price",
         ):
             errors.append(f"Line {number}: equipment price source is not accepted.")
         if (line.get("rrp_source") == "sage_exact_sku_price"
