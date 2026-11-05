@@ -756,8 +756,8 @@ async function unifiedImportInvoiceEvidence(event) {
     return;
   }
   button.disabled=true;
-  feedback.textContent='Reading invoice PDF files. Detected item codes need manual confirmation…';
-  try {
+  feedback.textContent='Reading invoices and matching exact codes to the unified Master…';
+  try{
     const payload=new FormData();
     files.forEach(file=>payload.append('files',file));
     const uploaded=await api('/api/imports/batch',{method:'POST',body:payload});
@@ -766,153 +766,134 @@ async function unifiedImportInvoiceEvidence(event) {
       item.status!=='Upload failed'
     );
     if(!ready.length)throw Error((uploaded.results||[]).map(x=>x.message).join('; ')||
-      'No PDF could be read.');
+      'No PDF invoices could be read.');
     const analysed=await Promise.all(ready.map(async item=>{
-      try {
+      try{
         const details=await api('/api/imports/'+encodeURIComponent(String(item.id)));
-        return {id:Number(item.id),filename:item.filename,details,
-          codes:unifiedInvoiceCandidates(details)};
-      }catch(error) {
-        return {id:Number(item.id),filename:item.filename,error:error.message,codes:[]};
+        return {id:Number(item.id),filename:item.filename,
+          unread:details?.evidence?.unread_pages||[],
+          warnings:details?.evidence?.reading_warnings||[]};
+      }catch(error){
+        return {id:Number(item.id),filename:item.filename,
+          unread:[],warnings:['Invoice text review unavailable: '+error.message]};
       }
     }));
+    // The backend reads the uploaded invoice evidence directly from the DB
+    // and exact-matches it to the one activated Master. No client-side SKU
+    // guesses, V10 service matching or one-by-one coordinator approvals.
+    const matching=await api('/api/quoting/invoice-auto-match',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({import_ids:ready.map(x=>Number(x.id))})
+    });
     if(view!=='quoting'||!document.querySelector('#unifiedInvoiceResults'))return;
-    let suggestions=[];
-    const cards=analysed.map(item=>{
-      const base=suggestions.length;
-      suggestions=suggestions.concat(item.codes.slice(0,80).map(code=>({
-        ...code,source_import_id:item.id
-      })));
-      const unread=item.details?.evidence?.unread_pages||[];
-      const notices=item.details?.evidence?.reading_warnings||[];
-      const names=item.codes.slice(0,80).map((candidate,i)=>
-        '<tr><td>'+esc(candidate.sku)+'</td>'+
-        '<td>'+esc(candidate.description||'Model not yet confirmed')+'</td>'+
-        '<td>'+esc(candidate.pages.join(', ')||'Check original invoice')+'</td>'+
-        '<td><button class="button button-outline" type="button" '+
-        'data-invoice-code-index="'+(base+i)+'">Compare with Master</button></td></tr>'
-      ).join('');
-      return '<section class="panel"><h4>'+esc(item.filename||'Invoice')+'</h4>'+
-        (item.error?'<p class="notice warning">'+esc(item.error)+'</p>':'')+
-        '<p><a href="/api/imports/'+encodeURIComponent(String(item.id))+
-        '/source" target="_blank" rel="noopener">Review original invoice PDF</a></p>'+
-        (unread.length?'<p class="notice warning">'+esc(unread.length)+
-          ' page(s) could not be read. Check them against the original PDF.</p>':'')+
-        (notices.length?'<p class="fine-print">'+
-          esc(notices.map(note=>String(note).slice(0,180)).join('; '))+'</p>':'')+
-        (names?'<table class="data-table"><thead><tr>'+
-          '<th>Detected code</th><th>Reference description</th>'+
-          '<th>Source page(s)</th><th></th></tr></thead><tbody>'+
-          names+'</tbody></table>':
-          '<p>No usable equipment codes were extracted. Inspect the PDF or '+
-          'enter the correct machine manually.</p>')+
-        (item.codes.length>80?'<p>More candidates detected. Open the full Import Documents '+
-          'record and confirm any additional items manually.</p>':'')+
-        '</section>';
-    }).join('');
-    feedback.innerHTML='<p><strong>Invoice evidence only.</strong> An extracted code is '+
-      'not a verified equipment match. The coordinator must compare the invoice '+
-      'against the exact unified Master record and expressly confirm that the '+
-      'product codes and machines match. Unmatched items require manual review.</p>'+
-      '<div id="unifiedInvoiceMatchReview" role="status" aria-live="polite"></div>'+cards;
-    feedback.querySelectorAll('[data-invoice-code-index]').forEach(button=>
-      button.addEventListener('click',async()=>{
-        const selected=suggestions[Number(button.dataset.invoiceCodeIndex)];
-        const addForm=document.querySelector('#unifiedEquipmentAdd');
-        if(!selected||!addForm)return;
+    const matches=matching.results||[];
+    const existing=new Set(unifiedEquipment.filter(line=>line.source_import_id)
+      .map(line=>String(line.source_import_id)+'/'+String(line.item_code||'').trim().toUpperCase()));
+    let added=0,already=0,limitReached=0;
+    for(const match of matches){
+      if(!match.auto_add_equipment)continue;
+      const key=String(match.source_import_id)+'/'+match.sku;
+      if(existing.has(key)){already++;continue;}
+      if(unifiedEquipment.length>=500){limitReached++;continue;}
+      unifiedEquipment.push({
+        item_code:match.sku,
+        description:String(match.master_description||match.sku).slice(0,400),
+        serial:'', cover_start:'', quantity:1,
+        source_import_id:match.source_import_id,
+        source_pages:match.source_pages,
+        invoice_match_confirmed:true,
+        invoice_match_method:'auto_exact_master'
+      });
+      existing.add(key);
+      added++;
+    }
+    unifiedClearPrice();
+    renderUnifiedEquipment();
+    const filesById=new Map(analysed.map(x=>[x.id,x]));
+    const statusLabel={
+      matched_equipment:'Matched — added to equipment draft',
+      matched_inventory_not_machine:'Matched — spare part or other inventory (excluded)',
+      matched_unpriced_or_held:'Matched — price needs administrator review',
+      unmatched:'No exact Master match — coordinator review required'
+    };
+    feedback.innerHTML=
+      '<p><strong>'+esc(added)+'</strong> equipment codes added automatically, '+
+      esc(already)+' already in this draft, '+
+      esc(matching.counts.matched_inventory_not_machine||0)+
+      ' matched inventory/parts excluded, '+
+      esc(matching.counts.matched_unpriced_or_held||0)+
+      ' matched but without an approved reference price, and '+
+      esc(matching.counts.unmatched||0)+' unmatched codes for review.</p>'+
+      (limitReached?'<p class="notice warning">'+esc(limitReached)+
+        ' machine lines exceed the 500-line draft limit; review before continuing.</p>':'')+
+      '<p class="fine-print">Exact Master SKU matches are accepted automatically. '+
+      'Coordinator input is required only for unmatched equipment codes. '+
+      'Check quantities and serial numbers before issuing a quotation. '+
+      'Spare parts are not added as maintenance machines.</p>'+
+      '<div style="overflow-x:auto"><table class="data-table">'+
+      '<thead><tr><th>Invoice</th><th>Code</th><th>Master description</th>'+
+      '<th>Match result</th><th></th></tr></thead><tbody>'+
+      matches.map((match,i)=>{
+        const file=filesById.get(match.source_import_id);
+        return '<tr><td>'+esc(file?.filename||String(match.source_import_id))+
+          ' · page '+esc(match.source_pages.join(', ')||'not located')+'</td>'+
+          '<td>'+esc(match.sku)+'</td><td>'+esc(match.master_description||'—')+
+          '</td><td>'+esc(statusLabel[match.status]||'Needs review')+'</td>'+
+          '<td>'+(match.status==='unmatched'?
+            '<button type="button" class="button button-outline" '+
+            'data-review-unmatched="'+i+'">Review unmatched code</button>':
+            '')+'</td></tr>';
+      }).join('')+'</tbody></table></div>'+
+      analysed.map(file=>{
+        const messages=(file.warnings||[]);
+        return '<p class="fine-print"><a href="/api/imports/'+
+          encodeURIComponent(String(file.id))+
+          '/source" target="_blank" rel="noopener">Review original '+esc(file.filename||'PDF')+
+          '</a>'+(file.unread.length?' — '+esc(file.unread.length)+
+          ' pages need manual reading':'')+
+          (messages.length?' — '+esc(messages.map(x=>String(x).slice(0,150)).join('; ')):'')+
+          '</p>';
+      }).join('');
+    feedback.querySelectorAll('[data-review-unmatched]').forEach(review=>
+      review.addEventListener('click',()=>{
+        const candidate=matches[Number(review.dataset.reviewUnmatched)];
+        const form=document.querySelector('#unifiedEquipmentAdd');
+        if(!candidate||!form)return;
         if(unifiedEditingEquipmentIndex!==null){
           const note=document.querySelector('#unifiedDraftFeedback');
-          if(note)note.textContent='Save or cancel the equipment line already being edited first.';
+          if(note)note.textContent='Complete the current equipment edit before reviewing another code.';
           return;
         }
-        button.disabled=true;
-        const review=document.querySelector('#unifiedInvoiceMatchReview');
-        if(!review){button.disabled=false;return;}
-        review.textContent='Checking the exact invoice code against the unified Master…';
-        // The Master, not V10, is the only proposed match for invoice evidence.
-        // Exact SKU identity is a suggestion and requires coordinator review.
-        try{
-          const search=await api('/api/quoting/quick-draft/search?q='+
-            encodeURIComponent(selected.sku)+'&limit=50');
-          const exact=(search.results||[]).filter(row=>
-            String(row.sku||'').trim().toUpperCase()===selected.sku);
-          const confirmed=exact.length===1?exact[0]:null;
-          review.innerHTML=
-            '<h4>Coordinator check — invoice against unified Master</h4>'+
-            '<p>Invoice #'+esc(selected.source_import_id)+' · printed code: <strong>'+
-            esc(selected.sku)+'</strong> · pages '+esc(selected.pages.join(', ')||'not identified')+'</p>'+
-            (confirmed?
-              '<p>Unified Master exact code: <strong>'+esc(confirmed.sku)+
-              '</strong> · equipment: '+esc(confirmed.name)+
-              ' · group: '+esc(confirmed.group||'')+'</p>'+
-              '<p class="notice warning">An exact item-code match does not prove '+
-              'the invoice contains this machine. Verify model, variant, '+
-              'console and whether this is the complete equipment.</p>':
-              '<p class="notice warning">No unique, positive-price machine match '+
-              'in the unified Master. Do not accept this as confirmed equipment.</p>')+
-            (confirmed?
-              '<label><input type="checkbox" id="invoiceConfirmMatch"> '+
-              'I have checked the original invoice and confirm this code is '+
-              'the same equipment and variant as the Master record above.</label> '+
-              '<button type="button" class="button button-primary" '+
-              'id="invoiceApplyMatch" disabled>Confirm match &amp; prepare equipment</button>':'')+
-            '<button type="button" class="button button-outline" '+
-            'id="invoiceRejectMatch">Does not match — enter corrected machine manually</button>';
-          const reject=review.querySelector('#invoiceRejectMatch');
-          reject.addEventListener('click',()=>{
-            delete addForm.dataset.invoiceSku;
-            delete addForm.dataset.invoiceSourceId;
-            delete addForm.dataset.invoicePages;
-            delete addForm.dataset.invoiceMatchConfirmed;
-            delete addForm.dataset.invoiceConfirmedDescription;
-            addForm.elements.item_code.value='';
-            addForm.elements.description.value='';
-            addForm.elements.serial.value='';
-            addForm.elements.quantity.value='1';
-            const note=document.querySelector('#unifiedDraftFeedback');
-            if(note)note.textContent='Invoice match rejected. Find the correct product '+
-              'in the unified Master or enter it manually. No invoice match is claimed.';
-            review.textContent='Not a match — invoice code has not been linked to equipment.';
-            addForm.elements.item_code.focus();
-          });
-          if(confirmed){
-            const tick=review.querySelector('#invoiceConfirmMatch');
-            const use=review.querySelector('#invoiceApplyMatch');
-            tick.addEventListener('change',()=>{use.disabled=!tick.checked;});
-            use.addEventListener('click',()=>{
-              if(!tick.checked)return;
-              addForm.elements.item_code.value=selected.sku;
-              addForm.elements.description.value=String(confirmed.name||'');
-              addForm.elements.serial.value='';
-              addForm.elements.quantity.value='1';
-              addForm.elements.cover_start.value='';
-              addForm.dataset.invoiceSku=selected.sku;
-              addForm.dataset.invoiceSourceId=String(selected.source_import_id);
-              addForm.dataset.invoicePages=JSON.stringify(selected.pages);
-              addForm.dataset.invoiceMatchConfirmed='yes';
-              addForm.dataset.invoiceConfirmedDescription=String(confirmed.name||'');
-              unifiedCoordinatorGuidance();
-              const note=document.querySelector('#unifiedDraftFeedback');
-              if(note)note.textContent='Invoice and Master code confirmed. '+
-                'Now check quantity and machine serial numbers, then Add equipment line. '+
-                'The machine has not been added or commercially approved yet.';
-              review.textContent='Coordinator confirmed the exact invoice/Master match; '+
-                'awaiting equipment quantity and serial verification.';
-              addForm.elements.serial.focus();
-            });
-          }
-        }catch(error){
-          review.textContent='The unified Master lookup failed: '+error.message+
-            '. Do not confirm an invoice match; enter corrected equipment manually.';
-        }finally{button.disabled=false;}
-      }));
+        // This invoice code has no Master identity. Keep the source PDF
+        // for visual reference, but never claim it is a verified match.
+        form.elements.item_code.value=candidate.sku;
+        form.elements.description.value='';
+        form.elements.serial.value='';
+        form.elements.quantity.value='1';
+        form.elements.cover_start.value='';
+        delete form.dataset.invoiceSku;
+        delete form.dataset.invoiceSourceId;
+        delete form.dataset.invoicePages;
+        delete form.dataset.invoiceMatchConfirmed;
+        delete form.dataset.invoiceConfirmedDescription;
+        const note=document.querySelector('#unifiedDraftFeedback');
+        if(note)note.textContent='Unmatched invoice code '+candidate.sku+
+          ': verify the correct item code and machine description before adding manually. '+
+          'No invoice match has been claimed.';
+        form.elements.item_code.focus();
+      })
+    );
     fileInput.value='';
+    const note=document.querySelector('#unifiedDraftFeedback');
+    if(note&&added)note.textContent=added+' exact machine code(s) added automatically. '+
+      'Review quantities and serial numbers, then save and calculate.';
   }catch(error){
-    feedback.textContent='Invoice reading needs attention: '+error.message+
-      '. No invoice evidence has been added to this quotation.';
-  }finally{button.disabled=false;}
+    feedback.textContent='Invoice processing needs attention: '+error.message+
+      '. No new price calculation has been issued.';
+  }finally{
+    button.disabled=false;
+  }
 }
-
 
 async function unifiedSearchCatalogue(event) {
   event.preventDefault();
