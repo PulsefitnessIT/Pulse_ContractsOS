@@ -194,6 +194,9 @@ async function quickCalculate(){
     if(view!=='quoting'||!document.querySelector('#quickDraftResponse'))return;
     quickDraftResult=calculated;
     quickDraftBasis=quickCurrentBasis();
+    const unverifiedQuantities=unifiedEquipment.filter(line=>
+      line.invoice_match_method==='auto_exact_master' &&
+      line.quantity_verified!==true).length;
     status.innerHTML='<h4>Internal pricing draft: '+esc(calculated.draft_reference)+'</h4>'+
       '<p>Active Master v'+esc(calculated.price_book_revision)+' · '+
       esc(calculated.priced_line_count)+' of '+
@@ -208,10 +211,14 @@ async function quickCalculate(){
         {minimumFractionDigits:2,maximumFractionDigits:2}))+'</p>'+
       '<p class="notice warning">INTERNAL DRAFT ONLY — not approved for external customer issue. '+
       'Final maintenance rates, package cover and contract terms must be authorised.</p>'+
+      (unverifiedQuantities?
+        '<p class="notice warning">'+esc(unverifiedQuantities)+
+        ' imported machine quantity/quantities are still provisional. '+
+        'Use Confirm equipment quantities before downloading the PDF.</p>':'')+
       (calculated.issues.length?
         '<ul>'+calculated.issues.map(issue=>'<li>'+esc(issue)+'</li>').join('')+'</ul>':'');
     const print=document.querySelector('#quickPrint');
-    if(print)print.disabled=!calculated.complete_calculation;
+    if(print)print.disabled=!calculated.complete_calculation || !!unverifiedQuantities;
   }catch(error){
     quickDraftResult=null;
     status.textContent='Quick quote blocked: '+error.message+
@@ -227,6 +234,12 @@ async function quickPrintInternal(){
   const button=document.querySelector('#quickPrint');
   if(!result||!result.complete_calculation || !button){
     alert('Recalculate all equipment prices and rates before downloading.');
+    return;
+  }
+  if(unifiedEquipment.some(line=>
+      line.invoice_match_method==='auto_exact_master' &&
+      line.quantity_verified!==true)){
+    alert('Confirm imported equipment quantities before downloading this quotation.');
     return;
   }
   if(quickDraftBasis!==quickCurrentBasis()){
