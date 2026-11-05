@@ -176,8 +176,8 @@ async function quotingWorkspacePage() {
     '<button class="button button-primary" type="submit">Import &amp; match equipment</button></form>' +
     '<div id="unifiedInvoiceResults" role="status" aria-live="polite"></div>' +
     '<h4>Equipment lines</h4>' +
-    '<form id="unifiedCatalogueSearch"><label>Find a SmartQuote product (SKU, model or name) ' +
-    '<input name="q" minlength="2" maxlength="100" required placeholder="Search original product identity (not approval)"></label> ' +
+    '<form id="unifiedCatalogueSearch"><label>Find equipment in the unified Master (code or model) ' +
+    '<input name="q" minlength="2" maxlength="100" required placeholder="Type a machine code or name"></label> ' +
     '<button type="submit" class="button button-outline">Find equipment</button></form>' +
     '<div id="unifiedCatalogueResults" aria-live="polite"></div>' +
     '<div id="unifiedEquipmentTable"></div>' +
@@ -1013,72 +1013,65 @@ async function unifiedImportInvoiceEvidence(event) {
 
 async function unifiedSearchCatalogue(event) {
   event.preventDefault();
-  const form = event.currentTarget;
-  const host = document.querySelector('#unifiedCatalogueResults');
-  if (!host) return;
-  const q = String(new FormData(form).get('q') || '').trim();
-  if (q.length < 2) return;
-  host.textContent = 'Searching SmartQuote equipment and Sage equipment groups (spare parts excluded)…';
-  try {
-    const encoded=encodeURIComponent(q);
-    const responses=await Promise.allSettled([
-      api('/api/quoting/catalogue/search?q='+encoded+'&limit=40'),
-      api('/api/quoting/sage/search?q='+encoded+'&limit=40&equipment_only=true')
-    ]);
-    if (view !== 'quoting' || !document.querySelector('#unifiedCatalogueResults')) return;
-    if(responses.every(reply=>reply.status==='rejected')){
-      throw new Error('Neither the original equipment catalogue nor Sage list is staged in this pilot.');
-    }
-    const originals=responses[0].status==='fulfilled'?(responses[0].value.results||[]):[];
-    const sage=responses[1].status==='fulfilled'?(responses[1].value.results||[]):[];
-    const known=new Set(originals.map(row=>String(row.sku||'').toUpperCase()));
-    unifiedCatalogueMatches=[...originals,
-      ...sage.filter(row=>!known.has(String(row.sku||'').toUpperCase()))];
-    host.innerHTML = unifiedCatalogueMatches.length
-      ? '<p>Find the exact SKU from the V10 equipment database or Sage. '+
-        'Sage price presence alone does not confirm an approved maintenance rate. '+
-        'Unmapped older machines must be reviewed before issuing a customer quote.</p>' +
-        '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
-        '<th>SKU</th><th>Equipment</th><th>Model / group</th>'+
-        '<th>Source</th><th>Review</th><th></th></tr></thead><tbody>' +
-        unifiedCatalogueMatches.map((p,i) => '<tr><td>' + esc(p.sku) +
-          '</td><td>'+esc(p.name)+'</td><td>'+esc(p.model||p.group||'')+
-          '</td><td>'+esc(p.source||'V10 catalogue')+
-          '</td><td>'+(p.duplicate_sku?'Duplicate code — manual review':
-            p.requires_service_mapping?
-              'Sage reference — service mapping must be verified':
-              'Original V10 identity')+
-          '</td><td><button class="button button-outline" type="button" '+
-          'data-use-catalogue="'+i+'"'+(p.duplicate_sku?' disabled':'')+
-          '>Use item code</button></td></tr>').join('') +
-        '</tbody></table></div>'
-      : '<p>No exact catalogue or Sage item matched. You can still enter '+
-        'equipment details manually for review.</p>';
-    host.querySelectorAll('[data-use-catalogue]').forEach(button => button.addEventListener('click', () => {
-      const choice = unifiedCatalogueMatches[Number(button.dataset.useCatalogue)];
-      if (!choice || choice.duplicate_sku) return;
-      const equipmentForm = document.querySelector('#unifiedEquipmentAdd');
-      equipmentForm.elements.description.value = choice.name || choice.model || choice.sku;
-      equipmentForm.elements.item_code.value = choice.sku;
-      unifiedCoordinatorGuidance();
-      delete equipmentForm.dataset.invoiceSku;
-      delete equipmentForm.dataset.invoiceSourceId;
-      delete equipmentForm.dataset.invoicePages;
-      delete equipmentForm.dataset.invoiceMatchConfirmed;
-      delete equipmentForm.dataset.invoiceConfirmedDescription;
-      equipmentForm.elements.serial.focus();
-      const feedback = document.querySelector('#unifiedDraftFeedback');
-      if (feedback) feedback.textContent = choice.requires_service_mapping
-        ? 'Sage item selected. Confirm its equipment configuration and maintenance eligibility before quoting.'
-        : 'V10 equipment selected. Confirm serial and quantity, then preview pricing.';
-    }));
-  } catch (error) {
-    const target = document.querySelector('#unifiedCatalogueResults');
-    if (target) target.innerHTML = '<p class="notice warning">' + esc(error.message) +
-      ' Manual equipment entry is still available.</p>';
+  const form=event.currentTarget;
+  const host=document.querySelector('#unifiedCatalogueResults');
+  if(!host)return;
+  const q=String(new FormData(form).get('q')||'').trim();
+  if(q.length<2)return;
+  host.textContent='Searching one unified Master Price List (spare parts excluded)…';
+  try{
+    const response=await api('/api/quoting/quick-draft/search?q='+
+      encodeURIComponent(q)+'&limit=50');
+    if(view!=='quoting'||!document.querySelector('#unifiedCatalogueResults'))return;
+    unifiedCatalogueMatches=response.results||[];
+    host.innerHTML=unifiedCatalogueMatches.length?
+      '<p><strong>'+esc(response.matching_equipment_codes)+
+      '</strong> potential equipment matches in unified Master v'+
+      esc(response.price_book_revision)+
+      '. These are product and price references, not approved maintenance cover.</p>'+
+      '<div style="overflow-x:auto"><table class="data-table">'+
+      '<thead><tr><th>Exact item code</th><th>Machine</th><th>Group</th>'+
+      '<th>Reference price</th><th></th></tr></thead><tbody>'+
+      unifiedCatalogueMatches.map((item,i)=>
+        '<tr><td>'+esc(item.sku)+'</td><td>'+esc(item.name)+'</td>'+
+        '<td>'+esc(item.group||'')+'</td>'+
+        '<td>£'+esc(item.equipment_price_gbp)+'</td>'+
+        '<td><button type="button" class="button button-outline" '+
+        'data-use-catalogue="'+i+'">Use machine</button></td></tr>'
+      ).join('')+'</tbody></table></div>':
+      '<p>No eligible machine priced under that name or code in the unified Master. '+
+      'You can still enter a manually verified machine for review, but a '+
+      'missing or held Master price cannot produce a customer quotation.</p>';
+    host.querySelectorAll('[data-use-catalogue]').forEach(button=>
+      button.addEventListener('click',()=>{
+        const choice=unifiedCatalogueMatches[Number(button.dataset.useCatalogue)];
+        if(!choice)return;
+        const equipmentForm=document.querySelector('#unifiedEquipmentAdd');
+        if(!equipmentForm)return;
+        equipmentForm.elements.description.value=choice.name||choice.sku;
+        equipmentForm.elements.item_code.value=choice.sku;
+        equipmentForm.elements.serial.value='';
+        equipmentForm.elements.quantity.value='1';
+        equipmentForm.elements.cover_start.value='';
+        for(const attr of ['invoiceSku','invoiceSourceId','invoicePages',
+                           'invoiceMatchConfirmed','invoiceConfirmedDescription',
+                           'invoiceMatchMethod']){
+          delete equipmentForm.dataset[attr];
+        }
+        unifiedCoordinatorGuidance();
+        const feedback=document.querySelector('#unifiedDraftFeedback');
+        if(feedback)feedback.textContent='Current Master machine selected. '+
+          'Enter the actual quantity and serial where known, then add the line. '+
+          'No maintenance rate has been commercially approved by this selection.';
+        equipmentForm.elements.quantity.focus();
+      })
+    );
+  }catch(error){
+    host.innerHTML='<p class="notice warning">'+esc(error.message)+
+      '. Check that the unified Master Price List is active. '+
+      'Manual equipment entry remains available but is unpriced until verified.</p>';
   }
 }
-
 
 async function unifiedPreviewHandover(id) {
   const host = document.querySelector('#unifiedLegacyDetail');
