@@ -314,7 +314,11 @@ function renderUnifiedEquipment() {
     (item.source_import_id?
       '<p class="fine-print">Invoice #'+esc(item.source_import_id)+
       (item.source_pages?.length?' · page '+esc(item.source_pages.join(', ')):'')+
-      '</p>':'')+'</td>'+
+      '</p>'+
+      (item.invoice_match_confirmed?
+        '<p class="fine-print">Coordinator-confirmed invoice/Master code match'+
+        (item.invoice_match_confirmed_by?' · '+esc(item.invoice_match_confirmed_by):'')+
+        '</p>':'<p class="notice warning">Invoice match not confirmed</p>'):'')+'</td>'+
     '<td>'+esc(item.serial||'Not confirmed')+'</td><td>'+
     esc(item.cover_start||'Contract start')+'</td><td>'+esc(item.quantity)+'</td>'+
     '<td><button class="button button-outline" type="button" data-edit-line="'+i+'">Edit</button> '+
