@@ -209,7 +209,8 @@ def validate_draft(data):
                        "invoice_match_confirmed":confirmed,
                        "invoice_match_method":match_method,
                        "annual_rate_percent":rate,
-                       "fixed_annual_unit_gbp":fixed})
+                       "fixed_annual_unit_gbp":fixed,
+                       "quantity_verified":line.get("quantity_verified", match_method != "auto_exact_master")})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
             "contract_start":contract_start,"contract_end":contract_end,
