@@ -185,13 +185,31 @@ def validate_draft(data):
             )
         if serial_key:
             seen_serials[serial_key]=i+1
+        # Rates are user-selected INTERNAL draft assumptions, never approved tariffs.
+        rate_raw = line.get("annual_rate_percent")
+        fixed_raw = line.get("fixed_annual_unit_gbp")
+        def optional_rate(raw, title, maximum, fraction):
+            if raw is None or raw == "":
+                return None
+            try:
+                value = Decimal(str(raw))
+                if (not value.is_finite() or not 0 <= value <= maximum
+                        or value != value.quantize(fraction)):
+                    raise InvalidOperation()
+                return str(value)
+            except (InvalidOperation, ValueError, TypeError) as exc:
+                raise HTTPException(422, f"Equipment line {i+1}: invalid {title}.") from exc
+        rate = optional_rate(rate_raw, "service percentage", 100, Decimal("0.0001"))
+        fixed = optional_rate(fixed_raw, "fixed annual charge", 1000000, Decimal("0.01"))
         result.append({"item_code":_clean(line.get("item_code",""),"item_code",100),
                        "description":_clean(line.get("description",""),"description",400,required=True),
                        "serial":serial,
                        "cover_start":cover_start, "quantity":qty,
                        "source_import_id":source_id, "source_pages":pages,
                        "invoice_match_confirmed":confirmed,
-                       "invoice_match_method":match_method})
+                       "invoice_match_method":match_method,
+                       "annual_rate_percent":rate,
+                       "fixed_annual_unit_gbp":fixed})
     return {"customer":customer,"site":site,"tier":tier,"contact":contact,
             "term_years":term,"discount_percent":float(discount),
             "contract_start":contract_start,"contract_end":contract_end,
