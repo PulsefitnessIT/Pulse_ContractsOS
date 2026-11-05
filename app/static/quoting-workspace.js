@@ -119,9 +119,16 @@ async function quotingWorkspacePage() {
   unifiedDraftSelected = null;
   unifiedEquipment = [];
   content.innerHTML =
-    '<section class="panel"><h2>SmartQuote</h2>' +
-    '<p>Create a maintenance quotation, select equipment, check prices, and download an approved PDF. '+ 
-    'Existing SmartQuote records stay intact and read-only.</p></section>' +
+    '<section class="panel pulse-smartquote-hero"><p class="pulse-workspace-eyebrow">PULSE FITNESS / SMARTQUOTE</p>' +
+    '<h2>Maintenance quotations, made simple.</h2>' +
+    '<p>Import your sales invoices, automatically match equipment codes to the unified Master, ' +
+    'review only exceptions and calculate your maintenance proposal. ' +
+    'Customer issue remains subject to approved tariffs and terms.</p>' +
+    '<div class="pulse-step-strip" aria-label="SmartQuote workflow">' +
+    '<span><b>1</b> Drop invoice PDFs</span>' +
+    '<span><b>2</b> Auto-match exact codes</span>' +
+    '<span><b>3</b> Review exceptions</span>' +
+    '<span><b>4</b> Price &amp; approve</span></div></section>' +
     '<section class="panel" id="quoteGoLiveStatusPanel">' +
     '<div class="section-head"><div><h3>Customer quotation readiness</h3>' +
     '<p>See exactly what is still needed before the first approved customer PDF can be issued.</p></div>' +
@@ -150,20 +157,20 @@ async function quotingWorkspacePage() {
     '<label>Contract end <input name="contract_end" type="date"></label>' +
     '</div></form>' +
     '<h4>Start from a sales invoice (optional)</h4>' +
-    '<p>Upload up to 12 PDF invoices in one go. SmartQuote will suggest item codes ' +
-    'found on the documents. You still confirm the correct machines, quantities ' +
-    'and serials; no equipment is automatically added or approved.</p>' +
+    '<p>Drag and drop up to 12 sales invoice PDFs. Codes matching priced machines in ' +
+    'the unified Master are added to your draft automatically. Only unmatched ' +
+    'codes need a coordinator to check the machine identity. Quantities and ' +
+    'serial numbers remain to be verified before a quote can be issued.</p>' +
     '<form id="unifiedInvoiceImport"><label>Sales invoice PDF files ' +
     '<input name="files" type="file" accept=".pdf,application/pdf" multiple required></label>' +
-    '<div id="unifiedInvoiceDropzone" role="button" tabindex="0" ' +
-    'aria-label="Drop one or more invoice PDFs here or press Enter to choose PDF files" ' +
-    'style="margin:12px 0;padding:24px;text-align:center;border:2px dashed #879bb3;' +
-    'border-radius:12px;cursor:pointer;background:#f7f9fc">' +
+    '<div id="unifiedInvoiceDropzone" class="pulse-invoice-drop" role="button" tabindex="0" ' +
+    'aria-label="Drop one or more invoice PDFs here or press Enter to choose PDF files">' +
     '<strong>Drag and drop your sales invoice PDFs here</strong>' +
-    '<p class="fine-print">Or click to select files. Maximum 12 PDF invoices, ' +
-    '20 MB each and 60 MB total. Equipment will not be added without your confirmation.</p>' +
+    '<p class="fine-print">Or click to select files. Up to 12 PDFs, ' +
+    '20 MB each and 60 MB total. Exact Master machine-code matches are automatic; ' +
+    'spare parts are excluded and unmatched codes are flagged for review.</p>' +
     '</div>' +
-    '<button class="button button-outline" type="submit">Find equipment on invoices</button></form>' +
+    '<button class="button button-primary" type="submit">Import &amp; match equipment</button></form>' +
     '<div id="unifiedInvoiceResults" role="status" aria-live="polite"></div>' +
     '<h4>Equipment lines</h4>' +
     '<form id="unifiedCatalogueSearch"><label>Find a SmartQuote product (SKU, model or name) ' +
