@@ -621,3 +621,15 @@ def test_issue_rechecks_complete_financial_and_coverage_snapshot(
         assert db.execute(
             "SELECT COUNT(*) FROM unified_customer_quotes"
         ).fetchone()[0] == 0
+
+
+def test_customer_issuance_requires_explicit_quantity_review_after_pdf_code_auto_match():
+    draft=fake_draft()
+    price=fake_price()
+    draft["equipment"][0]["invoice_match_method"]="auto_exact_master"
+    draft["equipment"][0]["quantity_verified"]=False
+    errors=issues._errors(draft,price)
+    assert any("verify imported equipment quantity" in x for x in errors)
+    draft["equipment"][0]["quantity_verified"]=True
+    errors=issues._errors(draft,price)
+    assert not any("verify imported equipment quantity" in x for x in errors)
