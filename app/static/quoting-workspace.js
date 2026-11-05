@@ -1144,6 +1144,20 @@ async function loadRrpPriorityStatus() {
       link.className='button button-outline';
       link.textContent='Download SKUs requiring pricing and catalogue review';
       host.appendChild(link);
+      if(data.sage_loaded){
+        const full=document.createElement('a');
+        full.href='/api/quoting/source-reconciliation.csv';
+        full.download='Pulse_SmartQuote_Sage_Master_Full_Reconciliation.csv';
+        full.className='button button-outline';
+        full.textContent='Download complete Sage / Master / V10 price reconciliation';
+        full.title='Administrator only: includes internal source equipment prices and review flags';
+        host.appendChild(full);
+        const caveat=document.createElement('p');
+        caveat.className='fine-print';
+        caveat.textContent='This internal source audit includes prices, not approved customer quotations. '+
+          'Source differences are evidence for review, never automatic tariff overrides.';
+        host.appendChild(caveat);
+      }
     }
   } catch(error) {
     host.textContent='Source coverage unavailable: '+error.message+
