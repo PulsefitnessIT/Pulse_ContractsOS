@@ -587,11 +587,14 @@ def draft_price_preview(draft_id: str):
     except HTTPException:
         sage = None  # Report missing Sage without contaminating any RRP.
     from .quote_price_overrides import active_overrides
+    from .quote_price_book import active_book
+    current_price_book = active_book()
     codes = [str(item.get("item_code") or "") for item in draft.get("equipment", [])]
     result = preview(
         draft, catalog, configs, pricing, fingerprints,
         master_by_sku=index(master), sage_source=sage,
-        overrides=active_overrides(codes), august_source=master,
+        overrides=active_overrides(codes) if current_price_book is None else None,
+        august_source=master, price_book=current_price_book,
     )
     result["rrp_master"] = {
         "source": "Full Master Price List 24-08-2026.xlsx — List Price",
@@ -611,11 +614,11 @@ def draft_price_preview(draft_id: str):
         ),
     }
     result["rrp_source_priority"] = (
-        "Business-confirmed equipment price basis: August 2026 Master for current "
-        "machines; exact Sage Sales Price for legacy machines absent from the Master. "
-        "Both are accepted inputs to the V10 maintenance calculation. Audited "
-        "administrator corrections remain available; Silver/Gold/Platinum rate "
-        "rules, terms and customer quote approval are separate."
+        "One active Master price book. Each later activated import supersedes "
+        "matching SKU prices and retains all other items; commercial tariffs "
+        "and maintenance eligibility remain independent."
+        if current_price_book is not None else
+        "Legacy Master then Sage fallback until the unified book is activated."
     )
     return result
 
