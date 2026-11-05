@@ -58,7 +58,7 @@ function initQuoteQuickDraft() {
     '<button type="button" class="button button-primary" id="quickGetPrice" disabled>'+
     '2. Calculate internal quote</button>'+
     '<button type="button" class="button button-outline" id="quickPrint" disabled>'+
-    '3. Print internal draft / PDF</button></div>'+
+    '3. Download branded internal PDF</button></div>'+
     '<div id="quickRateEditor"></div>'+
     '<label style="margin-top:1rem">Maintenance scope and exclusions '+
     '<textarea id="quickScopeNotes" rows="2" placeholder="Enter agreed scope and exclusions; subject to commercial approval"></textarea>'+
@@ -139,6 +139,27 @@ function quickCopyEquipment(){
   if(status)status.textContent='Rate suggestions are based on historic quote patterns. Review before calculation.';
 }
 
+function quickPayload(){
+  const form=document.querySelector('#unifiedDraftForm');
+  return {
+    customer:String(form.elements.customer.value||'').trim(),
+    site:String(form.elements.site.value||'').trim(),
+    package:String(form.elements.tier.value||'Gold'),
+    term_years:Number(form.elements.term_years.value||1),
+    discount_percent:String(form.elements.discount_percent.value||0),
+    notes:String(document.querySelector('#quickScopeNotes')?.value||''),
+    lines:quickDraftLines.map(line=>({
+      sku:line.sku,
+      quantity:line.quantity,
+      serials:line.serials,
+      annual_rate_percent:line.fixed.trim()===''?
+        (line.rate.trim()!==''?line.rate:null):null,
+      fixed_annual_unit_gbp:line.fixed.trim()!==''?line.fixed:null
+    }))
+  };
+}
+
+
 async function quickCalculate(){
   const status=document.querySelector('#quickDraftResponse');
   const button=document.querySelector('#quickGetPrice');
@@ -165,22 +186,7 @@ async function quickCalculate(){
   button.disabled=true;
   status.textContent='Calculating against the latest unified Master price version…';
   try{
-    const json={
-      customer:String(form.elements.customer.value||'').trim(),
-      site:String(form.elements.site.value||'').trim(),
-      package:String(form.elements.tier.value||'Gold'),
-      term_years:Number(form.elements.term_years.value||1),
-      discount_percent:String(form.elements.discount_percent.value||0),
-      notes:String(document.querySelector('#quickScopeNotes')?.value||''),
-      lines:quickDraftLines.map(line=>({
-        sku:line.sku,
-        quantity:line.quantity,
-        serials:line.serials,
-        annual_rate_percent:line.fixed.trim()===''?
-          (line.rate.trim()!==''?line.rate:null):null,
-        fixed_annual_unit_gbp:line.fixed.trim()!==''?line.fixed:null
-      }))
-    };
+    const json=quickPayload();
     const calculated=await api('/api/quoting/quick-draft/preview',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(json)
@@ -217,90 +223,61 @@ async function quickCalculate(){
 
 async function quickPrintInternal(){
   const result=quickDraftResult;
-  if(!result||!result.complete_calculation){
-    alert('Recalculate all equipment lines before printing.');
+  const feedback=document.querySelector('#quickDraftResponse');
+  const button=document.querySelector('#quickPrint');
+  if(!result||!result.complete_calculation || !button){
+    alert('Recalculate all equipment prices and rates before downloading.');
     return;
   }
   if(quickDraftBasis!==quickCurrentBasis()){
     quickInvalidate();
-    alert('Customer, equipment or pricing changed. Recalculate before printing.');
+    alert('Customer, equipment or rates changed. Recalculate before downloading.');
     return;
   }
-  // Open from the direct button click, then recheck the real price source.
-  // The window remains empty and closes on a changed Master revision.
-  const opened=window.open('','_blank');
-  if(!opened){
-    alert('Allow pop-ups for this internal quote preview, then try again.');
-    return;
-  }
+  button.disabled=true;
   try{
-    const current=await api('/api/quoting/quick-draft/status');
-    if(current.price_book_sha256!==result.price_book_sha256){
-      quickInvalidate();
-      throw new Error('The unified Master price list changed. Recalculate your quote.');
+    const draft=quickPayload();
+    draft.expected_price_book_sha256=result.price_book_sha256;
+    const response=await fetch('/api/quoting/quick-draft/internal-preview.pdf',{
+      method:'POST',
+      credentials:'same-origin',
+      headers:{
+        'Content-Type':'application/json',
+        'X-Pulse-CSRF':pilotCsrf()
+      },
+      body:JSON.stringify(draft)
+    });
+    if(response.status===401){
+      location.href='/pilot/login';
+      throw Error('Pilot session expired.');
     }
+    if(!response.ok){
+      let detail;
+      try{const data=await response.json();detail=data.detail;}catch{}
+      throw Error(detail||'PDF preview rejected ('+response.status+')');
+    }
+    if(quickDraftBasis!==quickCurrentBasis()){
+      quickInvalidate();
+      throw Error('The quote changed while the document was downloading.');
+    }
+    const blob=await response.blob();
+    if(blob.type!=='application/pdf' || !blob.size)
+      throw Error('Server returned an invalid PDF.');
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='Pulse_Fitness_'+result.draft_reference+'.pdf';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),3000);
+    if(feedback)feedback.insertAdjacentHTML(
+      'beforeend','<p class="fine-print">Branded INTERNAL DRAFT PDF downloaded. '+
+      'Not authorised for external issue.</p>'
+    );
   }catch(error){
-    opened.close();
-    alert('Cannot print a stale quote: '+error.message);
-    return;
-  }
-  const escHtml=(v)=>String(v??'').replace(/[&<>"']/g,
-    c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const rows=result.equipment.map((row,i)=>'<tr>'+
-    '<td>'+(i+1)+'</td><td>'+escHtml(row.name)+'<div class="code">'+escHtml(row.sku)+'</div></td>'+
-    '<td>'+escHtml(row.quantity)+'</td><td>'+escHtml(row.serials||'To be confirmed')+'</td></tr>').join('');
-  const total=Number(result.annual_partial_gbp).toLocaleString('en-GB',{
-    style:'currency',currency:'GBP'
-  });
-  const term=Number(result.term_partial_gbp).toLocaleString('en-GB',{
-    style:'currency',currency:'GBP'
-  });
-  const scope=String(document.querySelector('#quickScopeNotes')?.value||'')
-    .slice(0,2500);
-  const doc='<!doctype html><html><head><meta charset="utf-8">'+
-    '<title>INTERNAL '+escHtml(result.draft_reference)+'</title>'+
-    '<style>@page{size:A4;margin:14mm}*{box-sizing:border-box}'+
-    'body{font:13px Arial,sans-serif;color:#1B1C1D}'+
-    'header{background:#1B1C1D;color:#fff;border-bottom:5px solid #19CDFF;'+
-    'padding:15px 18px;display:flex;align-items:center;justify-content:space-between;gap:24px;'+
-    '-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
-    'header img{width:196px;max-height:48px;object-fit:contain;display:block}'+
-    'h1{font-size:23px;letter-spacing:.01em;margin:0}h2{font-size:17px;margin-top:26px}'+
-    '.small{font-size:11px;color:#d6ecf3}.draft{color:#19CDFF;font-weight:900}'+
-    'table{width:100%;border-collapse:collapse;margin-top:15px}td,th{padding:9px;'+
-    'border-bottom:1px solid #d9e1e8;text-align:left;vertical-align:top}'+
-    'th{background:#e8f9ff;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
-    'footer{border-top:2px solid #19CDFF;padding-top:15px;margin-top:36px;font-size:11px}'+
-    '.code{font:11px monospace;color:#6E7476}tr{page-break-inside:avoid}'+
-    '.right{text-align:right}h2{page-break-after:avoid}</style></head><body>'+
-    '<header><div><img src="/static/brand/pulse-fitness-reverse.svg" '+
-    'alt="Pulse Fitness"><span class="small">SERVICE &amp; AFTERSALES · MAINTENANCE PROPOSAL</span></div>'+
-    '<div class="right draft">INTERNAL DRAFT<br><span class="small">'+
-    escHtml(result.draft_reference)+'</span></div></header>'+
-    '<h2>Prepared for</h2><p><strong>'+escHtml(result.customer)+
-    '</strong><br>'+escHtml(result.site)+'</p>'+
-    '<p>Proposed package: <strong>'+escHtml(result.package)+
-    '</strong> · Term: '+escHtml(result.term_years)+' year(s)</p>'+
-    '<h2>Equipment schedule</h2><table><thead><tr><th>#</th><th>Machine</th>'+
-    '<th>Qty</th><th>Serial(s)</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-    '<h2>Proposed maintenance</h2><p><strong>Annual (ex VAT): '+escHtml(total)+
-    '</strong><br>Total full term (ex VAT): '+escHtml(term)+'</p>'+
-    '<h2>Scope / exclusions</h2><p>'+escHtml(scope).replace(/\n/g,'<br>')+'</p>'+
-    '<footer><strong>INTERNAL DRAFT — NOT AUTHORISED FOR CUSTOMER ISSUE.</strong> '+
-    'Annual maintenance percentages or manually entered fixed charges, service eligibility, '+
-    'cover package, serial numbers and final terms require Pulse commercial approval. '+
-    'The source price book does not itself approve maintenance cover. '+
-    'Document is not a binding offer.</footer></body></html>';
-  opened.document.open();
-  opened.document.write(doc);
-  opened.document.close();
-  opened.focus();
-  // Do not print before the supplied corporate logo has loaded.
-  const logo=opened.document.querySelector('header img');
-  if(logo && !logo.complete){
-    logo.addEventListener('load',()=>opened.print(),{once:true});
-    logo.addEventListener('error',()=>opened.print(),{once:true});
-  }else{
-    opened.print();
-  }
+    if(feedback)feedback.insertAdjacentHTML(
+      'beforeend','<p class="notice warning">'+esc(error.message)+'</p>'
+    );
+  }finally{button.disabled=false;}
 }
