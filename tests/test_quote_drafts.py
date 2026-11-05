@@ -143,7 +143,8 @@ def test_pdf_invoice_code_pages_are_checked_before_draft_write(tmp_path,monkeypa
         "customer":"Fictional Leisure","site":"Fictional Hall","tier":"Gold",
         "equipment":[{"description":"Fictional Bike","item_code":"TEST-001",
             "serial":"FIC-SER-1","quantity":1,
-            "source_import_id":17,"source_pages":[3,2,2]}],
+            "source_import_id":17,"source_pages":[3,2,2],
+            "invoice_match_confirmed":True}],
     }
     created=quote_drafts.create_draft(payload)
     assert created["equipment"][0]["source_import_id"]==17
@@ -167,7 +168,8 @@ def test_pdf_invoice_code_pages_are_checked_before_draft_write(tmp_path,monkeypa
     updated=quote_drafts.update_draft(created["id"],{
         **payload,"revision":1,
         "equipment":[{**payload["equipment"][0],"item_code":"CORRECTED-SKU",
-            "source_import_id":None,"source_pages":[]}],
+            "source_import_id":None,"source_pages":[],
+            "invoice_match_confirmed":False}],
     })
     assert updated["equipment"][0]["source_import_id"] is None
     assert updated["equipment"][0]["source_pages"]==[]
@@ -234,3 +236,40 @@ def test_draft_readiness_warns_about_placeholder_serials(tmp_path, monkeypatch):
     readiness = quote_drafts.draft_readiness(created["id"])
     assert any("Verify 1 equipment serial" in issue
                for issue in readiness["review_issues"])
+
+
+def test_invoice_code_match_must_be_explicitly_confirmed_even_with_valid_source():
+    # The coordinator can save manual equipment, but cannot attach invoice
+    # evidence merely because the extracted code looks correct.
+    base={
+        "customer":"Example Sports Centre","site":"Fictional Gym",
+        "equipment":[{
+            "description":"Example Treadmill","item_code":"TEST-001",
+            "quantity":1,"source_import_id":17,"source_pages":[2],
+        }]
+    }
+    with pytest.raises(HTTPException) as error:
+        quote_drafts.validate_draft(base)
+    assert error.value.status_code == 422
+    assert "explicitly confirm" in str(error.value.detail)
+    with pytest.raises(HTTPException) as error:
+        quote_drafts.validate_draft({
+            **base,
+            "equipment":[{**base["equipment"][0],
+                         "invoice_match_confirmed":"yes"}],
+        })
+    assert error.value.status_code==422
+    valid=quote_drafts.validate_draft({
+        **base,
+        "equipment":[{**base["equipment"][0],
+                     "invoice_match_confirmed":True}],
+    })
+    assert valid["equipment"][0]["invoice_match_confirmed"] is True
+    with pytest.raises(HTTPException) as error:
+        quote_drafts.validate_draft({
+            **base,
+            "equipment":[{**base["equipment"][0],
+                         "source_import_id":None,"source_pages":[],
+                         "invoice_match_confirmed":True}],
+        })
+    assert error.value.status_code==422
