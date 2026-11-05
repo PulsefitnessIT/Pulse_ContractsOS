@@ -345,3 +345,60 @@ test('automatched machine description can be refined without asking for code rec
   assert.equal(line.invoice_match_method,'auto_exact_master');
   assert.match(line.description,/revised console details/);
 });
+
+
+test('one coordinator action saves then calculates from the unified Master',async()=>{
+  const w=workspace();
+  const actions=[];
+  w.ctx.unifiedSaveDraft=async()=>{actions.push('save');return {id:'fictional-id'};};
+  w.ctx.quickCopyEquipment=()=>{actions.push('load-equipment');};
+  w.ctx.quickCalculate=async()=>{actions.push('calculate');};
+  await w.run('unifiedSaveAndPrice()');
+  assert.deepEqual(actions,['save','load-equipment','calculate']);
+});
+
+test('failed save never performs a misleading quote calculation',async()=>{
+  const w=workspace();
+  const actions=[];
+  w.ctx.unifiedSaveDraft=async()=>{actions.push('save-failed');return null;};
+  w.ctx.quickCopyEquipment=()=>{actions.push('incorrect-copy');};
+  w.ctx.quickCalculate=async()=>{actions.push('incorrect-calculate');};
+  await w.run('unifiedSaveAndPrice()');
+  assert.deepEqual(actions,['save-failed']);
+});
+
+test('a single bulk confirmation updates quantities while keeping exact auto-matched invoice codes',()=>{
+  const w=workspace();
+  const originalQuery=w.ctx.document.querySelector.bind(w.ctx.document);
+  const handler={click:null,addEventListener(name,fn){this.click=fn;}};
+  const verified={value:'3',focused:false,focus(){this.focused=true;}};
+  const serial={value:'DEMO-QUANTITY-100',focus(){}};
+  const error={textContent:''};
+  const review={
+    innerHTML:'',
+    querySelector(selector){
+      if(selector==='#unifiedConfirmQuantities')return handler;
+      if(selector==='#unifiedQuantityError')return error;
+      if(selector==='[data-verify-quantity="0"]')return verified;
+      if(selector==='[data-verify-serial="0"]')return serial;
+      return null;
+    }
+  };
+  w.ctx.document.querySelector=(selector)=>
+    selector==='#unifiedQuantityReview'?review:originalQuery(selector);
+  w.run('unifiedEquipment=[{item_code:"BIKE-TEST",description:"Fictional Bike",quantity:1,serial:"",'+
+    'invoice_match_confirmed:true,invoice_match_method:"auto_exact_master",'+
+    'source_import_id:91,source_pages:[1],quantity_verified:false}];');
+  w.run('renderUnifiedEquipment()');
+  assert.match(review.innerHTML,/Confirm equipment quantities/);
+  assert.match(w.table.innerHTML,/Quantity to verify/);
+  handler.click();
+  const line=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(line.quantity,3);
+  assert.equal(line.serial,'DEMO-QUANTITY-100');
+  assert.equal(line.quantity_verified,true);
+  assert.equal(line.source_import_id,91);
+  assert.equal(line.invoice_match_method,'auto_exact_master');
+  assert.equal(error.textContent,'');
+  assert.equal(review.innerHTML,'');
+});
