@@ -169,9 +169,17 @@ def _price(draft):
     from .quote_price_book import active_book
 
     catalog, configs, policy, fingerprints = quote_pricing.source_snapshot()
-    august = august_snapshot()   # Verifies the August source against manifest.
-    sage = sage_snapshot()
+    august = august_snapshot()   # Legacy identity/provenance only.
     current_price_book = active_book()
+    if current_price_book is None:
+        sage = sage_snapshot()
+    else:
+        # An already-activated unified Master is independent of later Sage
+        # reference refreshes and must not silently revert to old pricing.
+        try:
+            sage = sage_snapshot()
+        except HTTPException:
+            sage = None
     codes = [str(line.get("item_code") or "") for line in draft["equipment"]]
     preview = quote_pricing.preview(
         draft, catalog, configs, policy, fingerprints,
