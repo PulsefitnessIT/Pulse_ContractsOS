@@ -3,6 +3,35 @@
    original V10 configuration rules. It can NEVER issue an approved quote. */
 let quickDraftLines = [];
 let quickDraftResult = null;
+let quickDraftBasis = null;
+
+function quickCurrentBasis(){
+  const form=document.querySelector('#unifiedDraftForm');
+  return JSON.stringify({
+    customer:form?.elements.customer.value||'',
+    site:form?.elements.site.value||'',
+    package:form?.elements.tier.value||'',
+    term:form?.elements.term_years.value||'',
+    discount:form?.elements.discount_percent.value||'',
+    equipment:unifiedEquipment.map(x=>({
+      item_code:x.item_code, quantity:x.quantity, serial:x.serial,
+      description:x.description
+    })),
+    quick_rates:quickDraftLines,
+    scope:document.querySelector('#quickScopeNotes')?.value||'',
+  });
+}
+
+function quickInvalidate(){
+  if(!quickDraftResult)return;
+  quickDraftResult=null;
+  quickDraftBasis=null;
+  const print=document.querySelector('#quickPrint');
+  if(print)print.disabled=true;
+  const status=document.querySelector('#quickDraftResponse');
+  if(status)status.textContent='Quotation information changed. Reload equipment and recalculate.';
+}
+
 
 function quickQuoteHistoricRate(description) {
   const name=String(description||'').toLowerCase();
@@ -41,6 +70,12 @@ function initQuoteQuickDraft() {
   host.querySelector('#quickCopyEquipment').addEventListener('click',quickCopyEquipment);
   host.querySelector('#quickGetPrice').addEventListener('click',quickCalculate);
   host.querySelector('#quickPrint').addEventListener('click',quickPrintInternal);
+  const form=document.querySelector('#unifiedDraftForm');
+  if(form){
+    form.addEventListener('input',quickInvalidate);
+    form.addEventListener('change',quickInvalidate);
+  }
+  host.querySelector('#quickScopeNotes').addEventListener('input',quickInvalidate);
 }
 
 function quickCopyEquipment(){
@@ -134,6 +169,7 @@ async function quickCalculate(){
     });
     if(view!=='quoting'||!document.querySelector('#quickDraftResponse'))return;
     quickDraftResult=calculated;
+    quickDraftBasis=quickCurrentBasis();
     status.innerHTML='<h4>Internal pricing draft: '+esc(calculated.draft_reference)+'</h4>'+
       '<p>Active Master v'+esc(calculated.price_book_revision)+' · '+
       esc(calculated.priced_line_count)+' of '+
@@ -161,10 +197,33 @@ async function quickCalculate(){
   }
 }
 
-function quickPrintInternal(){
+async function quickPrintInternal(){
   const result=quickDraftResult;
   if(!result||!result.complete_calculation){
     alert('Recalculate all equipment lines before printing.');
+    return;
+  }
+  if(quickDraftBasis!==quickCurrentBasis()){
+    quickInvalidate();
+    alert('Customer, equipment or pricing changed. Recalculate before printing.');
+    return;
+  }
+  // Open from the direct button click, then recheck the real price source.
+  // The window remains empty and closes on a changed Master revision.
+  const opened=window.open('','_blank');
+  if(!opened){
+    alert('Allow pop-ups for this internal quote preview, then try again.');
+    return;
+  }
+  try{
+    const current=await api('/api/quoting/quick-draft/status');
+    if(current.price_book_sha256!==result.price_book_sha256){
+      quickInvalidate();
+      throw new Error('The unified Master price list changed. Recalculate your quote.');
+    }
+  }catch(error){
+    opened.close();
+    alert('Cannot print a stale quote: '+error.message);
     return;
   }
   const escHtml=(v)=>String(v??'').replace(/[&<>"']/g,
@@ -208,11 +267,6 @@ function quickPrintInternal(){
     'cover package, serial numbers and final terms require Pulse commercial approval. '+
     'The source price book does not itself approve maintenance cover. '+
     'Document is not a binding offer.</footer></body></html>';
-  const opened=window.open('','_blank');
-  if(!opened){
-    alert('Allow pop-ups for this internal quote preview, then try again.');
-    return;
-  }
   opened.document.open();
   opened.document.write(doc);
   opened.document.close();
