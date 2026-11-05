@@ -37,6 +37,8 @@ function unifiedDraftSnapshot() {
       source_pages:Array.isArray(e.source_pages)?e.source_pages:[],
       invoice_match_confirmed:e.invoice_match_confirmed===true,
       invoice_match_method:String(e.invoice_match_method||''),
+      annual_rate_percent:e.annual_rate_percent??null,
+      fixed_annual_unit_gbp:e.fixed_annual_unit_gbp??null,
     }))
   });
 }
@@ -188,17 +190,18 @@ async function quotingWorkspacePage() {
     '</div><button type="submit" class="button button-outline">Add equipment line</button> ' +
     '<button type="button" class="button button-outline" id="unifiedCancelEquipmentEdit" hidden>Cancel edit</button></form>' +
     '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem">' +
-    '<button type="button" class="button button-primary" id="unifiedSaveAndPrice">Save &amp; calculate price</button>' +
+    '<button type="button" class="button button-primary" id="unifiedSaveAndPrice">Save &amp; calculate internal quote</button>' +
     '<button type="button" class="button button-outline" id="unifiedDraftSave">Save draft only</button>' +
     '<button type="button" class="button button-outline" id="unifiedDraftNew">New draft</button>' +
-    '<button type="button" class="button button-outline" id="unifiedDraftPrice">Recalculate saved price</button></div>' +
+    '<button type="button" class="button button-outline" id="unifiedDraftPrice">Check customer-issue pricing</button></div>' +
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
     '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
     '<section class="panel" id="quoteQuickDraftPanel">' +
-    '<h3>Fast SmartQuote — price a maintenance contract today</h3>' +
-    '<p>Price the customer and machine schedule above using the one Master. ' +
-    'Does not require the old V10 service configuration. Internal draft only.</p>' +
+    '<h3>Your maintenance quotation estimate</h3>' +
+    '<p>Use the selected machines and the single Master Price List. ' +
+    'Review the proposed service rates, then calculate or download an ' +
+    'internal quotation PDF. Customer issue requires separate approval.</p>' +
     '<div id="quoteQuickDraftHost"></div></section>' +
     '<section class="panel"><h3>Equipment price source evidence</h3>' +
     '<p>The unified Master is the active price authority after administrator activation. ' +
@@ -457,12 +460,15 @@ function unifiedAddEquipment(event) {
       return;
     }
   }
+  const prior=editing!==null?unifiedEquipment[editing]:null;
   const record={
     description:String(data.description).trim(),
     item_code:String(data.item_code||'').trim(),
     serial,
     cover_start:String(data.cover_start||''),
     quantity,
+    annual_rate_percent:prior?.annual_rate_percent??null,
+    fixed_annual_unit_gbp:prior?.fixed_annual_unit_gbp??null,
     source_import_id:invoiceLinked?invoiceId:null,
     source_pages:invoiceLinked&&Array.isArray(invoicePages)?
       invoicePages:[],
@@ -560,9 +566,19 @@ async function unifiedSaveDraft() {
 
 async function unifiedSaveAndPrice(){
   const result=await unifiedSaveDraft();
-  // Never call the calculator when a save failed: otherwise the old
-  // revision might appear priced for a changed site or equipment list.
-  if (result) await unifiedPricePreview();
+  // One connected workflow: save the real draft, reuse the one active Master
+  // and prepare a clearly marked INTERNAL estimate without the old V10 gate.
+  if(!result)return;
+  if(typeof quickCopyEquipment==='function' &&
+     typeof quickCalculate==='function'){
+    quickCopyEquipment();
+    await quickCalculate();
+    document.querySelector('#quoteQuickDraftPanel')?.scrollIntoView({
+      behavior:'smooth',block:'start'
+    });
+  }else{
+    await unifiedPricePreview();
+  }
 }
 
 async function loadUnifiedDrafts() {
@@ -1050,7 +1066,7 @@ async function unifiedPricePreview() {
   const host = document.querySelector('#unifiedPricePanel');
   if (!host) return;
   if (!unifiedDraftSelected) {
-    host.textContent = 'Save the quotation draft before calculating a tariff preview.';
+    host.textContent = 'Save the quotation draft before checking customer-issue pricing.';
     return;
   }
   const form = document.querySelector('#unifiedDraftForm');
@@ -1069,7 +1085,7 @@ async function unifiedPricePreview() {
     host.textContent = 'Save any changes to this draft before requesting a price preview.';
     return;
   }
-  host.textContent = 'Checking exact product identities against the staged V10 pricing rules…';
+  host.textContent = 'Checking customer-release eligibility and approved maintenance tariffs…';
   try {
     const preview = await api('/api/quoting/drafts/' + encodeURIComponent(unifiedDraftSelected.id) + '/price-preview');
     if (view !== 'quoting' || !document.querySelector('#unifiedPricePanel')) return;
