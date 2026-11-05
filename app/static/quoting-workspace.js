@@ -426,7 +426,8 @@ function unifiedAddEquipment(event) {
   const sameDescription=String(form.dataset.invoiceConfirmedDescription||'').trim()===
     String(data.description||'').trim();
   const invoiceConfirmed=form.dataset.invoiceMatchConfirmed==='yes' &&
-    sameCode && sameDescription;
+    sameCode && (form.dataset.invoiceMatchMethod==='auto_exact_master' ||
+                 sameDescription);
   if(invoiceId>0 && sameCode && !invoiceConfirmed){
     if(feedback)feedback.textContent='The invoice code and Master machine must be '+
       'explicitly confirmed by the coordinator before this line can be linked. '+
