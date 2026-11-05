@@ -1145,17 +1145,25 @@ async function loadRrpPriorityStatus() {
       link.textContent='Download SKUs requiring pricing and catalogue review';
       host.appendChild(link);
       if(data.sage_loaded){
+        const equipment=document.createElement('a');
+        equipment.href='/api/quoting/source-reconciliation/equipment.csv';
+        equipment.download='Pulse_SmartQuote_Equipment_Reconciliation.csv';
+        equipment.className='button button-outline';
+        equipment.textContent='Review machine prices — Master, Sage and V10';
+        equipment.title='Machine-focused source review; excludes unrelated Sage-only spare parts';
+        host.appendChild(equipment);
         const full=document.createElement('a');
         full.href='/api/quoting/source-reconciliation.csv';
         full.download='Pulse_SmartQuote_Sage_Master_Full_Reconciliation.csv';
         full.className='button button-outline';
-        full.textContent='Download complete Sage / Master / V10 price reconciliation';
-        full.title='Administrator only: includes internal source equipment prices and review flags';
+        full.textContent='Full Sage inventory audit (including spare parts)';
+        full.title='Administrator reference only; not required for normal machine quotation review';
         host.appendChild(full);
         const caveat=document.createElement('p');
         caveat.className='fine-print';
-        caveat.textContent='This internal source audit includes prices, not approved customer quotations. '+
-          'Source differences are evidence for review, never automatic tariff overrides.';
+        caveat.textContent='Most Sage item codes are parts or other inventory, not maintainable machines. '+
+          'The machine report prioritises V10, Master and potential Sage equipment groups. '+
+          'All new equipment still requires unique service mapping and commercial sign-off.';
         host.appendChild(caveat);
       }
       // The historical quote workbook provides rate-band evidence only.
