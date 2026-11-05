@@ -88,6 +88,19 @@ def _money(value):
     return str(Decimal(value).quantize(PENNY, rounding=ROUND_HALF_UP))
 
 
+@router.get("/status")
+def quick_quote_source_status():
+    """Coordinator-facing fingerprint check before printing an internal draft."""
+    _staff()
+    source = _book()
+    return {
+        "price_book_revision": source["revision"],
+        "price_book_sha256": source["sha256"],
+        "single_active_master": True,
+        "customer_issue_enabled": False,
+    }
+
+
 @router.get("/search")
 def search_equipment(
         q: str = Query(..., min_length=2, max_length=100),
