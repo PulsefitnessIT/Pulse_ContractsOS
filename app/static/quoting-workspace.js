@@ -178,10 +178,10 @@ async function quotingWorkspacePage() {
     '<p id="unifiedDraftFeedback" role="status" aria-live="polite"></p>' +
     '<div id="unifiedPricePanel" aria-live="polite"></div>' +
     '</section>' +
-    '<section class="panel"><h3>Equipment RRP source priority</h3>' +
-    '<p>August 2026 List Price covers current equipment. ' +
-    'For exact codes absent from that master, the Sage price is the working pricing basis. ' +
-    'Pricing administrators can make audited corrections without altering the source files.</p>' +
+    '<section class="panel"><h3>Equipment price source evidence</h3>' +
+    '<p>The unified Master is the active price authority after administrator activation. ' +
+    'Historical August Master and Sage source comparisons remain available for audit, ' +
+    'but are no longer separate price lists for coordinators to maintain.</p>' +
     '<button type="button" class="button button-outline" id="rrpPriorityStatusLoad">Check source coverage</button>' +
     '<div id="rrpPriorityStatus" aria-live="polite"></div></section>' +
     '<section class="panel" id="quoteV10SourcePanel" hidden>' +
