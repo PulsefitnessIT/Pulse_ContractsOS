@@ -1009,7 +1009,12 @@ async function unifiedImportInvoiceEvidence(event) {
     fileInput.value='';
     const note=document.querySelector('#unifiedDraftFeedback');
     if(note&&added)note.textContent=added+' exact machine code(s) added automatically. '+
-      'Review quantities and serial numbers, then save and calculate.';
+      'Check the quantity review table and then save and calculate.';
+    if(added && document.querySelector('#unifiedQuantityReview')?.innerHTML){
+      document.querySelector('#unifiedQuantityReview').scrollIntoView({
+        behavior:'smooth',block:'start'
+      });
+    }
   }catch(error){
     feedback.textContent='Invoice processing needs attention: '+error.message+
       '. No new price calculation has been issued.';
