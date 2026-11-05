@@ -35,6 +35,7 @@ function unifiedDraftSnapshot() {
       quantity:Number(e.quantity),
       source_import_id:e.source_import_id||null,
       source_pages:Array.isArray(e.source_pages)?e.source_pages:[],
+      invoice_match_confirmed:e.invoice_match_confirmed===true,
     }))
   });
 }
@@ -296,6 +297,8 @@ function unifiedStopEquipmentEdit() {
     delete form.dataset.invoiceSku;
     delete form.dataset.invoiceSourceId;
     delete form.dataset.invoicePages;
+    delete form.dataset.invoiceMatchConfirmed;
+    delete form.dataset.invoiceConfirmedDescription;
   }
   unifiedCoordinatorGuidance();
 }
@@ -338,10 +341,19 @@ function renderUnifiedEquipment() {
       form.dataset.invoiceSku=String(item.item_code||'').trim().toUpperCase();
       form.dataset.invoiceSourceId=String(item.source_import_id);
       form.dataset.invoicePages=JSON.stringify(item.source_pages||[]);
+      if(item.invoice_match_confirmed===true){
+        form.dataset.invoiceMatchConfirmed='yes';
+        form.dataset.invoiceConfirmedDescription=String(item.description||'');
+      } else {
+        delete form.dataset.invoiceMatchConfirmed;
+        delete form.dataset.invoiceConfirmedDescription;
+      }
     } else {
       delete form.dataset.invoiceSku;
       delete form.dataset.invoiceSourceId;
       delete form.dataset.invoicePages;
+      delete form.dataset.invoiceMatchConfirmed;
+      delete form.dataset.invoiceConfirmedDescription;
     }
     unifiedEditingEquipmentIndex=index;
     const submit=form.querySelector('[type="submit"]');
@@ -401,6 +413,18 @@ function unifiedAddEquipment(event) {
   const invoiceId=Number(form.dataset.invoiceSourceId||0);
   const sameCode=String(form.dataset.invoiceSku||'')===
     String(data.item_code||'').trim().toUpperCase();
+  const sameDescription=String(form.dataset.invoiceConfirmedDescription||'').trim()===
+    String(data.description||'').trim();
+  const invoiceConfirmed=form.dataset.invoiceMatchConfirmed==='yes' &&
+    sameCode && sameDescription;
+  if(invoiceId>0 && sameCode && !invoiceConfirmed){
+    if(feedback)feedback.textContent='The invoice code and Master machine must be '+
+      'explicitly confirmed by the coordinator before this line can be linked. '+
+      'Go back to Compare with Master and tick the confirmation box.';
+    return;
+  }
+  const invoiceLinked=invoiceId>0 && Number.isSafeInteger(invoiceId) &&
+    sameCode && invoiceConfirmed;
   const invoicePages=form.dataset.invoicePages?
     JSON.parse(form.dataset.invoicePages):[];
   const serial=String(data.serial||'').trim();
@@ -421,10 +445,10 @@ function unifiedAddEquipment(event) {
     serial,
     cover_start:String(data.cover_start||''),
     quantity,
-    source_import_id:sameCode&&Number.isSafeInteger(invoiceId)&&invoiceId>0?
-      invoiceId:null,
-    source_pages:sameCode&&invoiceId>0&&Array.isArray(invoicePages)?
+    source_import_id:invoiceLinked?invoiceId:null,
+    source_pages:invoiceLinked&&Array.isArray(invoicePages)?
       invoicePages:[],
+    invoice_match_confirmed:invoiceLinked,
   };
   if(editing!==null)unifiedEquipment[editing]=record;
   else unifiedEquipment.push(record);
@@ -939,6 +963,8 @@ async function unifiedSearchCatalogue(event) {
       delete equipmentForm.dataset.invoiceSku;
       delete equipmentForm.dataset.invoiceSourceId;
       delete equipmentForm.dataset.invoicePages;
+      delete equipmentForm.dataset.invoiceMatchConfirmed;
+      delete equipmentForm.dataset.invoiceConfirmedDescription;
       equipmentForm.elements.serial.focus();
       const feedback = document.querySelector('#unifiedDraftFeedback');
       if (feedback) feedback.textContent = choice.requires_service_mapping
