@@ -364,11 +364,13 @@ def _readiness(draft):
             for line in preview["lines"]
         ),
         "source_price_policy": (
-            "Business-confirmed equipment price basis: current August Master "
-            "first, exact Sage item-code price for machines absent from that "
-            "Master. Any source difference is informational, not a separate "
-            "approval requirement. The maintenance service tariff, terms "
-            "and each customer quotation still require sign-off."
+            "One unified Master price book, revision "
+            + str(preview.get("price_book_revision")) +
+            "; latest activated import wins for matching item codes. "
+            "Maintenance eligibility, package tariffs, terms and individual "
+            "customer quotations still require approval."
+            if preview.get("price_book_sha256") else
+            "Legacy source preview before activation of the unified price book."
         ),
     }
 
