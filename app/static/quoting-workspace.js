@@ -36,6 +36,7 @@ function unifiedDraftSnapshot() {
       source_import_id:e.source_import_id||null,
       source_pages:Array.isArray(e.source_pages)?e.source_pages:[],
       invoice_match_confirmed:e.invoice_match_confirmed===true,
+      invoice_match_method:String(e.invoice_match_method||''),
     }))
   });
 }
@@ -299,6 +300,7 @@ function unifiedStopEquipmentEdit() {
     delete form.dataset.invoicePages;
     delete form.dataset.invoiceMatchConfirmed;
     delete form.dataset.invoiceConfirmedDescription;
+    delete form.dataset.invoiceMatchMethod;
   }
   unifiedCoordinatorGuidance();
 }
@@ -316,7 +318,8 @@ function renderUnifiedEquipment() {
       (item.source_pages?.length?' · page '+esc(item.source_pages.join(', ')):'')+
       '</p>'+
       (item.invoice_match_confirmed?
-        '<p class="fine-print">Coordinator-confirmed invoice/Master code match'+
+        '<p class="fine-print">'+(item.invoice_match_method==='auto_exact_master'?
+          'Automatically matched exact Master code':'Coordinator-confirmed invoice/Master code match')+
         (item.invoice_match_confirmed_by?' · '+esc(item.invoice_match_confirmed_by):'')+
         '</p>':'<p class="notice warning">Invoice match not confirmed</p>'):'')+'</td>'+
     '<td>'+esc(item.serial||'Not confirmed')+'</td><td>'+
@@ -347,10 +350,12 @@ function renderUnifiedEquipment() {
       form.dataset.invoicePages=JSON.stringify(item.source_pages||[]);
       if(item.invoice_match_confirmed===true){
         form.dataset.invoiceMatchConfirmed='yes';
+        form.dataset.invoiceMatchMethod=String(item.invoice_match_method||'manual_confirmed');
         form.dataset.invoiceConfirmedDescription=String(item.description||'');
       } else {
         delete form.dataset.invoiceMatchConfirmed;
         delete form.dataset.invoiceConfirmedDescription;
+        delete form.dataset.invoiceMatchMethod;
       }
     } else {
       delete form.dataset.invoiceSku;
@@ -358,6 +363,7 @@ function renderUnifiedEquipment() {
       delete form.dataset.invoicePages;
       delete form.dataset.invoiceMatchConfirmed;
       delete form.dataset.invoiceConfirmedDescription;
+      delete form.dataset.invoiceMatchMethod;
     }
     unifiedEditingEquipmentIndex=index;
     const submit=form.querySelector('[type="submit"]');
@@ -453,6 +459,8 @@ function unifiedAddEquipment(event) {
     source_pages:invoiceLinked&&Array.isArray(invoicePages)?
       invoicePages:[],
     invoice_match_confirmed:invoiceLinked,
+    invoice_match_method:invoiceLinked?
+      String(form.dataset.invoiceMatchMethod||'manual_confirmed'):'',
   };
   if(editing!==null)unifiedEquipment[editing]=record;
   else unifiedEquipment.push(record);
