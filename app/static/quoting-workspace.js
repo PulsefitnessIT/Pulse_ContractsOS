@@ -1165,6 +1165,14 @@ async function loadRrpPriorityStatus() {
           'The machine report prioritises V10, Master and potential Sage equipment groups. '+
           'All new equipment still requires unique service mapping and commercial sign-off.';
         host.appendChild(caveat);
+        const counts=await api('/api/quoting/source-reconciliation/summary').catch(()=>null);
+        if(counts && view==='quoting' && document.querySelector('#rrpPriorityStatus')===host){
+          const summary=document.createElement('p');
+          summary.className='fine-print';
+          summary.textContent=String(counts.equipment_review_skus)+' potential equipment-review codes; '+
+            String(counts.sage_inventory_reference_only_skus)+' inventory-only codes kept out of the machine worklist.';
+          host.appendChild(summary);
+        }
       }
       // The historical quote workbook provides rate-band evidence only.
       // Do not treat matching percentages as approved Silver/Gold/Platinum.
