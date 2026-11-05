@@ -24,7 +24,9 @@ from .quote_rrp_priority import (
     _amount as source_amount, index as master_index, resolve,
     source_snapshot as august_snapshot,
 )
-from .quote_sage_reference import snapshot as sage_snapshot
+from .quote_sage_reference import (
+    snapshot as sage_snapshot, sage_machine_group_candidate,
+)
 
 router = APIRouter(prefix="/api/quoting", tags=["Source-based quotation coverage"])
 
@@ -286,8 +288,20 @@ def _reconciliation_rows(catalog, configs, pricing, master, sage=None):
             )
         else:
             console_status = ""
+        # Sage contains large amounts of spare-parts inventory; preserve
+        # full references but prioritize equipment evidence for staff.
+        # This classification never approves maintenance eligibility.
+        if current is not None:
+            scope = "V10 catalogue record"
+        elif master_rows:
+            scope = "Current Master item; verify maintenance suitability"
+        elif sage_row and sage_machine_group_candidate(sage_row.get("group")):
+            scope = "Sage equipment-group candidate; verify V10 mapping"
+        else:
+            scope = "Sage inventory reference only"
         yield {
             "SKU": sku,
+            "Equipment review scope": scope,
             "Master/V10 description exact match": name_match,
             "Master/V10 console identity": console_status,
             "V10 catalogue rows": catalogue_counts.get(sku, 0),
@@ -349,10 +363,9 @@ def source_reconciliation_summary():
     """Count every SKU from the three sources without declaring prices approved."""
     _reconciliation_admin()
     products, configs, policy, hashes, master, sage = _reconciliation_data()
-    categories = Counter(
-        row["Quote status"] for row in
-        _reconciliation_rows(products, configs, policy, master, sage)
-    )
+    examined = list(_reconciliation_rows(products, configs, policy, master, sage))
+    categories = Counter(row["Quote status"] for row in examined)
+    scope_counts = Counter(row["Equipment review scope"] for row in examined)
     candidates = (
         categories["source_price_candidate_august_master"] +
         categories["source_price_candidate_sage"]
@@ -372,6 +385,10 @@ def source_reconciliation_summary():
         "distinct_source_skus": sum(categories.values()),
         "potentially_quotable_gold_skus": candidates,
         "review_categories": dict(sorted(categories.items())),
+        "equipment_review_skus": sum(n for scope, n in scope_counts.items()
+                                     if scope != "Sage inventory reference only"),
+        "sage_inventory_reference_only_skus": scope_counts["Sage inventory reference only"],
+        "equipment_review_scope_counts": dict(sorted(scope_counts.items())),
         "full_three_source_comparison_available": sage is not None,
         "commercial_tariffs_approved_by_this_report": False,
         "customer_quotes_approved_by_this_report": False,
@@ -383,9 +400,21 @@ def source_reconciliation_summary():
     }
 
 
-@router.get("/source-reconciliation.csv")
-def source_reconciliation_csv():
-    """Admin-only full SKU ledger with prices and review decisions, no customers."""
+SOURCE_RECONCILIATION_COLUMNS = (
+    "SKU", "Equipment review scope", "V10 catalogue rows",
+    "V10 description", "V10 console", "V10 service configuration",
+    "Master/V10 description exact match", "Master/V10 console identity",
+    "Master source rows", "Master source locations",
+    "Master equipment name", "Master console", "Master list price GBP",
+    "Sage source rows", "Sage product name", "Sage product group",
+    "Sage Sales Price GBP", "Selected equipment price basis",
+    "Selected equipment price GBP", "Sage less Master GBP",
+    "Quote status", "Manager next action",
+)
+
+
+def _source_reconciliation_export(equipment_only=False):
+    """Export protected equipment worklist or full inventory audit."""
     _reconciliation_admin()
     products, configs, policy, _, master, sage = _reconciliation_data()
     if sage is None:
@@ -394,35 +423,41 @@ def source_reconciliation_csv():
             "Import and activate the full Sage export before downloading "
             "the three-source reconciliation report."
         )
-    fields = (
-        "SKU", "V10 catalogue rows", "V10 description", "V10 console",
-        "V10 service configuration", "Master/V10 description exact match",
-        "Master/V10 console identity", "Master source rows",
-        "Master source locations", "Master equipment name", "Master console",
-        "Master list price GBP", "Sage source rows", "Sage product name",
-        "Sage product group", "Sage Sales Price GBP",
-        "Selected equipment price basis", "Selected equipment price GBP",
-        "Sage less Master GBP", "Quote status", "Manager next action",
-    )
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=fields)
+    writer = csv.DictWriter(output, fieldnames=SOURCE_RECONCILIATION_COLUMNS)
     writer.writeheader()
-    for row in _reconciliation_rows(
-        products, configs, policy, master, sage
-    ):
+    for row in _reconciliation_rows(products, configs, policy, master, sage):
+        if equipment_only and row["Equipment review scope"] == "Sage inventory reference only":
+            continue
         writer.writerow({
-            key: safe_excel_csv_cell(row[key]) for key in fields
+            key: safe_excel_csv_cell(row[key]) for key in SOURCE_RECONCILIATION_COLUMNS
         })
+    filename = (
+        "Pulse_SmartQuote_Equipment_Reconciliation.csv"
+        if equipment_only else
+        "Pulse_SmartQuote_Sage_Master_Full_Reconciliation.csv"
+    )
     return Response(
         content="\ufeff" + output.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={
-            "Content-Disposition":
-                'attachment; filename="Pulse_SmartQuote_Sage_Master_Full_Reconciliation.csv"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.get("/source-reconciliation/equipment.csv")
+def equipment_reconciliation_csv():
+    """Default manager worklist: V10, Master and possible Sage machines only."""
+    return _source_reconciliation_export(equipment_only=True)
+
+
+@router.get("/source-reconciliation.csv")
+def source_reconciliation_csv():
+    """Full Sage inventory archive; not intended for routine machine quoting."""
+    return _source_reconciliation_export(equipment_only=False)
 
 
 
