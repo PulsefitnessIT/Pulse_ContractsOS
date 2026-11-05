@@ -394,3 +394,81 @@ def test_legacy_quote_rate_parity_is_admin_only(monkeypatch):
     with pytest.raises(HTTPException) as error:
         released.legacy_method_parity()
     assert error.value.status_code == 403
+
+
+def test_equipment_reconciliation_hides_sage_only_parts_not_v10_or_master(monkeypatch):
+    args = list(_fixture())
+    args[4]["prices"]["EXTRA-PART"] = {
+        "sku": "EXTRA-PART", "name": "Fictional maintenance drive belt",
+        "group": "CV Parts", "sales_price": 120,
+    }
+    args[4]["prices"]["EXTRA-MACHINE"] = {
+        "sku": "EXTRA-MACHINE", "name": "Fictional legacy rower",
+        "group": "Cardiovascular Equipment", "sales_price": 2600,
+    }
+    args[4]["prices"]["ZERO-PART"] = {
+        "sku": "ZERO-PART", "name": "Unpriced fictional circuit board",
+        "group": "Console Parts", "sales_price": 0,
+    }
+    monkeypatch.setattr(released, "_reconciliation_data", lambda: (
+        *args[:3], {"pricing": "f" * 64}, args[3], args[4]
+    ))
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Admin")
+    monkeypatch.setattr(released.pilot_access, "actor", lambda default="": "pilot-admin")
+
+    import csv
+    import io
+    scoped = released.equipment_reconciliation_csv()
+    scoped_rows = list(csv.DictReader(
+        io.StringIO(scoped.body.decode("utf-8-sig"))
+    ))
+    by_sku = {row["SKU"]: row for row in scoped_rows}
+    assert len(scoped_rows) == 5  # four V10 SKUs plus new machine-group candidate
+    assert "EXTRA-PART" not in by_sku
+    assert "ZERO-PART" not in by_sku
+    assert by_sku["EXTRA-MACHINE"]["Equipment review scope"] == (
+        "Sage equipment-group candidate; verify V10 mapping"
+    )
+    assert by_sku["EXTRA-MACHINE"]["Quote status"] == (
+        "sage_only_inventory_not_v10_maintenance_equipment"
+    )
+
+    full = released.source_reconciliation_csv()
+    full_rows = list(csv.DictReader(
+        io.StringIO(full.body.decode("utf-8-sig"))
+    ))
+    assert len(full_rows) == 7
+    assert {row["SKU"] for row in full_rows} >= {"EXTRA-PART", "ZERO-PART"}
+    assert scoped.headers["cache-control"] == "private, no-store"
+
+    summary = released.source_reconciliation_summary()
+    assert summary["distinct_source_skus"] == 7
+    assert summary["equipment_review_skus"] == 5
+    assert summary["sage_inventory_reference_only_skus"] == 2
+    assert summary["potentially_quotable_gold_skus"] == 2
+
+
+def test_equipment_reconciliation_csv_refuses_coordinator(monkeypatch):
+    monkeypatch.setattr(released.pilot_access, "PILOT_MODE", True)
+    monkeypatch.setattr(released.pilot_access, "current_role", lambda: "Coordinator")
+    with pytest.raises(HTTPException) as exc:
+        released.equipment_reconciliation_csv()
+    assert exc.value.status_code == 403
+
+
+def test_machine_scope_never_automatically_upgrades_sage_parts_even_if_priced():
+    args = list(_fixture())
+    args[4]["prices"]["SPARE-SKU"] = {
+        "sku": "SPARE-SKU", "name": "A spare repair part",
+        "group": "Strength Parts", "sales_price": 1500,
+    }
+    source = {row["SKU"]: row for row in
+              released._reconciliation_rows(*args)}
+    assert source["SPARE-SKU"]["Equipment review scope"] == (
+        "Sage inventory reference only"
+    )
+    assert source["SPARE-SKU"]["Quote status"] == (
+        "sage_only_inventory_not_v10_maintenance_equipment"
+    )
+    assert source["SPARE-SKU"]["Manager next action"]
