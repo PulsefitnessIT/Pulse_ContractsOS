@@ -69,10 +69,39 @@ Do not treat a passing CI test as a signed-off customer contract. Existing
 issued PDF snapshots and price audit versions remain unchanged.
 
 
-## Invoice code confirmation required
+## Invoice SKU matching — automatic exact codes
 
-In the integrated Contract OS, PDF invoice matching is a coordinator-controlled step. Drag in the invoice PDF, compare the extracted code and source page with the exact unified Master machine, then explicitly tick the confirmation that the machine and variant match before using that item. A rejected or ambiguous match must be corrected manually without retaining false invoice provenance.
+This replaces the earlier coordinator-checkbox workflow by the business owner's
+explicit direction on 5 November 2026. Keep the quoting process as fast as
+possible while preserving item-code provenance.
 
-The backend refuses invoice-linked equipment that lacks explicit confirmation. Confirmations are recorded with the named staff account and timestamp; editing an invoice/code/description/page reference requires re-confirmation. This is equipment identity evidence only, not an approval of the cover or maintenance tariff.
+1. Drag and drop one or more sales-invoice PDFs into SmartQuote (up to 12).
+2. The protected PDF reader extracts candidate item codes with their source
+   invoice/page. SmartQuote cross-references the **one activated unified Master
+   Price List** using exact item codes, case-insensitively, with no fuzzy
+   substitution.
+3. **Exact, positively priced machine codes are accepted and added to the
+   editable draft automatically — no human code confirmation is requested.**
+   Re-importing the same PDF/code does not create duplicate quote lines.
+4. Exact price-book matches classified as **spare parts / non-machine inventory**
+   are accepted as source-code matches but excluded from equipment quotes.
+   Matching items with zero/missing/held prices are flagged for administrator
+   pricing review, not a coordinator code-match decision.
+5. **Only genuinely unmatched invoice codes** are presented for a coordinator
+   to correct and add manually, without claiming false PDF/master provenance.
+6. Quantity, machine serials, console suitability, maintenance eligibility,
+   contract package, rates and exclusions still require their own separate
+   checks before a customer quotation can be issued.
 
-The standalone HTML pilot currently has no automatic PDF text extraction. Its equipment search and manual-entry tools remain available for preparing an internal quote.
+**Backend protection:** the server reads the original PDF evidence and
+re-verifies automatic machine matches against the currently active Master
+when a draft is saved. It records `invoice_match_method=auto_exact_master`,
+source PDF/printed SKU/page, price-book revision and source fingerprint,
+plus an automatic match timestamp. A client cannot forge an automatic
+machine match for a part or held/unmatched price. Earlier manually confirmed
+drafts retain a separate method and audit provenance.
+
+The offline single-file HTML quick quote tool is still **manual invoice
+entry only**; automatic PDF extraction and matching are built into the
+integrated Contracts OS workflow and remain dependent on the protected
+pilot deployment.
