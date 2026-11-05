@@ -408,6 +408,7 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
             line["exception"] = {
                 "master_price_conflict": "The August 2026 master has conflicting or invalid List Prices; Sage must not override it.",
                 "master_variant_conflict": "The August 2026 master has conflicting equipment variants; confirm the exact configuration.",
+                "unified_price_hold_or_missing": "Single Master price missing, zero, or held; administrator must correct this item in the unified price list.",
                 "stale_price_override": "Source price list changed since the local price revision. Administrator must review and reapply it.",
                 "sage_exact_sku_price": "An exact Sage equipment price is available but cannot be used with this equipment configuration.",
                 "sage_unpriced_exact_sku": "Exact Sage product exists but is priced at £0. An administrator must set a valid price before quotation preview.",
@@ -437,7 +438,8 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                         line["source_equipment_price_basis_accepted"] = (
                             decision["basis"] in (
                                 "august_2026_master_list_price",
-                                "sage_exact_sku_price", "managed_price_override"
+                                "sage_exact_sku_price", "managed_price_override",
+                                "unified_master_price"
                             )
                         )
                         if decision["basis"] == "august_2026_master_list_price":
@@ -458,7 +460,16 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
                                 line["coverage_review"].append(
                                     "August master console variant does not exactly match the V10 equipment record."
                                 )
-                        if decision["basis"] == "sage_exact_sku_price":
+                        if decision["basis"] == "unified_master_price":
+                            line["coverage_review"].append(
+                                "Unified Master equipment price used; commercial maintenance tariff approval remains separate."
+                            )
+                            if original_decision["basis"] in (
+                                    "master_price_conflict", "master_variant_conflict"):
+                                line["coverage_review"].append(
+                                    "Original Master machine/console conflict still needs verification."
+                                )
+                        elif decision["basis"] == "sage_exact_sku_price":
                             line["coverage_review"].append(
                                 "Price taken from exact Sage item code; maintenance tariff approval remains separate."
                             )
@@ -531,8 +542,12 @@ def preview(draft, catalog, configs, pricing, hashes, master_by_sku=None, sage_s
         "source_snapshot": pricing.get("source_snapshot"),
         "source_sha256": hashes,
         "source_manifest": source_manifest_status(hashes),
+        "price_book_revision": price_book["revision"] if price_book else None,
+        "price_book_sha256": price_book["sha256"] if price_book else None,
         "rrp_source_priority": (
-            "24 August 2026 Master List Price > exact Sage price for other equipment; administrator revisions are audited"
+            "Single active Master price book; newest import wins for matching codes"
+            if price_book is not None else
+            "Legacy Master > Sage fallback until one master price book is activated"
             if master_by_sku is not None else "Original V10 synthetic/source-only price preview"
         ),
         "commercially_approved": False,
