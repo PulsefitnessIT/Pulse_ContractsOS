@@ -190,10 +190,13 @@ test('invoice provenance remains on unchanged code and detaches on changed code'
   w.equipmentForm.dataset.invoiceSku='TEST-001';
   w.equipmentForm.dataset.invoiceSourceId='17';
   w.equipmentForm.dataset.invoicePages='[2,3]';
+  w.equipmentForm.dataset.invoiceMatchConfirmed='yes';
+  w.equipmentForm.dataset.invoiceConfirmedDescription='Example Bench';
   w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
   let item=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
   assert.equal(item.source_import_id,17);
   assert.deepEqual(item.source_pages,[2,3]);
+  assert.equal(item.invoice_match_confirmed,true);
   w.run('renderUnifiedEquipment()');
   w.buttons['[data-edit-line]0'].click();
   w.equipmentForm.elements.item_code.value='CORRECTED-SKU';
@@ -231,4 +234,49 @@ test('beginner cannot accidentally add a second line for the same machine serial
   w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
   assert.equal(w.run('unifiedEquipment.length'),1);
   assert.match(w.feedback.textContent,/already exists on equipment line 1/);
+});
+
+
+test('invoice item cannot be added as matched without coordinator confirmation',()=>{
+  const w=workspace();
+  const form=w.equipmentForm;
+  form.elements.description.value='Fictional Treadmill';
+  form.elements.item_code.value='TEST-001';
+  form.dataset.invoiceSku='TEST-001';
+  form.dataset.invoiceSourceId='17';
+  form.dataset.invoicePages='[2]';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  assert.equal(w.run('unifiedEquipment.length'),0);
+  assert.match(w.feedback.textContent,/explicitly confirmed/);
+
+  form.dataset.invoiceMatchConfirmed='yes';
+  form.dataset.invoiceConfirmedDescription='Another model';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  assert.equal(w.run('unifiedEquipment.length'),0);
+  assert.match(w.feedback.textContent,/explicitly confirmed/);
+
+  form.dataset.invoiceConfirmedDescription='Fictional Treadmill';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  assert.equal(w.run('unifiedEquipment.length'),1);
+  const line=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(line.source_import_id,17);
+  assert.equal(line.invoice_match_confirmed,true);
+});
+
+test('coordinator code corrections cannot retain an earlier invoice match',()=>{
+  const w=workspace();
+  const form=w.equipmentForm;
+  form.elements.description.value='Fictional Corrected Bike';
+  form.elements.item_code.value='CORRECTED-9';
+  form.dataset.invoiceSku='WRONG-9';
+  form.dataset.invoiceSourceId='17';
+  form.dataset.invoicePages='[2]';
+  form.dataset.invoiceMatchConfirmed='yes';
+  form.dataset.invoiceConfirmedDescription='Fictional Corrected Bike';
+  w.run('unifiedAddEquipment({preventDefault(){},currentTarget:document.querySelector("#unifiedEquipmentAdd")})');
+  const line=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(line.item_code,'CORRECTED-9');
+  assert.equal(line.source_import_id,null);
+  assert.equal(line.invoice_match_confirmed,false);
+  assert.deepEqual(line.source_pages,[]);
 });
