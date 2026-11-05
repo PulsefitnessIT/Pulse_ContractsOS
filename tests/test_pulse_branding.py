@@ -68,7 +68,11 @@ def test_smartquote_promotes_auto_matching_not_old_manual_checkbox():
     assert "Exact Master machine-code matches are automatic" in quote
     assert "Equipment will not be added without your confirmation" not in quote
     print_layout = (STATIC / "quote-quick-draft.js").read_text()
-    assert "/static/brand/pulse-fitness-reverse.svg" in print_layout
+    assert "/api/quoting/quick-draft/internal-preview.pdf" in print_layout
+    server_pdf = (Path(__file__).resolve().parents[1] / "app" /
+                  "quote_quick_pdf.py").read_text()
+    assert "brand._page(" in server_pdf
+    assert "NOT AUTHORISED FOR CUSTOMER ISSUE" in server_pdf
     assert "INTERNAL DRAFT" in print_layout
 
 
