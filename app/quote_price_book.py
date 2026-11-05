@@ -222,10 +222,24 @@ def parse_price_upload(filename, raw):
         raise HTTPException(422, f"Invalid unified price-list CSV: {exc}") from exc
 
 
+def merge_records(before, updates):
+    """Latest price wins; price-only imports must not erase descriptions/groups."""
+    combined = dict(before)
+    for code, update in updates.items():
+        current = before.get(code, {})
+        combined[code] = {
+            **current,
+            **{key: value for key, value in update.items()
+               if key not in ("description", "group") or value},
+        }
+    return combined
+
+
 def _difference(before, new):
     added = sum(code not in before for code in new)
-    changed = sum(code in before and before[code] != item
-                  for code, item in new.items())
+    merged = merge_records(before, new)
+    changed = sum(code in before and before[code] != merged[code]
+                  for code in new)
     unchanged = len(new) - added - changed
     held = sum(item["status"] == "HOLD" for item in new.values())
     zero = sum(item["status"] == "UNPRICED" for item in new.values())
@@ -317,7 +331,7 @@ def activate_import(request):
             raise HTTPException(
                 409, "Explicitly confirm held/zero-price items; they cannot be quoted."
             )
-        merged = {**before, **updates}
+        merged = merge_records(before, updates)
         packed, final_sha = _pack(merged)
         con.execute("UPDATE unified_price_book_versions SET active=0 WHERE active=1")
         con.execute(
