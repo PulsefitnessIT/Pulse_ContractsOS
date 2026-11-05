@@ -44,6 +44,7 @@ def _fixture():
         return {"sku":sku,"name":name,"console":console,"rrp":str(amount),
                 "row":12,"sheet":"Synthetic","rrp_column":"BA"}
     master={
+        "source_file_sha256":"b"*64,
         "rows":[
             row("FIC-TREAD",catalogue[0]["name"],"10.1-inch cardio tactile-key",4000),
             row("FIC-UNCERTAIN",catalogue[1]["name"],"10.1-inch strength touchscreen (verify)",3000),
