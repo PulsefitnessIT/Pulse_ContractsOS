@@ -350,3 +350,27 @@ be deployed unchanged. On Windows, an authorised IT colleague can use
 **Initial operating mode:** internal draft PDFs are available wherever
 verified V10 pricing sources are staged. Customer-ready PDF controls stay
 disabled until the documented release gates are satisfied.
+
+
+## Pulse Fitness pricing-source reconciliation worklist
+
+A named pilot Administrator can now open **SmartQuote → August Master and Sage
+source coverage → Download SKUs requiring pricing and catalogue review**. The
+server-generated CSV lists each *blocked distinct V10 SKU* with its original
+equipment label, service configuration, console, identified price-source
+status, reason for blocking, and an actionable next step. It omits potential
+Gold candidates, all monetary values, customer/site records and any commercial
+approvals. The CSV protects spreadsheet cells against formula execution.
+
+This queue reconciles exactly with the `GET /api/quoting/candidate-coverage`
+summary using the same source identity and pricing checks. The report is
+diagnostic only: it does **not** edit catalogue items, grant coverage, approve
+Silver/Gold/Platinum tariffs, or authorise customer PDFs. Correct underlying
+source records or approved administrator mappings, then refresh the report to
+see which blockers have been cleared. The report remains unavailable until
+original V10 and August Master sources have been securely staged.
+
+Only a named signed-in pilot Administrator can download
+`GET /api/quoting/candidate-review.csv`; Coordinator and Viewer accounts
+are denied by the backend. Excel review files should be treated as sensitive
+internal equipment catalogue material and stored according to Pulse policy.
