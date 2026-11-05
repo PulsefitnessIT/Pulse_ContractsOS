@@ -774,12 +774,12 @@ async function unifiedSearchCatalogue(event) {
   if (!host) return;
   const q = String(new FormData(form).get('q') || '').trim();
   if (q.length < 2) return;
-  host.textContent = 'Searching SmartQuote equipment and the full Sage item price list…';
+  host.textContent = 'Searching SmartQuote equipment and Sage equipment groups (spare parts excluded)…';
   try {
     const encoded=encodeURIComponent(q);
     const responses=await Promise.allSettled([
       api('/api/quoting/catalogue/search?q='+encoded+'&limit=40'),
-      api('/api/quoting/sage/search?q='+encoded+'&limit=40')
+      api('/api/quoting/sage/search?q='+encoded+'&limit=40&equipment_only=true')
     ]);
     if (view !== 'quoting' || !document.querySelector('#unifiedCatalogueResults')) return;
     if(responses.every(reply=>reply.status==='rejected')){
