@@ -69,13 +69,19 @@ function unifiedCoordinatorGuidance() {
   const count=unifiedEquipment.reduce((sum,item)=>sum+Number(item.quantity||0),0);
   const unconfirmed=unifiedEquipment.reduce((sum,item)=>
     sum+(String(item.serial||'').trim()?Math.max(0,item.quantity-1):item.quantity),0);
+  const provisional=unifiedEquipment.filter(item=>
+    item.invoice_match_method==='auto_exact_master' &&
+    item.quantity_verified!==true).length;
   let step=1,action='Select a recorded site or enter a verified customer and site.';
   if(customer&&site){
     step=2;
     action='Find equipment by model or item code, add quantities and confirm serial numbers.';
     if(unifiedEquipment.length){
       step=3;
-      action='Save and calculate the source-based maintenance price.';
+      action=provisional?
+        'Confirm imported equipment quantities together before preparing the quotation PDF.':
+        'Save and calculate the source-based maintenance estimate.';
+      if(provisional)step=2;
       if(unifiedEditingEquipmentIndex!==null)
         action='Finish or cancel your equipment edit before saving this quotation.';
       else if(unifiedHasPendingEquipmentInput()){
@@ -97,6 +103,7 @@ function unifiedCoordinatorGuidance() {
     '</strong><p>'+esc(action)+'</p>'+
     '<p class="fine-print">'+esc(unifiedEquipment.length)+
     ' equipment lines · '+esc(count)+' units'+
+    (provisional?' · '+esc(provisional)+' invoice quantities to verify':'')+
     (unconfirmed?' · '+esc(unconfirmed)+' serials still to verify':'')+
     (unifiedDraftHasUnsavedChanges()?' · Unsaved changes':'')+
     '</p>';
