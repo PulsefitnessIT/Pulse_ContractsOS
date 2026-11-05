@@ -329,3 +329,22 @@ def test_full_reconciliation_separates_name_and_console_evidence():
                released._reconciliation_rows(*args)}
     assert changed["FIC-TREAD"]["Master/V10 description exact match"] == "No"
     assert changed["FIC-TREAD"]["Master/V10 console identity"] == "Needs review"
+
+
+def test_full_source_reconciliation_handles_large_sage_inventory_without_quoting_parts():
+    """A full Sage export remains distinct from maintenance eligible machines."""
+    args = list(_fixture())
+    args[4]["prices"] = {
+        f"PART-{i:05d}": {
+            "sku": f"PART-{i:05d}",
+            "name": f"Fictional unrelated part {i}",
+            "sales_price": 25.00, "group": "Spare Parts"
+        } for i in range(21120)
+    }
+    rows = list(released._reconciliation_rows(*args))
+    assert len(rows) == 21124  # 21,120 Sage inventory + 4 V10 machine identities
+    assert sum(row["Quote status"] ==
+               "sage_only_inventory_not_v10_maintenance_equipment"
+               for row in rows) == 21120
+    assert sum(row["Quote status"].startswith("source_price_candidate_")
+               for row in rows) == 1
