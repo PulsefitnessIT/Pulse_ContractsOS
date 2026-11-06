@@ -397,9 +397,38 @@ test('a single bulk confirmation updates quantities while keeping exact auto-mat
   const line=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
   assert.equal(line.quantity,3);
   assert.equal(line.serial,'DEMO-QUANTITY-100');
+  assert.deepEqual(line.serial_numbers,['DEMO-QUANTITY-100']);
   assert.equal(line.quantity_verified,true);
   assert.equal(line.source_import_id,91);
   assert.equal(line.invoice_match_method,'auto_exact_master');
   assert.equal(error.textContent,'');
   assert.equal(review.innerHTML,'');
+});
+
+
+test('actual Pulse source row suggestions prefill quantities and all serials without approving them',()=>{
+  const w=workspace();
+  const result=JSON.parse(w.run('JSON.stringify(unifiedApplyExactInvoiceMatches([{'+
+    'sku:"MACHINE-ONE",status:"matched_equipment",auto_add_equipment:true,'+
+    'master_description:"Fictional V4 Treadmill",source_import_id:84,'+
+    'source_pages:[1,2],quantity_suggested:4,'+
+    'serial_numbers_suggested:["000111","000112","000113","000114"]'+
+    '}]))'));
+  assert.equal(result.added,1);
+  const machine=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
+  assert.equal(machine.quantity,4);
+  assert.deepEqual(machine.serial_numbers,["000111","000112","000113","000114"]);
+  assert.equal(machine.serial,"000111");
+  assert.equal(machine.quantity_verified,false);
+  assert.equal(machine.invoice_match_method,"auto_exact_master");
+  assert.match(w.table.innerHTML,/Quantity to verify/);
+  const repeated=JSON.parse(w.run('JSON.stringify(unifiedApplyExactInvoiceMatches([{'+
+    'sku:"MACHINE-ONE",status:"matched_equipment",auto_add_equipment:true,'+
+    'master_description:"Fictional V4 Treadmill",source_import_id:85,'+
+    'source_pages:[1],quantity_suggested:4,'+
+    'serial_numbers_suggested:["000111","000112","000113","000114"]'+
+    '}]))'));
+  assert.equal(repeated.added,0);
+  assert.equal(repeated.already,1);
+  assert.equal(w.run('unifiedEquipment.length'),1);
 });
