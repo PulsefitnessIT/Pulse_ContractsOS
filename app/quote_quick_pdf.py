@@ -82,10 +82,17 @@ def render_quick_internal_pdf(draft, calculation):
         brand._txt(page, (brand.MARGIN + 315, y + 20),
                    "Annual GBP " + str(line["annual_line_gbp"]),
                    9, brand.INK, "hebo")
-        serial = line.get("serials") or "Serials to be verified"
+        serial = str(line.get("serials") or "").strip()
         brand._txt(page, (brand.MARGIN + 315, y + 34),
-                   brand._safe(serial, 28), 7.4, brand.MUTED)
+                   "Serials below" if serial else "Serials to be verified",
+                   7.4, brand.MUTED)
         y += 69
+        # An invoice may contain 12 or more serials on one machine line.
+        # The full list belongs in the internal review PDF (with page
+        # breaks), not just the first 28 characters.
+        if serial:
+            lines("Source serials: " + serial, width=480, size=8)
+            y += 8
 
     if draft.notes:
         y += 9
