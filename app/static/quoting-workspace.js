@@ -532,23 +532,38 @@ function unifiedAddEquipment(event) {
     sameCode && invoiceConfirmed;
   const invoicePages=form.dataset.invoicePages?
     JSON.parse(form.dataset.invoicePages):[];
-  const serial=String(data.serial||'').trim();
-  if(serial){
+  const typedSerial=String(data.serial||'').trim();
+  const parsedSerials=String(data.serial_numbers||'').trim()?
+    String(data.serial_numbers).split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean):
+    (typedSerial?[typedSerial]:[]);
+  if(parsedSerials.length>quantity || parsedSerials.length>500){
+    if(feedback)feedback.textContent='More serial numbers than equipment units, or too many serials. Check the list.';
+    return;
+  }
+  const local=new Set();
+  for(const entry of parsedSerials){
+    const key=entry.toUpperCase();
+    if(entry.length>120 || local.has(key)){
+      if(feedback)feedback.textContent='Duplicate or overlong serial number: '+entry.slice(0,60);
+      return;
+    }
+    local.add(key);
     const duplicate=unifiedEquipment.findIndex((line,index)=>
-      index!==editing&&String(line.serial||'').trim().toUpperCase()===
-        serial.toUpperCase());
+      index!==editing&&(Array.isArray(line.serial_numbers)&&line.serial_numbers.length?
+        line.serial_numbers:[line.serial]).some(x=>String(x||'').trim().toUpperCase()===key));
     if(duplicate!==-1){
-      if(feedback)feedback.textContent='Serial '+serial+
-        ' already exists on equipment line '+(duplicate+1)+
-        '. Edit the existing line instead of charging the same machine twice.';
+      if(feedback)feedback.textContent='Serial '+entry+
+        ' already exists on equipment line '+(duplicate+1)+'.';
       return;
     }
   }
+  const serial=parsedSerials[0]||'';
   const prior=editing!==null?unifiedEquipment[editing]:null;
   const record={
     description:String(data.description).trim(),
     item_code:String(data.item_code||'').trim(),
     serial,
+    serial_numbers:parsedSerials,
     cover_start:String(data.cover_start||''),
     quantity,
     annual_rate_percent:prior?.annual_rate_percent??null,
@@ -568,7 +583,7 @@ function unifiedAddEquipment(event) {
   unifiedClearPrice();
   renderUnifiedEquipment();
   if(feedback)feedback.textContent=(editing!==null?'Equipment changes saved.':'Equipment line added.')+
-    (quantity>1?' Add a separate equipment line for each distinct serial number before final approval.':
+    (quantity>parsedSerials.length?' Check any missing serial numbers before customer issue.':
       ' Save and calculate the draft to retain the changes.');
 }
 
