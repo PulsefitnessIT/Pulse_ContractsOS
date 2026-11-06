@@ -1,5 +1,23 @@
 # Pulse Contracts OS — independent contracts management
 
+## Pulse Fitness internal pilot — week commencing 9 November 2026
+
+**Integrated Contracts OS + SmartQuote are source-tested, not deployed.**
+The recommended immediate goal is a **small, supervised, protected staff
+pilot** for contract administration and watermarked internal SmartQuote PDFs,
+not an unreviewed production/customer-quotation launch. The independent
+staging container, pilot login, updated PDF source reader and merged-Master
+quote engine are all on `feature/unified-smartquote-intake`.
+
+**[Follow the November pilot launch runbook](docs/PULSE_INTERNAL_PILOT_9_NOV_2026.md)**
+for exact private-data staging, HTTPS/IT prerequisites, coordinated invoice
+acceptance and Go/No-Go sign-off. Run
+`python scripts/check_pulse_launch_readiness.py --data-dir /app/pilot_data`
+inside the protected staging container to see source-data, Master-price,
+accounts, backup and operational-approval blockers. This read-only check
+never authorises customer issuance.
+
+
 **Source-only development checkout.** The existing V12 pilot's operational database, approved eight-tab Excel template, equipment catalogue and confidential documents are intentionally **not** in GitHub. This repository does not provide a pre-populated installation.
 
 ## SmartQuote quotation pilot (feature branch, not yet deployed)
