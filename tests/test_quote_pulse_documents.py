@@ -22,7 +22,7 @@ Product Group: H - Resistance Equipment
     DS-8877
 
 Product Group: Customer Care
-Customer Care  Customer Care                                   1   £1,392.00                   £1,392.00
+Accessories    Accessories                                   1   £1,392.00                   £1,392.00
   Serial Numbers
 
     5206/3
