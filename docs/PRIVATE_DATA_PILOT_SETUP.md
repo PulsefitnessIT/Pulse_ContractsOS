@@ -9,7 +9,7 @@ Source code, installation assets, tests and documentation only. The private GitH
 ## Before you begin
 
 - Use a separate, access-controlled Linux/Windows Server host or VM with company-approved HTTPS reverse proxy/VPN. The Compose service only listens on `127.0.0.1:18080` on that server.
-- Choose **one** approved current snapshot. The previous V12 example contained 642 active and 8,381 expired contracts, but it may no longer reflect the current Excel Master.
+- Choose **one** data-owner-approved current snapshot. The user-uploaded 2 November 2026 Master contains **649 populated Maintenance Database records** and **8,381 populated Expired rows**. These are workbook rows, not independently verified live contracts or unique customers. An older V12 example contained 642 current records and must not be presented as the new source. Reconcile any pilot database before cutover.
 - Store an approved, extracted private snapshot in a restricted directory **outside the GitHub checkout**. It must contain `contracts.sqlite3` and `approved_master.xlsx`; optionally `equipment_catalogue.json` and `service_planner_source.json`.
 - Confirm with the contract team whether updates since the snapshot need importing and reconcile active/expired counts and audit history before pilots begin.
 - Back up all source records *before* migrating. Do not use the static director-demo HTML as the source database.
@@ -82,3 +82,32 @@ The app will show a **Contract amount completeness** notice on the dashboard. Bl
 ## Limits
 
 No live hosting, data reconciliation or real-data Excel acceptance testing has been performed by committing this feature. Python/SQLite remain on the server. This does not integrate with Sage/Sicon or PulseFitness.ai and does not enable Microsoft sign-in.
+
+## Source-backed fresh runtime from the new uploaded Excel Master
+
+IT can prepare a **new** protected source-backed runtime from an approved copy
+of the latest Excel Master without loading any customer data into GitHub:
+
+```bash
+python scripts/prepare_factual_master.py \\
+  --source /secure/approved-master-2026-11-02.xlsx \\
+  --destination /secure/new-contracts-snapshot \\
+  --approved-current-master
+```
+
+This stage path must not already exist or be located inside the source checkout.
+The script verifies all eight worksheet names, creates a new SQLite database,
+retains all 649+8,381 source register records including the duplicated original
+Record ID on current Excel rows 620/621, and checks the private workbook hash,
+row counts and missing amount count. It leaves all missing amounts blank.
+
+**Do not swap this database into an existing staff-edited pilot:** a source-backed
+fresh snapshot is not a two-way migration. To reconcile it with an existing
+Contracts OS database, obtain an off-host backup, compare row IDs and field
+changes and approve merge conflicts individually. The application Source audit
+tab can show recorded source mismatches without applying any changes.
+
+The uploaded Excel source SHA-256 is recorded in
+[the aggregate evidence report](MASTER_SOURCE_AUDIT_2026-11-02.md).
+This is a source audit, not an ERP balance certification or confirmation that
+the running hosted service was updated.
