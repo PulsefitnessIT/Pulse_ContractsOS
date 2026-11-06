@@ -390,7 +390,8 @@ test('a single bulk confirmation updates quantities while keeping exact auto-mat
     'invoice_match_confirmed:true,invoice_match_method:"auto_exact_master",'+
     'source_import_id:91,source_pages:[1],quantity_verified:false}];');
   w.run('renderUnifiedEquipment()');
-  assert.match(review.innerHTML,/Confirm equipment quantities/);
+  assert.match(review.innerHTML,/Review imported equipment/);
+  assert.match(review.innerHTML,/Confirm all equipment quantities and listed serials/);
   assert.match(w.table.innerHTML,/Quantity to verify/);
   handler.click();
   const line=JSON.parse(w.run('JSON.stringify(unifiedEquipment[0])'));
