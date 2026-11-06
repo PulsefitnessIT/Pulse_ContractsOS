@@ -38,9 +38,14 @@ def environment(tmp_path, monkeypatch):
         db.execute("INSERT INTO pilot_users VALUES('fake-coordinator','Coordinator',0)")
         backups = tmp_path / "backups"
         backups.mkdir()
+        # sqlite3.backup must not run against this connection while its
+        # own writes are uncommitted: it can otherwise retry forever.
+        db.commit()
         dest = sqlite3.connect(backups / "pulse_contracts_20261106.sqlite3")
-        db.backup(dest)
-        dest.close()
+        try:
+            db.backup(dest, pages=100)
+        finally:
+            dest.close()
     (tmp_path / "approved_master.xlsx").write_bytes(b"synthetic workbook")
     monkeypatch.setattr(gate, "assess_database", lambda db, workbook: {
         "ready_for_data_review": True,
