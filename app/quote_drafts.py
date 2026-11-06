@@ -340,6 +340,7 @@ def verify_invoice_evidence_link(data):
     if not sourced:
         return
     ids=sorted({line["source_import_id"] for line in sourced})
+    auto_source_eligibility={}
     with connect() as con:
         rows={}
         for source_id in ids:
@@ -361,6 +362,14 @@ def verify_invoice_evidence_link(data):
             use_rows=(isinstance(raw_lines,list) and bool(raw_lines)
                       and structured.get("document_type") in ("invoice","delivery_note"))
             evidence_rows=raw_lines if use_rows else evidence.get("equipment_codes",[])
+            if use_rows:
+                auto_source_eligibility[source_id]={
+                    str(item.get("sku") or "").strip().upper()
+                    for item in raw_lines if isinstance(item,dict)
+                    and item.get("excluded_hint") is not True
+                    and (structured.get("document_type") != "delivery_note"
+                         or item.get("quantity_received",item.get("quantity",0)) > 0)
+                }
             for item in evidence_rows:
                 if not isinstance(item,dict):
                     continue
@@ -385,8 +394,16 @@ def verify_invoice_evidence_link(data):
                 "Master Price List is not active."
             )
         for line in auto_lines:
+            original_code=str(line["item_code"]).strip().upper()
+            permitted=auto_source_eligibility.get(line["source_import_id"])
+            if permitted is not None and original_code not in permitted:
+                raise HTTPException(
+                    409, "This source invoice or delivery note records a "
+                    "non-equipment, unreceived or excluded item. It cannot "
+                    "be auto-linked to maintenance equipment."
+                )
             matched = classify_sku(
-                str(line["item_code"]).strip().upper(), price_book
+                original_code, price_book
             )
             if not matched["auto_add_equipment"]:
                 raise HTTPException(
