@@ -31,6 +31,7 @@ function unifiedDraftSnapshot() {
       item_code:String(e.item_code||'').trim(),
       description:String(e.description||'').trim(),
       serial:String(e.serial||'').trim(),
+      serial_numbers:Array.isArray(e.serial_numbers)?e.serial_numbers.map(String):[],
       cover_start:String(e.cover_start||''),
       quantity:Number(e.quantity),
       source_import_id:e.source_import_id||null,
@@ -47,7 +48,7 @@ function unifiedDraftSnapshot() {
 function unifiedHasPendingEquipmentInput() {
   const form=document.querySelector('#unifiedEquipmentAdd');
   if(!form)return false;
-  const keys=['description','item_code','serial','cover_start'];
+  const keys=['description','item_code','serial','serial_numbers','cover_start'];
   return keys.some(key=>String(form.elements[key]?.value||'').trim()) ||
     Number(form.elements.quantity?.value||1)!==1;
 }
@@ -193,7 +194,8 @@ async function quotingWorkspacePage() {
     '<div class="form-grid">' +
     '<label>Equipment description <input name="description" maxlength="400" required></label>' +
     '<label>Product code <input name="item_code" maxlength="100"></label>' +
-    '<label>Serial number <input name="serial" maxlength="120"></label>' +
+    '<label>Serial number (single machine) <input name="serial" maxlength="120"></label>' +
+    '<label>Multiple serial numbers <textarea name="serial_numbers" maxlength="64000" rows="2" placeholder="Optional: one per line or comma-separated"></textarea></label>' +
     '<label>Equipment cover starts <input name="cover_start" type="date"></label>' +
     '<label>Quantity <input name="quantity" type="number" min="1" max="10000" step="1" value="1" required></label>' +
     '</div><button type="submit" class="button button-outline">Add equipment line</button> ' +
@@ -341,7 +343,10 @@ function renderUnifiedEquipment() {
           'Automatically matched exact Master code':'Coordinator-confirmed invoice/Master code match')+
         (item.invoice_match_confirmed_by?' · '+esc(item.invoice_match_confirmed_by):'')+
         '</p>':'<p class="notice warning">Invoice match not confirmed</p>'):'')+'</td>'+
-    '<td>'+esc(item.serial||'Not confirmed')+'</td><td>'+
+    '<td>'+esc(Array.isArray(item.serial_numbers)&&item.serial_numbers.length?
+      (item.serial_numbers.slice(0,2).join(', ')+
+      (item.serial_numbers.length>2?' +'+(item.serial_numbers.length-2)+' more':'')):
+      item.serial||'Not confirmed')+'</td><td>'+
     esc(item.cover_start||'Contract start')+'</td><td>'+esc(item.quantity)+
     (item.quantity_verified===false?'<p class="fine-print">Quantity to verify</p>':'')+
     '</td>'+
@@ -366,6 +371,9 @@ function renderUnifiedEquipment() {
     if(!form)return;
     for(const key of ['description','item_code','serial','cover_start','quantity'])
       form.elements[key].value=String(item[key]??'');
+    if(form.elements.serial_numbers)
+      form.elements.serial_numbers.value=Array.isArray(item.serial_numbers)&&
+        item.serial_numbers.length>1?item.serial_numbers.join('\n'):'';
     if(item.source_import_id){
       form.dataset.invoiceSku=String(item.item_code||'').trim().toUpperCase();
       form.dataset.invoiceSourceId=String(item.source_import_id);
