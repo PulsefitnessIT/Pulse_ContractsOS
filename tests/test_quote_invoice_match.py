@@ -187,3 +187,73 @@ def test_no_client_provided_auto_match_audit_fields_can_be_spoofed(environment):
     assert "invoice_match_master_sha256" not in incoming["equipment"][0]
     quote_drafts.verify_invoice_evidence_link(incoming)
     assert incoming["equipment"][0]["invoice_match_master_sha256"]=="c"*64
+
+
+def test_structured_pulse_delivery_note_respects_received_qty_and_serials(environment):
+    db,book=environment
+    with db() as con:
+        con.execute(
+            "INSERT INTO imports(id,type,evidence_json) VALUES(?,?,?)",
+            (93,"pdf",json.dumps({
+                "quote_document":{
+                    "document_type":"delivery_note","format":"delivery",
+                    "lines":[
+                        {"sku":"BIKE-001","description":"Fictional Cardio Bike",
+                         "quantity":4,"quantity_sent":4,"quantity_received":4,
+                         "serial_numbers":["00001","00002","00003","00004"],
+                         "pages":[1,2],"excluded_hint":False},
+                        {"sku":"BELT-001","description":"CV drive belt",
+                         "quantity":3,"quantity_sent":3,"quantity_received":3,
+                         "serial_numbers":[],"pages":[2],"excluded_hint":True},
+                        {"sku":"HELD-001","description":"Fictional machine to follow",
+                         "quantity":0,"quantity_sent":4,"quantity_received":0,
+                         "serial_numbers":[],"pages":[3],"excluded_hint":False},
+                    ],
+                },
+                "equipment_codes":[
+                    {"value":"UNTRUSTED-HEADER","pages":[1]}
+                ],
+            })),
+        )
+    result=quote_invoice_match.match_invoices([93],book)
+    by_code={item["sku"]:item for item in result["results"]}
+    assert "UNTRUSTED-HEADER" not in by_code
+    assert by_code["BIKE-001"]["quantity_suggested"]==4
+    assert by_code["BIKE-001"]["serial_numbers_suggested"]==[
+        "00001","00002","00003","00004"
+    ]
+    assert by_code["BIKE-001"]["source_pages"]==[1,2]
+    assert by_code["BIKE-001"]["auto_add_equipment"] is True
+    assert by_code["BELT-001"]["auto_add_equipment"] is False
+    assert by_code["HELD-001"]["status"]=="delivery_not_received"
+    assert by_code["HELD-001"]["quantity_sent"]==4
+    assert result["counts"]["delivery_not_received"]==1
+
+    quote=quote_drafts.validate_draft({
+        "customer":"Example Customer","site":"Fictional Gym",
+        "equipment":[{
+            "item_code":"BIKE-001","description":"Example Cardio Bike",
+            "quantity":4,"serial":"00001",
+            "serial_numbers":["00001","00002","00003","00004"],
+            "source_import_id":93,"source_pages":[1,2],
+            "invoice_match_confirmed":True,
+            "invoice_match_method":"auto_exact_master",
+            "quantity_verified":True,
+        }]
+    })
+    quote_drafts.verify_invoice_evidence_link(quote)
+    assert quote_drafts.unconfirmed_serials(quote["equipment"])["total"]==0
+
+
+def test_serial_lists_reject_duplicates_and_units_overflow():
+    from fastapi import HTTPException
+    for invalid in (
+        ["DUP","DUP"],
+        ["ONE","TWO","THREE"],
+    ):
+        with pytest.raises(HTTPException):
+            quote_drafts.validate_draft({
+                "customer":"Example Customer","site":"Demo",
+                "equipment":[{"description":"Bike","quantity":2,
+                              "serial_numbers":invalid,"serial":invalid[0]}]
+            })
