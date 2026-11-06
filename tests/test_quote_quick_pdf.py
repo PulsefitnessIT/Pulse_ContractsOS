@@ -96,3 +96,17 @@ def test_multi_page_pdf_keeps_draft_watermark_on_all_pages(quote):
             text=page.get_text()
             assert "INTERNAL DRAFT ONLY" in text
             assert "NOT AN APPROVED CUSTOMER OFFER" in text
+
+
+def test_internal_pdf_preserves_every_serial_on_multi_unit_equipment(quote):
+    book,draft=quote
+    serials=[f"EXAMPLE-{i:05d}" for i in range(1,13)]
+    draft.lines[0].quantity=12
+    draft.lines[0].serials=", ".join(serials)
+    priced=quick.calculate(draft,book)
+    pdf=render_quick_internal_pdf(draft,priced)
+    with fitz.open(stream=pdf,filetype="pdf") as document:
+        full=" ".join(page.get_text() for page in document)
+        for serial in serials:
+            assert serial in full
+        assert "INTERNAL DRAFT ONLY" in full
