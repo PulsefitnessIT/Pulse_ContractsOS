@@ -84,7 +84,8 @@ function quickCopyEquipment(){
     sku:String(line.item_code||'').trim().toUpperCase(),
     description:String(line.description||''),
     quantity:Number(line.quantity)||1,
-    serials:String(line.serial||''),
+    serials:Array.isArray(line.serial_numbers)&&line.serial_numbers.length?
+      line.serial_numbers.join(', '):String(line.serial||''),
     rate:line.annual_rate_percent!==null&&line.annual_rate_percent!==undefined?
       String(line.annual_rate_percent):quickQuoteHistoricRate(line.description||''),
     fixed:line.fixed_annual_unit_gbp!==null&&line.fixed_annual_unit_gbp!==undefined?
