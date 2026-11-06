@@ -257,3 +257,33 @@ def test_serial_lists_reject_duplicates_and_units_overflow():
                 "equipment":[{"description":"Bike","quantity":2,
                               "serial_numbers":invalid,"serial":invalid[0]}]
             })
+
+
+@pytest.mark.parametrize(("received","excluded"),[(0,False),(1,True)])
+def test_cannot_forge_automatic_quote_link_to_unreceived_or_excluded_item(
+        environment, received, excluded):
+    db,_=environment
+    with db() as con:
+        con.execute(
+            "INSERT INTO imports(id,type,evidence_json) VALUES(?,?,?)",
+            (94,"pdf",json.dumps({
+                "quote_document":{"document_type":"delivery_note",
+                    "lines":[{"sku":"BIKE-001","description":"Example Cardio Bike",
+                              "quantity":received,"quantity_received":received,
+                              "quantity_sent":1,"pages":[1],
+                              "excluded_hint":excluded}]}
+            })),
+        )
+    record=quote_drafts.validate_draft({
+        "customer":"Fictional Customer","site":"Fictional Site",
+        "equipment":[{
+            "item_code":"BIKE-001","description":"Example Cardio Bike",
+            "source_import_id":94,"source_pages":[1],
+            "invoice_match_confirmed":True,
+            "invoice_match_method":"auto_exact_master",
+            "quantity":1
+        }]
+    })
+    with pytest.raises(HTTPException) as exc:
+        quote_drafts.verify_invoice_evidence_link(record)
+    assert exc.value.status_code==409
