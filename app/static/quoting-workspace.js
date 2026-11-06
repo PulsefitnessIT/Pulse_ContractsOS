@@ -167,16 +167,16 @@ async function quotingWorkspacePage() {
     '<label>Contract start <input name="contract_start" type="date"></label>' +
     '<label>Contract end <input name="contract_end" type="date"></label>' +
     '</div></form>' +
-    '<h4>Start from a sales invoice (optional)</h4>' +
-    '<p>Drag and drop up to 12 sales invoice PDFs. Codes matching priced machines in ' +
+    '<h4>Import a sales invoice or delivery note (optional)</h4>' +
+    '<p>Drag and drop up to 12 sales invoices or delivery notes. Codes matching priced machines in ' +
     'the unified Master are added to your draft automatically. Only unmatched ' +
     'codes need a coordinator to check the machine identity. Quantities and ' +
     'serial numbers remain to be verified before a quote can be issued.</p>' +
-    '<form id="unifiedInvoiceImport"><label>Sales invoice PDF files ' +
+    '<form id="unifiedInvoiceImport"><label>Invoice or delivery-note PDF files ' +
     '<input name="files" type="file" accept=".pdf,application/pdf" multiple required></label>' +
     '<div id="unifiedInvoiceDropzone" class="pulse-invoice-drop" role="button" tabindex="0" ' +
     'aria-label="Drop one or more invoice PDFs here or press Enter to choose PDF files">' +
-    '<strong>Drag and drop your sales invoice PDFs here</strong>' +
+    '<strong>Drop Pulse invoices or delivery notes here</strong>' +
     '<p class="fine-print">Or click to select files. Up to 12 PDFs, ' +
     '20 MB each and 60 MB total. Exact Master machine-code matches are automatic; ' +
     'spare parts are excluded and unmatched codes are flagged for review.</p>' +
@@ -991,7 +991,8 @@ async function unifiedImportInvoiceEvidence(event) {
       matched_equipment:'Matched — added to equipment draft',
       matched_inventory_not_machine:'Matched — spare part or other inventory (excluded)',
       matched_unpriced_or_held:'Matched — price needs administrator review',
-      unmatched:'No exact Master match — coordinator review required'
+      unmatched:'No exact Master match — coordinator review required',
+      delivery_not_received:'Not received / TO FOLLOW — not added'
     };
     feedback.innerHTML=
       '<p><strong>'+esc(added)+'</strong> equipment codes added automatically, '+
@@ -1000,7 +1001,9 @@ async function unifiedImportInvoiceEvidence(event) {
       ' matched inventory/parts excluded, '+
       esc(matching.counts.matched_unpriced_or_held||0)+
       ' matched but without an approved reference price, and '+
-      esc(matching.counts.unmatched||0)+' unmatched codes for review.</p>'+
+      esc(matching.counts.unmatched||0)+' unmatched codes for review.'+
+      (matching.counts.delivery_not_received?
+        ' '+esc(matching.counts.delivery_not_received)+' undelivered lines excluded.':'')+'</p>'+
       (limitReached?'<p class="notice warning">'+esc(limitReached)+
         ' machine lines exceed the 500-line draft limit; review before continuing.</p>':'')+
       '<p class="fine-print">Exact Master SKU matches are accepted automatically. '+
@@ -1008,13 +1011,18 @@ async function unifiedImportInvoiceEvidence(event) {
       'Check quantities and serial numbers before issuing a quotation. '+
       'Spare parts are not added as maintenance machines.</p>'+
       '<div style="overflow-x:auto"><table class="data-table">'+
-      '<thead><tr><th>Invoice</th><th>Code</th><th>Master description</th>'+
-      '<th>Match result</th><th></th></tr></thead><tbody>'+
+      '<thead><tr><th>Source PDF</th><th>Code</th><th>Machine / source description</th>'+
+      '<th>Extracted qty</th><th>Serials found</th><th>Match result</th><th></th></tr></thead><tbody>'+
       matches.map((match,i)=>{
         const file=filesById.get(match.source_import_id);
         return '<tr><td>'+esc(file?.filename||String(match.source_import_id))+
           ' · page '+esc(match.source_pages.join(', ')||'not located')+'</td>'+
-          '<td>'+esc(match.sku)+'</td><td>'+esc(match.master_description||'—')+
+          '<td>'+esc(match.sku)+'</td><td>'+esc(match.master_description||match.source_description||'—')+
+          '</td><td>'+esc(match.quantity_suggested===null||match.quantity_suggested===undefined?
+            'To verify':match.quantity_suggested)+
+          (match.source_document_type==='delivery_note'?
+            ' received / '+esc(match.quantity_sent)+' sent':'')+
+          '</td><td>'+esc((match.serial_numbers_suggested||[]).length)+
           '</td><td>'+esc(statusLabel[match.status]||'Needs review')+'</td>'+
           '<td>'+(match.status==='unmatched'?
             '<button type="button" class="button button-outline" '+
