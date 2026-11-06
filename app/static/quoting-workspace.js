@@ -434,61 +434,76 @@ function unifiedReviewImportedQuantities(){
       item.quantity_verified!==true);
   if(!needs.length){host.innerHTML='';return;}
   host.innerHTML='<section class="review-box">'+
-    '<h3>Confirm equipment quantities · '+esc(needs.length)+' line(s)</h3>'+
-    '<p>Exact item codes were matched automatically. The invoice extractor '+
-    'does not verify quantities or serial numbers. Check the invoice and '+
-    'confirm the figures together below; no per-code approval is needed.</p>'+
+    '<h3>Review imported equipment · '+esc(needs.length)+' line(s)</h3>'+
+    '<p>Exact Master machine codes were matched automatically. The quantities '+
+    'and serials shown below are suggestions transcribed from the invoice or '+
+    'delivery note. Check them against the original PDFs and confirm in one action.</p>'+
     '<div style="overflow-x:auto"><table class="data-table">'+
-    '<thead><tr><th>Matched equipment</th><th>Qty (check invoice)</th>'+
-    '<th>Serial / reference (if known)</th></tr></thead><tbody>'+
+    '<thead><tr><th>Matched machine</th><th>Qty from document</th>'+
+    '<th>Serial numbers from document (edit as needed)</th></tr></thead><tbody>'+
     needs.map(({item,index})=>'<tr><td>'+esc(item.item_code)+' · '+
       esc(item.description)+'</td><td><input type="number" min="1" max="10000" '+
       'step="1" value="'+esc(item.quantity)+'" data-verify-quantity="'+index+'" '+
       'aria-label="Confirmed quantity for '+esc(item.item_code)+'" style="width:90px"></td>'+
-      '<td><input type="text" maxlength="120" value="'+esc(item.serial||'')+
-      '" data-verify-serial="'+index+'" aria-label="Serial for '+esc(item.item_code)+
-      '" style="min-width:175px"></td></tr>').join('')+
+      '<td><textarea data-verify-serial="'+index+'" rows="2" maxlength="64000" '+
+      'aria-label="Serials for '+esc(item.item_code)+'" '+
+      'style="min-width:240px;width:100%">'+
+      esc(Array.isArray(item.serial_numbers)&&item.serial_numbers.length?
+        item.serial_numbers.join('\n'):item.serial||'')+
+      '</textarea></td></tr>').join('')+
     '</tbody></table></div>'+
     '<button type="button" class="button button-primary" id="unifiedConfirmQuantities">'+
-    'Confirm equipment quantities</button>'+
-    '<p class="fine-print">Multiple serial numbers may require separate '+
-    'equipment lines. Unconfirmed serials remain flagged at customer issue.</p>'+
+    'Confirm all equipment quantities and listed serials</button>'+
+    '<p class="fine-print">One listed serial is required for each physical '+
+    'unit to avoid the customer-issue serial exception. Unlisted units '+
+    'remain visible for manager review; do not invent serial numbers.</p>'+
     '<p id="unifiedQuantityError" role="alert"></p></section>';
   host.querySelector('#unifiedConfirmQuantities').addEventListener('click',()=>{
     const error=host.querySelector('#unifiedQuantityError');
     const updates=[];
     const occupied=new Set(unifiedEquipment.filter(line=>line.quantity_verified===true)
-      .map(line=>String(line.serial||'').trim().toUpperCase()).filter(Boolean));
+      .flatMap(line=>Array.isArray(line.serial_numbers)&&line.serial_numbers.length?
+        line.serial_numbers:[line.serial])
+      .map(x=>String(x||'').trim().toUpperCase()).filter(Boolean));
     for(const {item,index} of needs){
       const amount=host.querySelector('[data-verify-quantity="'+index+'"]');
       const serialInput=host.querySelector('[data-verify-serial="'+index+'"]');
       const value=Number(amount.value);
-      const serial=String(serialInput.value||'').trim();
+      const serialNumbers=String(serialInput.value||'').split(/[,;\n]+/)
+        .map(x=>x.trim()).filter(Boolean);
       if(!Number.isSafeInteger(value)||value<1||value>10000){
         error.textContent='Enter a whole-number quantity from 1 to 10,000 for '+item.item_code+'.';
         amount.focus();return;
       }
-      if(serial && occupied.has(serial.toUpperCase())){
-        error.textContent='Repeated serial '+serial+'. Confirm each unit has a distinct serial.';
+      if(serialNumbers.length>value||serialNumbers.length>500 ||
+         serialNumbers.some(value=>value.length>120)){
+        error.textContent='More serial numbers than units, or an overlong list for '+item.item_code+'.';
         serialInput.focus();return;
       }
-      if(serial)occupied.add(serial.toUpperCase());
-      updates.push({index,quantity:value,serial});
+      for(const serial of serialNumbers){
+        if(occupied.has(serial.toUpperCase())){
+          error.textContent='Repeated serial '+serial+'. Each unit must have a distinct serial.';
+          serialInput.focus();return;
+        }
+        occupied.add(serial.toUpperCase());
+      }
+      updates.push({index,quantity:value,
+        serial:serialNumbers[0]||'',serial_numbers:serialNumbers});
     }
-    for(const u of updates){
-      const item=unifiedEquipment[u.index];
-      item.quantity=u.quantity;
-      item.serial=u.serial;
+    for(const update of updates){
+      const item=unifiedEquipment[update.index];
+      item.quantity=update.quantity;
+      item.serial=update.serial;
+      item.serial_numbers=update.serial_numbers;
       item.quantity_verified=true;
     }
     unifiedClearPrice();
     renderUnifiedEquipment();
     const note=document.querySelector('#unifiedDraftFeedback');
-    if(note)note.textContent=updates.length+' imported quantity/quantities confirmed. '+
+    if(note)note.textContent=updates.length+' imported equipment line(s) confirmed. '+
       'Complete the customer details and select Save & calculate internal quote.';
   });
 }
-
 
 function unifiedAddEquipment(event) {
   event.preventDefault();
