@@ -31,6 +31,24 @@ _NON_EQUIPMENT = re.compile(
     r"^(?:accessories|customer care|tradein|trade in|del(?:ivery)?(?: & | and )?"
     r"inst(?:allation)?|war-.*|engtrain|software|smart centre)$", re.I
 )
+_NON_MACHINE_DESCRIPTIONS = re.compile(
+    r"^(?:digital freeview|ipod 5 lightning|e-scape virtual training|"
+    r"e-scape virtual videos|nfc ready|qr code|software integration|"
+    r"delivery\s*(?:&|and)\s*installation|on-site preventative maintenance training|"
+    r"business partnership support|pulse move software|small tool box)",
+    re.I,
+)
+
+
+def _exclude_hint(code, description):
+    return bool(
+        _NON_EQUIPMENT.fullmatch(code)
+        or _NON_EQUIPMENT.fullmatch(description.strip())
+        or _NON_MACHINE_DESCRIPTIONS.search(description.strip())
+        or code.upper() in {"STRTRPTRESLINK"}
+    )
+
+
 _MAX_ROWS = 2500
 _MAX_SERIALS = 500
 
@@ -92,8 +110,7 @@ def parse_pages(pages):
                         "quantity_received": qty_received,
                         "serial_numbers": _serials(",".join(columns[2:-2])),
                         "pages": [page_no],
-                        "excluded_hint": bool(_NON_EQUIPMENT.fullmatch(code) or
-                                              _NON_EQUIPMENT.fullmatch(name.strip())),
+                        "excluded_hint": _exclude_hint(code, name),
                     }
                     lines.append(current)
                     if len(lines) >= _MAX_ROWS:
@@ -130,8 +147,7 @@ def parse_pages(pages):
                     "sku": code, "description": name[:350],
                     "quantity": int(match.group("qty")),
                     "serial_numbers": [], "pages": [page_no],
-                    "excluded_hint": bool(_NON_EQUIPMENT.fullmatch(code) or
-                                          _NON_EQUIPMENT.fullmatch(name)),
+                    "excluded_hint": _exclude_hint(code, name),
                 }
                 lines.append(current)
                 serial_mode = serial_seen = False
