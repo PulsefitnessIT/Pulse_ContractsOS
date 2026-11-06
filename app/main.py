@@ -850,6 +850,20 @@ async def upload_document(file:UploadFile=File(...)):
         pages=sorted(pages,key=lambda p:p['page'])
         if pages:
             proposals,evidence=reference_proposals(pages)
+            # SmartQuote needs true invoice/delivery rows, not every
+            # alphanumeric string or page heading that resembles an SKU.
+            # Original PDFs and sensitive prices remain in the private DB,
+            # never as GitHub test fixtures.
+            from .quote_pulse_documents import parse_pdf as parse_pulse_pdf
+            try:
+                evidence['quote_document']=parse_pulse_pdf(content)
+            except (ValueError, RuntimeError, OSError) as exc:
+                evidence['quote_document']={
+                    'document_type':'unrecognised','format':'',
+                    'lines':[],'source_only':True,
+                    'warnings':['Equipment table reading needs manual review.']
+                }
+                ocr_warnings.append('SmartQuote table extraction could not be completed.')
             evidence['invoice_groups']=invoice_groups(pages)
             evidence['invoice_review']=analyse_invoice_document(pages)
             evidence['invoice_ocr_warnings']=evidence['invoice_groups'].get('possible_ocr_conflicts',[])
