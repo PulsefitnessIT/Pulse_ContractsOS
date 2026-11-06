@@ -22,10 +22,10 @@ SERIAL_PLACEHOLDERS = frozenset({"N/A", "NA", "NONE", "UNKNOWN", "TBC", "TBD", "
 
 
 def unconfirmed_serials(equipment):
-    """Return physical equipment units without unique verified serial numbers.
+    """Count unique, non-placeholder physical serials across equipment units.
 
-    A quantity-two row with one serial verifies only one physical unit.
-    Historical drafts may contain duplicates; those cannot verify two units.
+    A Pulse invoice can provide 12 serials for one 12-unit treadmill row.
+    Older drafts without a serial_numbers list continue to use serial.
     """
     missing = []
     seen = set()
@@ -33,11 +33,16 @@ def unconfirmed_serials(equipment):
         quantity = item.get("quantity")
         if type(quantity) is not int or quantity < 1:
             continue
-        serial = " ".join(str(item.get("serial") or "").strip().upper().split())
-        valid = bool(serial) and serial not in SERIAL_PLACEHOLDERS and serial not in seen
-        if valid:
-            seen.add(serial)
-        remaining = quantity - int(valid)
+        serials = item.get("serial_numbers")
+        if not isinstance(serials, list):
+            serials = [item.get("serial")]
+        verified = 0
+        for raw in serials:
+            serial = " ".join(str(raw or "").strip().upper().split())
+            if serial and serial not in SERIAL_PLACEHOLDERS and serial not in seen:
+                seen.add(serial)
+                verified += 1
+        remaining = max(0, quantity - verified)
         if remaining:
             missing.append({"line": i, "unconfirmed_units": remaining})
     return {"total": sum(row["unconfirmed_units"] for row in missing), "lines": missing}
@@ -177,14 +182,32 @@ def validate_draft(data):
         if pages and source_id is None:
             raise HTTPException(422, f"Equipment line {i+1}: pages require a source invoice.")
         serial=_clean(line.get("serial",""),"serial",120)
-        serial_key=serial.casefold()
-        if serial_key and serial_key in seen_serials:
-            raise HTTPException(
-                422, f"Equipment serial on line {i+1} is already entered on "
-                f"line {seen_serials[serial_key]}. Check for duplicate machines."
-            )
-        if serial_key:
-            seen_serials[serial_key]=i+1
+        raw_serials = line.get("serial_numbers")
+        if raw_serials is None:
+            serial_numbers = [serial] if serial else []
+        else:
+            if not isinstance(raw_serials,list) or len(raw_serials)>500:
+                raise HTTPException(422, f"Equipment line {i+1}: invalid serial-number list.")
+            serial_numbers = [
+                _clean(value, "serial number",120)
+                for value in raw_serials
+            ]
+            if any(not value for value in serial_numbers):
+                raise HTTPException(422, f"Equipment line {i+1}: empty serial number.")
+            if serial and serial_numbers and serial != serial_numbers[0]:
+                raise HTTPException(422, f"Equipment line {i+1}: primary serial does not match the serial list.")
+            if not serial and serial_numbers:
+                serial = serial_numbers[0]
+        if len(serial_numbers) > qty:
+            raise HTTPException(422, f"Equipment line {i+1}: more serials than equipment units.")
+        for value in serial_numbers:
+            serial_key = " ".join(value.casefold().split())
+            if serial_key in seen_serials:
+                raise HTTPException(
+                    422, f"Equipment serial on line {i+1} is already entered on "
+                    f"line {seen_serials[serial_key]}. Check for duplicate machines."
+                )
+            seen_serials[serial_key] = i+1
         qty_verified = line.get("quantity_verified", match_method != "auto_exact_master")
         if type(qty_verified) is not bool:
             raise HTTPException(422, f"Equipment line {i+1}: invalid quantity confirmation.")
@@ -206,7 +229,7 @@ def validate_draft(data):
         fixed = optional_rate(fixed_raw, "fixed annual charge", 1000000, Decimal("0.01"))
         result.append({"item_code":_clean(line.get("item_code",""),"item_code",100),
                        "description":_clean(line.get("description",""),"description",400,required=True),
-                       "serial":serial,
+                       "serial":serial, "serial_numbers":serial_numbers,
                        "cover_start":cover_start, "quantity":qty,
                        "source_import_id":source_id, "source_pages":pages,
                        "invoice_match_confirmed":confirmed,
@@ -330,10 +353,18 @@ def verify_invoice_evidence_link(data):
             except (ValueError, TypeError) as exc:
                 raise HTTPException(409, "The referenced invoice evidence is damaged.") from exc
             found={}
-            for item in evidence.get("equipment_codes", []):
+            # Where a Pulse invoice or delivery note was parsed into
+            # physical table rows, only those rows can evidence quote SKUs.
+            structured=evidence.get("quote_document")
+            raw_lines=(structured.get("lines") if isinstance(structured,dict)
+                       else None)
+            use_rows=(isinstance(raw_lines,list) and bool(raw_lines)
+                      and structured.get("document_type") in ("invoice","delivery_note"))
+            evidence_rows=raw_lines if use_rows else evidence.get("equipment_codes",[])
+            for item in evidence_rows:
                 if not isinstance(item,dict):
                     continue
-                code=str(item.get("value") or "").strip().upper()
+                code=str(item.get("sku" if use_rows else "value") or "").strip().upper()
                 if not code:
                     continue
                 pages={
