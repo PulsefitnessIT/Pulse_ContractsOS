@@ -888,10 +888,26 @@ function unifiedApplyExactInvoiceMatches(matches){
     const key=String(match.source_import_id)+'/'+code;
     if(existing.has(key)){already++;continue;}
     if(unifiedEquipment.length>=500){limitReached++;continue;}
+    const suggested=Number(match.quantity_suggested);
+    const quantity=Number.isSafeInteger(suggested)&&suggested>0&&suggested<=10000?
+      suggested:1;
+    const serialNumbers=(Array.isArray(match.serial_numbers_suggested)?
+      match.serial_numbers_suggested:[]).map(x=>String(x||'').trim())
+      .filter(x=>x&&x.length<=120).slice(0,Math.min(quantity,500));
+    // A delivery note and invoice may describe the same physical machine.
+    // Repeated serial evidence across different files is not another sale.
+    const sourceSerials=new Set(serialNumbers.map(x=>x.toUpperCase()));
+    const alreadyRepresented=serialNumbers.length>0&&unifiedEquipment.some(line=>
+      String(line.item_code||'').trim().toUpperCase()===code &&
+      (Array.isArray(line.serial_numbers)?line.serial_numbers:[line.serial]).some(
+        serial=>sourceSerials.has(String(serial||'').trim().toUpperCase())
+      ));
+    if(alreadyRepresented){already++;continue;}
     unifiedEquipment.push({
       item_code:code,
       description:String(match.master_description||code).slice(0,400),
-      serial:'', cover_start:'', quantity:1,
+      serial:serialNumbers[0]||'', serial_numbers:serialNumbers,
+      cover_start:'', quantity,
       source_import_id:match.source_import_id,
       source_pages:Array.isArray(match.source_pages)?match.source_pages:[],
       invoice_match_confirmed:true,
