@@ -36,7 +36,6 @@ def check_deployment_environment(values=None):
     if profile == "local":
         # Single-user Windows desktop mode. No remote server, no data in
         # OneDrive and no cookie-security downgrade for shared staging.
-        from urllib.parse import urlsplit
         if env.get("PULSE_PILOT_MODE") != "1":
             raise RuntimeError("Local desktop must use named pilot login.")
         if env.get("PULSE_COOKIE_SECURE") != "0":
