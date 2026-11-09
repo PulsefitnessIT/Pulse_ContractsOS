@@ -1,0 +1,74 @@
+name: Windows single-PC pilot package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/unified-smartquote-intake
+    paths:
+      - scripts/windows_local_app.py
+      - app/**
+      - requirements.txt
+      - .github/workflows/windows-local-pilot.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tested Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install application and Windows packager
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pyinstaller>=6.10,<7"
+
+      - name: Compile bundled Python sources
+        shell: pwsh
+        run: python -m compileall -q app scripts
+
+      - name: Build self-contained Windows desktop folder
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onedir --windowed --name "Pulse Contracts OS" --add-data "app/static;app/static" --collect-submodules app --collect-submodules uvicorn --collect-all pymupdf scripts/windows_local_app.py
+          if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed" }
+
+      - name: Verify actual packaged executable and static assets
+        shell: pwsh
+        run: |
+          $exe = "dist/Pulse Contracts OS/Pulse Contracts OS.exe"
+          if (!(Test-Path $exe)) { throw "Desktop executable missing" }
+          & $exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Packaged executable failed self-test" }
+          $assets = "dist/Pulse Contracts OS/_internal/app/static/index.html"
+          if (!(Test-Path $assets)) { throw "Pulse web UI was not bundled" }
+
+      - name: Assemble offline package with first-run instructions
+        shell: pwsh
+        run: |
+          Copy-Item "docs/WINDOWS_SINGLE_PC_INSTALL.md" "dist/Pulse Contracts OS/READ_ME_FIRST.md"
+          $all = Get-ChildItem -Path "dist/Pulse Contracts OS" -File -Recurse
+          $unwanted = $all | Where-Object {
+            $_.Name -match '\.(sqlite3?|db|xlsx?|xlsm|pdf)$' -or
+            $_.FullName -match '\\(data|pilot_data|uploads|backups|invoices)\\'
+          }
+          if ($unwanted) { throw "Company data must not be bundled" }
+          Compress-Archive -Path "dist/Pulse Contracts OS/*" -DestinationPath "dist/Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot.zip" -CompressionLevel Optimal
+
+      - name: Publish downloadable Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot
+          path: dist/Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot.zip
+          retention-days: 14
+          if-no-files-found: error
