@@ -188,7 +188,9 @@ def disable_user(username):
 
 def _public_origin_is_allowed(headers):
     """Fail closed on cross-origin login and write requests in server staging."""
-    if os.environ.get('PULSE_DEPLOYMENT_ENV')!='staging':return True
+    profile=os.environ.get('PULSE_DEPLOYMENT_ENV')
+    if profile not in ('staging','local'):
+        return True
     expected=os.environ.get('PULSE_PUBLIC_ORIGIN','').strip()
     supplied=(headers.get('origin') or '').strip()
     if not supplied:
@@ -197,11 +199,16 @@ def _public_origin_is_allowed(headers):
     try:
         intended=urlsplit(expected)
         actual=urlsplit(supplied)
-        return (intended.scheme=='https' and actual.scheme=='https' and
-                bool(intended.hostname) and
-                (actual.scheme,actual.hostname,actual.port or 443)==
-                (intended.scheme,intended.hostname,intended.port or 443) and
-                actual.username is None and actual.password is None)
+        expected_scheme='http' if profile=='local' else 'https'
+        actual_port=actual.port or (80 if actual.scheme=='http' else 443)
+        expected_port=intended.port or (80 if intended.scheme=='http' else 443)
+        return (
+            intended.scheme==expected_scheme and actual.scheme==expected_scheme
+            and bool(intended.hostname)
+            and (profile!='local' or intended.hostname=='127.0.0.1')
+            and (actual.hostname,actual_port)==(intended.hostname,expected_port)
+            and actual.username is None and actual.password is None
+        )
     except ValueError:
         return False
 
@@ -251,6 +258,14 @@ def login(username,password,request):
 async def pilot_middleware(request:Request,call_next):
     if not PILOT_MODE:return await call_next(request)
     path=request.url.path
+    if os.environ.get('PULSE_DEPLOYMENT_ENV')=='local':
+        # Deny DNS-rebinding Host headers even on unauthenticated static
+        # requests. The bundled app must only be accessed via its loopback
+        # origin; its server binds to 127.0.0.1, never a network interface.
+        host=request.headers.get('host','').lower().strip()
+        intended=urlsplit(os.environ.get('PULSE_PUBLIC_ORIGIN',''))
+        if host!=intended.netloc.lower():
+            return JSONResponse({'detail':'Local access only'},status_code=403)
     unsafe=request.method not in ('GET','HEAD','OPTIONS')
     if unsafe and not _public_origin_is_allowed(request.headers):
         return JSONResponse({'detail':'Untrusted request origin'},status_code=403)
