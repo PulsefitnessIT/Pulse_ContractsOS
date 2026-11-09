@@ -83,8 +83,10 @@ def _package_self_test():
     import uvicorn
     import lxml
     import tkinter
-    import app
-    source = Path(app.__file__).parent / "static" / "index.html"
+    # The top-level app is a Python namespace package (no __init__.py),
+    # so app.__file__ can legitimately be None in a frozen executable.
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    source = base / "app" / "static" / "index.html"
     logo = source.parent / "brand" / "pulse-fitness-reverse.svg"
     if not (source.is_file() and logo.is_file()):
         raise RuntimeError("Bundled Pulse Fitness UI assets are missing.")
