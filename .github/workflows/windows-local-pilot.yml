@@ -54,8 +54,10 @@ jobs:
         run: |
           $exe = "dist/Pulse Contracts OS/Pulse Contracts OS.exe"
           if (!(Test-Path $exe)) { throw "Desktop executable missing" }
-          & $exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Packaged executable failed self-test" }
+          # Windows GUI applications can return to PowerShell before exit;
+          # wait for the real process exit code instead of $LASTEXITCODE.
+          $verified = Start-Process -FilePath (Resolve-Path $exe).Path -ArgumentList "--self-test" -Wait -PassThru
+          if ($verified.ExitCode -ne 0) { throw "Packaged executable failed self-test: $($verified.ExitCode)" }
           $assets = "dist/Pulse Contracts OS/_internal/app/static/index.html"
           if (!(Test-Path $assets)) { throw "Pulse web UI was not bundled" }
 
