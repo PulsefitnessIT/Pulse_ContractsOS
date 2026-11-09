@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - develop
+      - feature/real-data-pilot-readiness
   push:
     branches:
       - feature/unified-smartquote-intake
