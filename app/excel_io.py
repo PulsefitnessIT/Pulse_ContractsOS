@@ -163,6 +163,12 @@ class ExcelSource:
         if (name == 'Maintenance Database' and
                 len(headers) >= 30 and not headers[29]):
             headers[29]='Record ID'
+        if name == 'Sicon Contracts':
+            # Preserve populated but unlabelled AO: AQ source attributes
+            # without claiming to know their business meaning.
+            for col in (41,42,43):
+                if len(headers) >= col and not headers[col-1]:
+                    headers[col-1]='Unlabelled source '+colname(col)
         data=[]
         for row in rows[1:]:
             cells={splitcell(c.get('r'))[0]:c for c in row.findall(Q('c'))}
