@@ -157,6 +157,12 @@ class ExcelSource:
         if not rows:return [],[]
         header_cells={splitcell(c.get('r'))[0]:self.cell_value(c) for c in rows[0].findall(Q('c'))}
         headers=[str(header_cells.get(i,'') or '') for i in range(1,max(header_cells)+1)]
+        # Approved 15-tab Pulse Master has 600 durable MAIN- IDs in AD,
+        # but AD1 is BLANK. Repair the read/export HEADER MAPPING only.
+        # Never rewrite the original source or change Excel's physical AD.
+        if (name == 'Maintenance Database' and
+                len(headers) >= 30 and not headers[29]):
+            headers[29]='Record ID'
         data=[]
         for row in rows[1:]:
             cells={splitcell(c.get('r'))[0]:c for c in row.findall(Q('c'))}
