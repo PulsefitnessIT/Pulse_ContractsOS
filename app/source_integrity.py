@@ -25,7 +25,10 @@ REQUIRED_COLUMNS = {
     "MOD": {"Customer / site", "Record ID", "Contract number",
         "Contract / warranty type", "Start date", "Expiry date",
         "Contract amount (£)", "Invoice Code"},
-    "Expired": {"Customer / site", "Record ID", "Contract number",
+    # Expired history in the approved 15-tab Master has NO Record ID header.
+    # Preserve every archive record using a labelled sheet/row source key;
+    # never infer IDs from commercial contracts or customer names.
+    "Expired": {"Customer / site", "Contract number",
         "Contract / warranty type", "Expiry date", "Contract amount (£)"},
 }
 
