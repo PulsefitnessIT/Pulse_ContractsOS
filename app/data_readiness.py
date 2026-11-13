@@ -22,6 +22,20 @@ CURRENT_WORKSHEETS = [
     "Weekly Values", "Invoices", "Monthly Report", "Sales Report",
     "Quotes", "Expired",
 ]
+# Approved 13 November 2026 source includes service planning and Sicon
+# registers. Do not mistake a 15-tab source for the older 10-tab layout.
+PULSE_15_WORKSHEETS = [
+    "Home", "Action Centre", "Maintenance Database", "MOD",
+    "Service Planner", "MOD Service Planner", "Weekly Values", "Invoices",
+    "Monthly Report", "Sales Report", "Quotes", "Expired",
+    "Sicon Contracts", "PPM Annual Detail - Commercial",
+    "PPM Annual Detail - MOD",
+]
+PULSE_15_SOURCE_SHEETS = (
+    "Service Planner", "MOD Service Planner", "Sicon Contracts",
+    "PPM Annual Detail - Commercial", "PPM Annual Detail - MOD",
+)
+
 SHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 
@@ -46,8 +60,11 @@ def workbook_check(path):
             if sheets is None:
                 raise ValueError("Workbook sheet definitions are missing")
             result["sheet_names"] = [item.attrib["name"] for item in sheets]
-            if result["sheet_names"] not in (WORKSHEETS, CURRENT_WORKSHEETS):
-                result["issues"].append("Workbook sheet layout does not match the supported eight-tab or ten-tab Master")
+            if result["sheet_names"] not in (
+                    WORKSHEETS, CURRENT_WORKSHEETS, PULSE_15_WORKSHEETS):
+                result["issues"].append(
+                    "Workbook sheet order does not match an approved 8-, 10- or 15-tab Master"
+                )
             else:
                 # Verify sheet relationship targets rather than assuming sheet
                 # positions. Old file IDs need not change when tabs are inserted.
@@ -57,9 +74,50 @@ def workbook_check(path):
                     for name in result["sheet_names"]:
                         if name not in src.sheet_parts:
                             raise ValueError("Missing worksheet part")
-                    result["valid"] = True
-                    result["profile"] = ("ten_tab_mod_action_centre"
-                        if result["sheet_names"] == CURRENT_WORKSHEETS else "legacy_eight_tab")
+                    if result["sheet_names"] == PULSE_15_WORKSHEETS:
+                        # These two annual-cycle registers are source evidence,
+                        # not new active customer contracts. Require both to
+                        # remain hidden in the approved 15-tab export.
+                        states={sheet.attrib["name"]:sheet.attrib.get("state")
+                                for sheet in sheets}
+                        for name in ("PPM Annual Detail - Commercial",
+                                     "PPM Annual Detail - MOD"):
+                            if states.get(name) != "hidden":
+                                result["issues"].append(
+                                    "Approved annual PPM source tab is not hidden: " + name
+                                )
+                        key_fields={
+                            "Service Planner":("Contract number","Service year key (internal)"),
+                            "MOD Service Planner":("Contract number","Service year key (internal)"),
+                            "PPM Annual Detail - Commercial":("Contract number","Service year key (internal)"),
+                            "PPM Annual Detail - MOD":("Contract number","Service year key (internal)"),
+                            "Sicon Contracts":("Sicon contract ID","Sicon line ID"),
+                        }
+                        for name,required in key_fields.items():
+                            headers,_=src.records(name)
+                            missing=set(required)-set(headers)
+                            if missing:
+                                result["issues"].append(
+                                    "Missing source fields on " + name + ": "
+                                    + ", ".join(sorted(missing))
+                                )
+                        # The real commercial workbook stores 600 durable
+                        # MAIN- IDs in blank-heading column AD. Read but
+                        # preserve that physical source cell on export.
+                        headings,_=src.records("Maintenance Database")
+                        if "Record ID" not in headings:
+                            result["issues"].append(
+                                "Maintenance Database internal ID column AD could not be mapped"
+                            )
+                    if not result["issues"]:
+                        result["valid"] = True
+                        result["profile"] = (
+                            "pulse_15_tab_operational_master"
+                            if result["sheet_names"] == PULSE_15_WORKSHEETS else
+                            "ten_tab_mod_action_centre"
+                            if result["sheet_names"] == CURRENT_WORKSHEETS else
+                            "legacy_eight_tab"
+                        )
                 finally:
                     src.z.close()
     except (OSError, KeyError, ValueError, zipfile.BadZipFile, ET.ParseError) as error:
