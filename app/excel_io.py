@@ -11,6 +11,7 @@ import io
 import os
 import re
 import zipfile
+import posixpath
 from lxml import etree as ET
 
 NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -18,8 +19,43 @@ R='http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 Q=lambda n:'{%s}%s'%(NS,n)
 NSMAP={'m':NS, 'r':R}
 SHEET_INDEX={'Home':1,'Maintenance Database':2,'Weekly Values':3,'Invoices':4,'Monthly Report':5,'Sales Report':6,'Quotes':7,'Expired':8}
-REGISTER_SHEETS=('Maintenance Database','Expired')
-DATE_FIELDS={'Start date','Expiry date','Action due','Last service recorded','Invoice month','Period from','Period to','Date sent','Week ending (Friday)','Prepared date','Sent date'}
+REGISTER_SHEETS=('Maintenance Database','Expired')  # Legacy eight-tab fallback
+CURRENT_REGISTER_SHEETS=('Maintenance Database','MOD','Expired')
+
+# Bounds are deliberately above the current real Maintenance Master but
+# prevent tiny uploaded ZIPs from expanding to enormous server allocations.
+MAX_WORKBOOK_ENTRIES = 1000
+MAX_WORKBOOK_UNCOMPRESSED = 512 * 1024 * 1024
+MAX_WORKBOOK_PART = 160 * 1024 * 1024
+MAX_WORKBOOK_RATIO = 500
+
+
+def check_excel_archive_limits(archive):
+    """Validate ZIP central-directory size claims BEFORE any decompression."""
+    entries=archive.infolist()
+    if len(entries)>MAX_WORKBOOK_ENTRIES:
+        raise ValueError('Workbook contains too many archive parts')
+    total=0
+    names=set()
+    for info in entries:
+        if info.filename in names:
+            raise ValueError('Workbook contains duplicate archive paths')
+        names.add(info.filename)
+        total+=info.file_size
+        if total>MAX_WORKBOOK_UNCOMPRESSED:
+            raise ValueError('Workbook uncompressed size exceeds the safe import limit')
+        if info.file_size>MAX_WORKBOOK_PART:
+            raise ValueError('A workbook component exceeds the safe import limit')
+        if info.file_size>1024*1024 and info.file_size/max(1,info.compress_size)>MAX_WORKBOOK_RATIO:
+            raise ValueError('Workbook has an implausible compression ratio')
+        if info.flag_bits & 0x1:
+            raise ValueError('Encrypted workbooks cannot be imported')
+
+
+def register_sheets(source):
+    """Only factual contract registers, never calculated Action Centre rows."""
+    return CURRENT_REGISTER_SHEETS if 'MOD' in getattr(source,'sheet_parts',{}) else REGISTER_SHEETS
+DATE_FIELDS={'Start date','Expiry date','Action due','Last service recorded','Invoice month','Period from','Period to','Date sent','Week ending (Friday)','Prepared date','Sent date','Next action date','Follow Up Date','Revised Date'}
 
 
 def colno(col):
@@ -55,6 +91,32 @@ def excel_day(value):
 class ExcelSource:
     def __init__(self,filepath):
         self.path=filepath;self.z=zipfile.ZipFile(filepath,'r')
+        try:
+            check_excel_archive_limits(self.z)
+        except Exception:
+            self.z.close()
+            raise
+        # Match worksheet *names* to OOXML relationships, not historical positions.
+        # The ten-tab working Master inserts Action Centre and MOD but retains
+        # the original sheet XML part IDs; sheet position is not sheet identity.
+        workbook=ET.fromstring(self.z.read('xl/workbook.xml'))
+        relroot=ET.fromstring(self.z.read('xl/_rels/workbook.xml.rels'))
+        rels={el.get('Id'):el.get('Target') for el in relroot}
+        self.sheet_parts={}
+        self.sheet_names=[]
+        for el in workbook.find(Q('sheets')):
+            name=el.get('name')
+            relationship=el.get('{'+R+'}id')
+            target=rels.get(relationship,'')
+            if not target:raise ValueError('Missing OOXML worksheet relationship')
+            part=posixpath.normpath(target.lstrip('/') if target.startswith('/')
+                else posixpath.join('xl',target))
+            if not part.startswith('xl/worksheets/') or part not in self.z.namelist():
+                raise ValueError('Unexpected or missing worksheet relationship')
+            if name in self.sheet_parts:raise ValueError('Duplicated worksheet name')
+            self.sheet_names.append(name)
+            self.sheet_parts[name]=part
+
         self.shared=[];self.styles=[];self.fills=[]
         if 'xl/sharedStrings.xml' in self.z.namelist():
             root=ET.fromstring(self.z.read('xl/sharedStrings.xml'))
@@ -88,13 +150,25 @@ class ExcelSource:
         except Exception:pass
         return ''
     def sheet(self,name):
-        index=SHEET_INDEX[name];return ET.fromstring(self.z.read(f'xl/worksheets/sheet{index}.xml'))
+        return ET.fromstring(self.z.read(self.sheet_parts[name]))
     def records(self,name):
         root=self.sheet(name)
         rows=root.find(Q('sheetData')).findall(Q('row'))
         if not rows:return [],[]
         header_cells={splitcell(c.get('r'))[0]:self.cell_value(c) for c in rows[0].findall(Q('c'))}
         headers=[str(header_cells.get(i,'') or '') for i in range(1,max(header_cells)+1)]
+        # Approved 15-tab Pulse Master has 600 durable MAIN- IDs in AD,
+        # but AD1 is BLANK. Repair the read/export HEADER MAPPING only.
+        # Never rewrite the original source or change Excel's physical AD.
+        if (name == 'Maintenance Database' and
+                len(headers) >= 30 and not headers[29]):
+            headers[29]='Record ID'
+        if name == 'Sicon Contracts':
+            # Preserve populated but unlabelled AO: AQ source attributes
+            # without claiming to know their business meaning.
+            for col in (41,42,43):
+                if len(headers) >= col and not headers[col-1]:
+                    headers[col-1]='Unlabelled source '+colname(col)
         data=[]
         for row in rows[1:]:
             cells={splitcell(c.get('r'))[0]:c for c in row.findall(Q('c'))}
@@ -178,7 +252,7 @@ def export_template(template_path, updates, output_path):
             source_styles={}
             if entry.get('style_origin'):
                 origin=entry['style_origin']
-                if origin['sheet'] in REGISTER_SHEETS:
+                if origin['sheet'] in register_sheets(src):
                     source_root=src.sheet(origin['sheet'])
                     source_row=next((r for r in source_root.find(Q('sheetData')).findall(Q('row'))
                                      if int(r.get('r'))==int(origin['row'])),None)
@@ -215,18 +289,21 @@ def export_template(template_path, updates, output_path):
                 cell_set(row,f'{col}{rownum}',val,style_ref=sty)
             # Rows beyond the old preformatted range must retain the original
             # automatically recalculated renewal-status formula (not stale text).
-            if fresh and sheet=='Maintenance Database':
-                formula_cell=next((c for c in row.findall(Q('c')) if c.get('r')==f'L{rownum}'),None)
+            if fresh and sheet in ('Maintenance Database','MOD') and 'Renewal status' in heading:
+                renewal_col=heading['Renewal status']
+                expiry_col=heading.get('Expiry date')
+                if not expiry_col:raise ValueError('Missing expiry date header')
+                formula_cell=next((c for c in row.findall(Q('c')) if c.get('r')==f'{renewal_col}{rownum}'),None)
                 if formula_cell is not None and formula_cell.find(Q('f')) is None:
                     for existing in list(formula_cell):formula_cell.remove(existing)
                     formula_cell.attrib.pop('t',None)
-                    formula = 'IF($A2="","",IF($K2="","No expiry date",IF($K2<TODAY(),"Expiry passed – check",IF($K2<=TODAY()+30,"Due within 30 days",IF($K2<=TODAY()+90,"Due in 31–90 days","Over 90 days")))))'
+                    formula = f'IF($A{rownum}="","",IF(${expiry_col}{rownum}="","No expiry date",IF(${expiry_col}{rownum}<TODAY(),"Expiry passed – check",IF(${expiry_col}{rownum}<=TODAY()+30,"Due within 30 days",IF(${expiry_col}{rownum}<=TODAY()+90,"Due in 31–90 days","Over 90 days")))))'
                     formula_cell.append(ET.Element(Q('f')))
-                    formula_cell.find(Q('f')).text=formula.replace('$A2',f'$A{rownum}').replace('$K2',f'$K{rownum}')
+                    formula_cell.find(Q('f')).text=formula
         ordered=sorted(rows.findall(Q('row')),key=lambda x:int(x.get('r')))
         for r in rows.findall(Q('row')):rows.remove(r)
         rows.extend(ordered)
-        originals[f'xl/worksheets/sheet{SHEET_INDEX[sheet]}.xml']=ET.tostring(root,encoding='UTF-8',xml_declaration=True)
+        originals[src.sheet_parts[sheet]]=ET.tostring(root,encoding='UTF-8',xml_declaration=True)
         touched.append(sheet)
     # Grow affected Excel table definitions and the filter/dropdown boundaries.
     # Untouched template ZIP parts remain byte-for-byte identical.

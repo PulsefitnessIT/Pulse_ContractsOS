@@ -1,0 +1,45 @@
+# PROTECTED SERVER STAGING, NOT PRODUCTION.
+# Must sit behind an IT-managed HTTPS reverse proxy or VPN. Backend never
+# listens on a public port. Private customer data stays on the host filesystem.
+# Supply variables through a root-owned host config, never GitHub.
+services:
+  contracts-os:
+    build:
+      context: .
+      dockerfile: Dockerfile.pilot
+    restart: unless-stopped
+    init: true
+    read_only: true
+    ports:
+      - "127.0.0.1:18080:8000"
+    environment:
+      PULSE_DEPLOYMENT_ENV: staging
+      PULSE_PILOT_MODE: "1"
+      PULSE_COOKIE_SECURE: "1"
+      PULSE_AUTO_BACKUP: "1"
+      PULSE_DATA_DIR: /app/pilot_data
+      PULSE_OCR_MODE: "off"
+      PULSE_PUBLIC_ORIGIN: ${PULSE_PUBLIC_ORIGIN:?Set a private HTTPS origin through IT}
+      PULSE_SESSION_SECRET: ${PULSE_SESSION_SECRET:?Provide a long random secret from the server secret store}
+    volumes:
+      - type: bind
+        source: ${PULSE_PRIVATE_DATA_DIR:?Absolute host directory with approved Master and DB}
+        target: /app/pilot_data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 150
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).close()"
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
