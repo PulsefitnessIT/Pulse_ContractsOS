@@ -97,6 +97,15 @@ def make_workbook(path, *, visible_ppm=False):
         archive.writestr("xl/workbook.xml",workbook)
         archive.writestr("xl/_rels/workbook.xml.rels",relationships)
         archive.writestr("xl/styles.xml",styles)
+        # The platform's exporter intentionally rejects any register sheet
+        # without its approved Excel table. Represent one real source table
+        # by name in this fictional OOXML fixture.
+        archive.writestr(
+            "xl/tables/table1.xml",
+            f'<table xmlns="{n}" id="1" name="ContractsRegister" '
+            f'displayName="ContractsRegister" ref="A1:AC2">'
+            f'<autoFilter ref="A1:AC2"/></table>',
+        )
         for name,content in sources.items():
             archive.writestr(name,content)
     return path
