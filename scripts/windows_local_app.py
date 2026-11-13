@@ -152,6 +152,33 @@ def ensure_local_data(root, folder):
                 "This is not an approved Maintenance Master layout: "
                 + "; ".join(workbook["issues"][:4])
             )
+        # Human confirmation before importing 9,000+ confidential records:
+        # display only aggregate counts; no customer names are sent anywhere.
+        from app.source_integrity import source_audit
+        audit = source_audit(file_path)
+        registers = audit["registers"]
+        active = (
+            registers.get("Maintenance Database", {}).get("populated_site_rows", 0)
+            + registers.get("MOD", {}).get("populated_site_rows", 0)
+        )
+        expired = registers.get("Expired", {}).get("populated_site_rows", 0)
+        approved = messagebox.askyesno(
+            APP_TITLE,
+            "Confirm that this is the current approved Pulse Fitness Master.\n\n"
+            f"Worksheets: {len(audit['worksheet_names'])}\n"
+            f"Current commercial/MOD contracts: {active}\n"
+            f"Expired archive records: {expired}\n"
+            "Five additional source registers (if present) will be kept "
+            "as unapproved planning/Sicon evidence.\n\n"
+            "The import creates a NEW private database on this PC. "
+            "It does not alter the Excel source.\n\n"
+            "Are these totals and the workbook version correct?",
+            parent=root,
+        )
+        if not approved:
+            raise RuntimeError(
+                "The original workbook was not confirmed. No database was imported."
+            )
         stage = master.with_suffix(".xlsx.incomplete")
         if stage.exists():
             raise RuntimeError("An interrupted first-run import needs IT review.")
