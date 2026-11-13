@@ -200,7 +200,7 @@ def init_db():
                 # not a booked/overdue service, and SICON ONLY is not a live
                 # contract. Never promote these records into contracts.
                 from .data_readiness import PULSE_15_SOURCE_SHEETS
-                if source_report['workbook_profile']=='pulse_15_tab_operational_master':
+                if source_report.get('workbook_profile')=='pulse_15_tab_operational_master':
                     for source_sheet in PULSE_15_SOURCE_SHEETS:
                         _,rows=src.records(source_sheet)
                         batch=[(source_sheet,item['row'],
