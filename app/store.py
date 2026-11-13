@@ -137,6 +137,16 @@ def init_db():
         recorded_at TEXT NOT NULL,
         note TEXT NOT NULL DEFAULT ''
     )''')
+    # Original 15-tab operational source rows are *evidence*, not silently
+    # accepted live Sicon contracts, service entitlements or invoice postings.
+    con.execute('''CREATE TABLE IF NOT EXISTS auxiliary_source_rows (
+        sheet TEXT NOT NULL, source_row INTEGER NOT NULL,
+        source_sha256 TEXT NOT NULL, fields TEXT NOT NULL,
+        loaded_at TEXT NOT NULL,
+        PRIMARY KEY(sheet, source_row)
+    )''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_aux_source_sheet
+        ON auxiliary_source_rows(sheet,source_row)''')
     count=con.execute('SELECT count(*) FROM contracts').fetchone()[0]
     if count==0:
         # A duplicate source Record ID is a genuine workbook defect. Preserve
@@ -185,6 +195,21 @@ def init_db():
                            for item in rows]
                     con.executemany(
                         'INSERT INTO ledger(kind,source_row,fields) VALUES (?,?,?)',batch)
+                # The five newly introduced worksheets remain queryable as
+                # immutable source evidence. A 'VERIFY' annual PPM entry is
+                # not a booked/overdue service, and SICON ONLY is not a live
+                # contract. Never promote these records into contracts.
+                from .data_readiness import PULSE_15_SOURCE_SHEETS
+                if source_report['workbook_profile']=='pulse_15_tab_operational_master':
+                    for source_sheet in PULSE_15_SOURCE_SHEETS:
+                        _,rows=src.records(source_sheet)
+                        batch=[(source_sheet,item['row'],
+                                source_report['workbook_sha256'],
+                                json.dumps(item['fields'],ensure_ascii=False),
+                                now()) for item in rows]
+                        con.executemany('''INSERT INTO auxiliary_source_rows(
+                            sheet,source_row,source_sha256,fields,loaded_at
+                        ) VALUES(?,?,?,?,?)''',batch)
                 con.execute('''INSERT INTO master_source_loads(
                     sha256,source_rows_active,source_rows_expired,
                     duplicate_source_id_rows,recorded_at,note
