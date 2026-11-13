@@ -13,7 +13,7 @@ import pytest
 from app.data_readiness import (
     PULSE_15_WORKSHEETS, PULSE_15_SOURCE_SHEETS, workbook_check,
 )
-from app.excel_io import ExcelSource
+from app.excel_io import ExcelSource, export_template
 from app import store
 
 
@@ -168,3 +168,33 @@ def test_fresh_bootstrap_preserves_source_rows_without_inflating_contracts(
         assert connection.execute(
             "SELECT COUNT(*) FROM auxiliary_source_rows"
         ).fetchone()[0]==5
+
+
+def test_15_tab_roundtrip_preserves_all_operational_evidence(tmp_path):
+    original=make_workbook(tmp_path/"source.xlsx")
+    output=tmp_path/"export.xlsx"
+    with zipfile.ZipFile(original) as z:
+        sicon_original=z.read("xl/worksheets/sheet13.xml")
+        ppm_original=z.read("xl/worksheets/sheet14.xml")
+    export_template(
+        original,
+        {"Maintenance Database":[{"row":2,"changes":{
+            "Customer / site":"Fictional Training Gym — reviewed"
+        }}]},
+        output,
+    )
+    report=workbook_check(output)
+    assert report["valid"],report["issues"]
+    assert report["sheet_names"]==PULSE_15_WORKSHEETS
+    with zipfile.ZipFile(output) as z:
+        assert z.read("xl/worksheets/sheet13.xml")==sicon_original
+        assert z.read("xl/worksheets/sheet14.xml")==ppm_original
+    src=ExcelSource(output)
+    try:
+        details=src.records("Maintenance Database")[1][0]["fields"]
+        assert details["Record ID"]=="MAIN-TEST1"
+        assert details["Customer / site"].endswith("reviewed")
+        archive=src.records("Expired")[1][0]["fields"]
+        assert archive["Historical Comments (Old Master)"]=="Historical proof only"
+    finally:
+        src.z.close()
