@@ -41,6 +41,7 @@ from .quote_price_overrides import router as price_overrides_router
 from .quote_price_book import router as unified_price_book_router
 from .quote_quick_draft import router as quick_draft_router
 from .quote_invoice_match import router as quote_invoice_match_router
+from .master_source_views import router as master_source_views_router
 from .quote_sage_refresh import router as sage_refresh_router
 from .quote_customer_issuance import router as customer_quote_issuance_router
 from .quote_commercial_setup import router as quote_commercial_setup_router
@@ -137,6 +138,7 @@ app.include_router(price_overrides_router)
 app.include_router(unified_price_book_router)
 app.include_router(quick_draft_router)
 app.include_router(quote_invoice_match_router)
+app.include_router(master_source_views_router)
 app.include_router(sage_refresh_router)
 app.include_router(customer_quote_issuance_router)
 app.include_router(quote_commercial_setup_router)
