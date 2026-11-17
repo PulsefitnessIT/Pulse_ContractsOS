@@ -555,8 +555,9 @@ def _smoke_test_complete_startup(synthetic_workbook):
                         raise RuntimeError("SmartQuote status route is unavailable.")
             except urllib.error.HTTPError as exc:
                 # This fictional setup intentionally lacks the confidential
-                # unified Master price file: 409 is a valid blocked state.
-                if exc.code != 409:
+                # unified Master price file: 503 (missing active price
+                # book) or 409 (stale book) is an expected safe block.
+                if exc.code not in (409, 503):
                     raise RuntimeError(
                         "Protected SmartQuote route failed: HTTP "
                         + str(exc.code)
