@@ -337,9 +337,6 @@ def launch():
     from tkinter import messagebox
     if sys.platform != "win32":
         raise RuntimeError("This launcher is only intended for Windows.")
-    # Fail with a useful package error before creating a database, asking for
-    # the workbook, or changing the user's existing company data.
-    _package_self_test()
     data_root = local_data_root()
     folder = forbid_sync_directory(data_root / "data")
     data_root.mkdir(parents=True, exist_ok=True)
@@ -366,6 +363,10 @@ def launch():
         origin = f"http://127.0.0.1:{port}"
         secret = _write_secret(data_root / "session.secret")
         prepare_environment(folder, origin, secret)
+        # Import environment-bound app/store and pilot_access only AFTER
+        # setting the local profile. Importing them earlier binds the wrong
+        # SQLite path, cookie settings and access mode for this entire run.
+        _package_self_test()
         ensure_local_data(root, folder)
         ensure_admin(root)
         state = {}
