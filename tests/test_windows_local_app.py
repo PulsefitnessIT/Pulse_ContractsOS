@@ -8,6 +8,7 @@ from app.deployment_guards import check_deployment_environment
 from app.pilot_access import _public_origin_is_allowed
 from scripts.windows_local_app import (
     forbid_sync_directory, local_data_root, prepare_environment, _write_secret,
+    _record_local_launch_error,
 )
 
 
@@ -50,6 +51,28 @@ def test_local_session_secret_is_random_but_stable(tmp_path):
     assert first==again
     assert target.read_text()==first
     assert len(first)!=0
+
+
+
+def test_windows_startup_failure_creates_local_only_diagnostic(tmp_path, monkeypatch):
+    """Unexpected GUI failures should be diagnosable without a console."""
+    base = tmp_path / "AppData" / "Local"
+    monkeypatch.setenv("LOCALAPPDATA", str(base))
+    try:
+        raise RuntimeError("fictional launcher failure")
+    except RuntimeError as exc:
+        diagnostic = _record_local_launch_error(exc)
+    assert diagnostic == base / "Pulse Fitness" / "Contracts OS" / "startup-diagnostics.txt"
+    assert diagnostic.exists()
+    content = diagnostic.read_text(encoding="utf-8")
+    assert "fictional launcher failure" in content
+    assert "RuntimeError" in content
+    assert "Windows launcher error" in content
+
+
+def test_windows_startup_diagnostics_do_not_require_valid_localappdata(monkeypatch):
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    assert _record_local_launch_error(RuntimeError("fictional failure")) is None
 
 
 def test_local_profile_is_independent_from_remote_staging(tmp_path):
