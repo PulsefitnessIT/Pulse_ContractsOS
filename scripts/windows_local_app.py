@@ -301,7 +301,10 @@ def _start_loopback_server(sock, error):
             "app.main:app",
             host=SERVICE_HOST, port=sock.getsockname()[1],
             workers=1, log_level="warning", access_log=False,
-            lifespan="on",
+            # Windows --windowed executables have sys.stdout/stderr=None.
+            # Uvicorn's DefaultFormatter otherwise crashes calling
+            # sys.stdout.isatty() before the loopback server can start.
+            log_config=None, use_colors=False, lifespan="on",
         )
         server = uvicorn.Server(config)
         error["server"] = server
