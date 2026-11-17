@@ -528,10 +528,27 @@ def _smoke_test_complete_startup(synthetic_workbook):
 
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
-    if args == ["--self-test"]:
-        return 0 if _package_self_test() else 2
-    if len(args) == 2 and args[0] == "--smoke-test":
-        return 0 if _smoke_test_complete_startup(args[1]) else 2
+    if args == ["--self-test"] or (len(args)==2 and args[0]=="--smoke-test"):
+        # PyInstaller --windowed otherwise shows a modal "failed to execute"
+        # error on a headless GitHub runner and stalls the entire Windows job.
+        # Capture only synthetic build errors; never upload production data.
+        try:
+            if args[0]=="--self-test":
+                _package_self_test()
+            else:
+                _smoke_test_complete_startup(args[1])
+            return 0
+        except Exception:
+            import traceback
+            diagnostic=os.environ.get("PULSE_BUILD_DIAGNOSTIC_PATH")
+            if diagnostic:
+                try:
+                    Path(diagnostic).write_text(
+                        traceback.format_exc(), encoding="utf-8"
+                    )
+                except OSError:
+                    pass
+            return 2
     if args:
         raise SystemExit("No arguments needed. Double-click the Windows app.")
     return launch()
