@@ -56,8 +56,13 @@ jobs:
           if (!(Test-Path $exe)) { throw "Desktop executable missing" }
           # Windows GUI applications can return to PowerShell before exit;
           # wait for the real process exit code instead of $LASTEXITCODE.
+          $env:PULSE_BUILD_DIAGNOSTIC_PATH = Join-Path (Get-Location) "package-selftest.log"
           $verified = Start-Process -FilePath (Resolve-Path $exe).Path -ArgumentList "--self-test" -Wait -PassThru
-          if ($verified.ExitCode -ne 0) { throw "Packaged module/asset self-test failed: $($verified.ExitCode)" }
+          if ($verified.ExitCode -ne 0) {
+            if (Test-Path $env:PULSE_BUILD_DIAGNOSTIC_PATH) { Get-Content $env:PULSE_BUILD_DIAGNOSTIC_PATH }
+            throw "Packaged module/asset self-test failed: $($verified.ExitCode)"
+          }
+          Remove-Item Env:PULSE_BUILD_DIAGNOSTIC_PATH
           $assets = "dist/Pulse Contracts OS/_internal/app/static/index.html"
           if (!(Test-Path $assets)) { throw "Pulse web UI was not bundled" }
 
@@ -70,8 +75,13 @@ jobs:
           $fixture = (Resolve-Path "fictional_windows_smoke.xlsx").Path
           # This uses an isolated temp database and launches real HTTP/SQLite
           # code: a simple import check previously missed data_readiness.
+          $env:PULSE_BUILD_DIAGNOSTIC_PATH = Join-Path (Get-Location) "package-startup.log"
           $verified = Start-Process -FilePath $exe -ArgumentList @("--smoke-test", $fixture) -Wait -PassThru
-          if ($verified.ExitCode -ne 0) { throw "Real Windows startup smoke test failed: $($verified.ExitCode)" }
+          if ($verified.ExitCode -ne 0) {
+            if (Test-Path $env:PULSE_BUILD_DIAGNOSTIC_PATH) { Get-Content $env:PULSE_BUILD_DIAGNOSTIC_PATH }
+            throw "Real Windows startup smoke test failed: $($verified.ExitCode)"
+          }
+          Remove-Item Env:PULSE_BUILD_DIAGNOSTIC_PATH
           Remove-Item "fictional_windows_smoke.xlsx" -Force
 
       - name: Assemble offline package with first-run instructions
