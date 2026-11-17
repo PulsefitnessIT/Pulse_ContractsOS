@@ -46,7 +46,7 @@ jobs:
       - name: Build self-contained Windows desktop folder
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onedir --windowed --name "Pulse Contracts OS" --add-data "app/static;app/static" --collect-submodules app --collect-submodules uvicorn --collect-all pymupdf scripts/windows_local_app.py
+          pyinstaller --noconfirm --clean --onedir --windowed --name "Pulse Contracts OS" --add-data "app/static;app/static" --collect-submodules app --hidden-import app.main --hidden-import app.data_readiness --hidden-import app.source_integrity --collect-submodules uvicorn --collect-all pymupdf scripts/windows_local_app.py
           if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed" }
 
       - name: Verify actual packaged executable and static assets
