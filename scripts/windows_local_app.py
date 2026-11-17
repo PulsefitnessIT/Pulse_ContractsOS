@@ -125,6 +125,35 @@ def _package_self_test():
     return True
 
 
+def _record_local_launch_error(exc):
+    """Keep startup failures on the workstation, never in GitHub build logs.
+
+    A Windows --windowed executable has no visible console. This diagnostic
+    gives Pulse IT a local traceback when startup fails before a GUI exists.
+    It does not inspect or upload contract records, PDFs, or credentials.
+    """
+    import datetime
+    import traceback
+
+    try:
+        location = local_data_root()
+        location.mkdir(parents=True, exist_ok=True)
+        log = location / "startup-diagnostics.txt"
+        # Bound the on-device log; old tracebacks are not retained indefinitely.
+        if log.exists() and log.stat().st_size > 128 * 1024:
+            log.write_text("", encoding="utf-8")
+        stamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with log.open("a", encoding="utf-8") as output:
+            output.write("\n[" + stamp + "] Windows launcher error\n")
+            output.write("".join(traceback.format_exception(
+                type(exc), exc, exc.__traceback__
+            )))
+        return log
+    except (OSError, RuntimeError, ValueError):
+        # If even LOCALAPPDATA is unavailable, leave reporting to a dialog.
+        return None
+
+
 def prepare_environment(data_path, origin, secret):
     folder = forbid_sync_directory(data_path)
     if not folder.is_absolute() or not origin.startswith(
@@ -429,10 +458,13 @@ def launch():
         root.mainloop()
         return 0
     except Exception as exc:
+        diagnostic = _record_local_launch_error(exc)
         messagebox.showerror(
             APP_TITLE,
             "Contracts OS could not open:\n\n" + str(exc)
-            + "\n\nExisting company data has not been overwritten.",
+            + "\n\nExisting company data has not been overwritten."
+            + ("\n\nIT diagnostic saved at:\n" + str(diagnostic)
+               if diagnostic else ""),
             parent=root,
         )
         return 2
@@ -608,7 +640,24 @@ def main(argv=None):
             return 2
     if args:
         raise SystemExit("No arguments needed. Double-click the Windows app.")
-    return launch()
+    try:
+        return launch()
+    except Exception as exc:
+        # Early failures (LOCALAPPDATA/Tk/lock creation) happen before launch()
+        # creates its normal error dialog; surface them instead of exiting.
+        diagnostic = _record_local_launch_error(exc)
+        try:
+            from tkinter import messagebox
+            messagebox.showerror(
+                APP_TITLE,
+                "Contracts OS could not start:\n\n" + str(exc)
+                + "\n\nExisting company data has not been overwritten."
+                + ("\n\nIT diagnostic saved at:\n" + str(diagnostic)
+                   if diagnostic else ""),
+            )
+        except Exception:
+            pass  # Headless/failed GUI: keep a safe non-zero exit code.
+        return 2
 
 
 if __name__ == "__main__":
