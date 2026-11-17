@@ -1,21 +1,9 @@
 name: Windows single-PC pilot package
 
+# Packaging is a controlled manual release action, not a build for every push.
+# Automated SOURCE validation continues to run independently.
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-      - develop
-      - feature/real-data-pilot-readiness
-  push:
-    branches:
-      - feature/unified-smartquote-intake
-    paths:
-      - scripts/windows_local_app.py
-      - app/**
-      - requirements.txt
-      - .github/workflows/windows-local-pilot.yml
-      - docs/WINDOWS_SINGLE_PC_INSTALL.md
 
 permissions:
   contents: read
