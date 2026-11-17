@@ -477,8 +477,11 @@ def _smoke_test_complete_startup(synthetic_workbook):
             prepare_environment(folder, origin, secrets.token_urlsafe(64))
             _package_self_test()
             from app.store import init_db, connect
+            from contextlib import closing
             init_db()
-            with connect() as con:
+            # sqlite3.Connection.__exit__ commits but DOES NOT close.
+            # Windows correctly prevents deleting an open SQLite file.
+            with closing(connect()) as con:
                 count = con.execute("SELECT count(*) FROM contracts").fetchone()[0]
                 if count < 3:
                     raise RuntimeError("Real first-run import failed to load contracts.")
@@ -490,7 +493,10 @@ def _smoke_test_complete_startup(synthetic_workbook):
             # app.main has deliberate import-time startup: initialise
             # all API routers, health checks and private pilot security.
             from app.main import app as api_app
-            paths = {route.path for route in api_app.routes}
+            paths = {
+                path for route in api_app.routes
+                if (path := getattr(route, "path", None)) is not None
+            }
             for name in (
                 "/", "/api/health", "/api/meta", "/api/master-sources",
                 "/api/quoting/quick-draft/status", "/pilot/login"
