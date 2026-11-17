@@ -497,12 +497,15 @@ def _smoke_test_complete_startup(synthetic_workbook):
                 path for route in api_app.routes
                 if (path := getattr(route, "path", None)) is not None
             }
-            for name in (
-                "/", "/api/health", "/api/meta", "/api/master-sources",
-                "/api/quoting/quick-draft/status", "/pilot/login"
-            ):
+            for name in ("/", "/api/health", "/api/meta", "/pilot/login"):
                 if name not in paths:
                     raise RuntimeError("Packaged app lacks required route " + name)
+            # Routers included by newer FastAPI versions can be lazy
+            # wrappers without a .path attribute. Test them over HTTP
+            # after a real fictional coordinator login, not introspection.
+            from app.pilot_access import provision_user
+            smoke_password = "FictionalOnlyForBuildSmoke_" + secrets.token_urlsafe(16)
+            provision_user("build-smoke", smoke_password, "Coordinator")
             worker = threading.Thread(
                 target=_start_loopback_server,
                 args=(sock, state), daemon=True,
@@ -519,6 +522,45 @@ def _smoke_test_complete_startup(synthetic_workbook):
                     data = response.read(1024 * 1024)
                     if response.status != 200 or expected not in data:
                         raise RuntimeError("Broken startup resource " + url_path)
+            import http.cookiejar
+            import json
+            client = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+            )
+            payload = json.dumps({
+                "username": "build-smoke", "password": smoke_password
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                origin + "/api/pilot/login", data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": origin,
+                }, method="POST"
+            )
+            with client.open(req, timeout=4) as response:
+                if response.status != 200 or not json.loads(
+                        response.read()).get("ok"):
+                    raise RuntimeError("Packaged local staff login is broken.")
+            with client.open(origin + "/api/master-sources", timeout=4) as response:
+                details = json.loads(response.read())
+                if response.status != 200 or not details.get("has_15_tab_source"):
+                    raise RuntimeError(
+                        "Protected 15-tab source registers failed live HTTP request."
+                    )
+            try:
+                with client.open(
+                    origin + "/api/quoting/quick-draft/status", timeout=4
+                ) as response:
+                    if response.status != 200:
+                        raise RuntimeError("SmartQuote status route is unavailable.")
+            except urllib.error.HTTPError as exc:
+                # This fictional setup intentionally lacks the confidential
+                # unified Master price file: 409 is a valid blocked state.
+                if exc.code != 409:
+                    raise RuntimeError(
+                        "Protected SmartQuote route failed: HTTP "
+                        + str(exc.code)
+                    ) from exc
         finally:
             if state.get("server"):
                 state["server"].should_exit = True
