@@ -453,10 +453,82 @@ def launch():
             pass
 
 
+def _smoke_test_complete_startup(synthetic_workbook):
+    """CI-only: exercise real Windows app import, HTTP server and SQLite.
+
+    Uses a self-contained fictional maintenance workbook supplied by CI.
+    Works in a temporary directory, cannot access the user's LOCALAPPDATA,
+    does not start the interactive launcher, and never writes Pulse data.
+    """
+    from tempfile import TemporaryDirectory
+    fixture = Path(synthetic_workbook).resolve()
+    if not fixture.is_file() or fixture.suffix.lower() != ".xlsx":
+        raise RuntimeError("A synthetic .xlsx fixture is required for startup testing.")
+    with TemporaryDirectory(prefix="pulse-contracts-startup-smoke-") as temp:
+        folder = Path(temp) / "data"
+        folder.mkdir()
+        shutil.copy2(fixture, folder / SOURCE_FILE)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        state = {}
+        try:
+            sock.bind((SERVICE_HOST, 0))
+            sock.listen(16)
+            origin = f"http://127.0.0.1:{sock.getsockname()[1]}"
+            prepare_environment(folder, origin, secrets.token_urlsafe(64))
+            _package_self_test()
+            from app.store import init_db, connect
+            init_db()
+            with connect() as con:
+                count = con.execute("SELECT count(*) FROM contracts").fetchone()[0]
+                if count < 3:
+                    raise RuntimeError("Real first-run import failed to load contracts.")
+                source_count = con.execute(
+                    "SELECT count(*) FROM auxiliary_source_rows"
+                ).fetchone()[0]
+                if source_count < 5:
+                    raise RuntimeError("15-tab source registers were not imported.")
+            # app.main has deliberate import-time startup: initialise
+            # all API routers, health checks and private pilot security.
+            from app.main import app as api_app
+            paths = {route.path for route in api_app.routes}
+            for name in (
+                "/", "/api/health", "/api/meta", "/api/master-sources",
+                "/api/quoting/quick-draft/status", "/pilot/login"
+            ):
+                if name not in paths:
+                    raise RuntimeError("Packaged app lacks required route " + name)
+            worker = threading.Thread(
+                target=_start_loopback_server,
+                args=(sock, state), daemon=True,
+                name="Pulse Startup Smoke Test",
+            )
+            worker.start()
+            _wait_for_health(origin, state, timeout=25)
+            for url_path, expected in (
+                ("/pilot/login", b"Pulse Fitness"),
+                ("/static/brand/pulse-fitness-reverse.svg", b"<svg"),
+                ("/static/quoting-workspace.js", b"unified"),
+            ):
+                with urllib.request.urlopen(origin + url_path, timeout=4) as response:
+                    data = response.read(1024 * 1024)
+                    if response.status != 200 or expected not in data:
+                        raise RuntimeError("Broken startup resource " + url_path)
+        finally:
+            if state.get("server"):
+                state["server"].should_exit = True
+            try:
+                sock.close()
+            except OSError:
+                pass
+    return True
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if args == ["--self-test"]:
         return 0 if _package_self_test() else 2
+    if len(args) == 2 and args[0] == "--smoke-test":
+        return 0 if _smoke_test_complete_startup(args[1]) else 2
     if args:
         raise SystemExit("No arguments needed. Double-click the Windows app.")
     return launch()
