@@ -467,7 +467,12 @@ def _smoke_test_complete_startup(synthetic_workbook):
     fixture = Path(synthetic_workbook).resolve()
     if not fixture.is_file() or fixture.suffix.lower() != ".xlsx":
         raise RuntimeError("A synthetic .xlsx fixture is required for startup testing.")
-    with TemporaryDirectory(prefix="pulse-contracts-startup-smoke-") as temp:
+    # CPython/SQLite may keep a temporary shared connection referenced by
+    # FastAPI even after a thread has stopped on Windows. The fixture is
+    # fictional, and any locked residue is discarded with the CI runner.
+    with TemporaryDirectory(
+        prefix="pulse-contracts-startup-smoke-", ignore_cleanup_errors=True
+    ) as temp:
         folder = Path(temp) / "data"
         folder.mkdir()
         shutil.copy2(fixture, folder / SOURCE_FILE)
