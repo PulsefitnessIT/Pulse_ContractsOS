@@ -516,6 +516,9 @@ def _smoke_test_complete_startup(synthetic_workbook):
         finally:
             if state.get("server"):
                 state["server"].should_exit = True
+            worker_thread = locals().get("worker")
+            if worker_thread is not None:
+                worker_thread.join(timeout=10)
             try:
                 sock.close()
             except OSError:
