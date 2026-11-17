@@ -42,6 +42,23 @@ and sign-off.
    Confirm source quantities and serials, set a suitable internal
    service rate and download the watermarked internal PDF.
 
+## If the application does not open
+
+Use the **latest successfully verified Windows package** and extract the
+**entire** ZIP before running \`Pulse Contracts OS.exe\`. The accompanying
+\`_internal\` folder must be beside the executable; running it directly from
+the ZIP preview will not work.
+
+If startup fails, the launcher now shows an error dialog rather than
+silently closing. It also writes a local diagnostic where possible:
+
+\`%LOCALAPPDATA%\Pulse Fitness\Contracts OS\startup-diagnostics.txt\`
+
+Send the exact on-screen error and a reviewed copy of this **local** file
+to Pulse IT. It may contain workstation paths and must **never** be pasted
+into the public GitHub repository or attached to public workflow runs.
+Do not delete or replace the \`data\` folder to attempt a fix.
+
 ## Where files are stored
 
 The app's **live** data are stored at:
