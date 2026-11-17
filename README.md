@@ -1,6 +1,51 @@
 # Pulse Contracts OS — independent contracts management
 
+## Pulse Fitness internal pilot — week commencing 9 November 2026
+
+**Integrated Contracts OS + SmartQuote are source-tested, not deployed.**
+The recommended immediate goal is a **small, supervised, protected staff
+pilot** for contract administration and watermarked internal SmartQuote PDFs,
+not an unreviewed production/customer-quotation launch. The independent
+staging container, pilot login, updated PDF source reader and merged-Master
+quote engine are all on `feature/unified-smartquote-intake`.
+
+**[Follow the November pilot launch runbook](docs/PULSE_INTERNAL_PILOT_9_NOV_2026.md)**
+for exact private-data staging, HTTPS/IT prerequisites, coordinated invoice
+acceptance and Go/No-Go sign-off. Run
+`python scripts/check_pulse_launch_readiness.py --data-dir /app/pilot_data`
+inside the protected staging container to see source-data, Master-price,
+accounts, backup and operational-approval blockers. This read-only check
+never authorises customer issuance.
+
+
 **Source-only development checkout.** The existing V12 pilot's operational database, approved eight-tab Excel template, equipment catalogue and confidential documents are intentionally **not** in GitHub. This repository does not provide a pre-populated installation.
+
+## SmartQuote quotation pilot (feature branch, not yet deployed)
+
+The unified SmartQuote workspace on `feature/unified-smartquote-intake`
+now supports exact V10 equipment search, privately imported August 2026
+Master and Sage price sources, source-derived Silver/Gold/Platinum pricing,
+internal draft PDFs, administrator commercial sign-off, numbered customer
+PDFs and read-only issued-quote downloads for coordinators.
+
+**The complete, end-to-end source-to-PDF workflow is regression-tested with
+fictional data.** Production/customer use still requires an IT-deployed
+protected Contracts OS pilot, current private customer data, source-file
+staging and genuine commercial tariff/terms approval. No customer quote
+has been issued by this source repository. Nothing in the original SmartQuote,
+Sage 200 or Sicon is written by the quoting workflow.
+
+For the fastest setup:
+
+- Run `scripts/prepare_smartquote_v10_bundle.ps1` from a Windows IT
+  workstation with authenticated GitHub CLI access to the private V10
+  source repository. Upload the four-file ZIP in the app's Admin source setup.
+- Upload the complete Sage export in the Admin Sage Refresh panel.
+- Approve the actual price policy, terms and supplier details, then explicitly
+  enable customer PDF issuance after real-data acceptance testing.
+- Use **SmartQuote → Customer quotation readiness** to view any remaining
+  setup blockers, and read
+  [Customer quotation release guide](docs/SMARTQUOTE_CUSTOMER_QUOTE_RELEASE.md).
 
 ## What is here?
 
@@ -34,3 +79,148 @@ See the migration checklist and current release notes for detailed acceptance ga
 ## Real-data protected pilot (development)
 
 `feature/real-data-pilot-readiness` adds secure staging of a private snapshot and read-only financial completeness indicators. **It does not include a customer database and has not been deployed.** Follow [Private data pilot setup](docs/PRIVATE_DATA_PILOT_SETUP.md) for IT instructions. The stage tool preserves WAL-consistent SQLite data and refuses overwrites; GitHub CI tests use fictional synthetic fixtures. Missing amounts are reported separately, not counted as £0 or verified revenue.
+
+## Unified SmartQuote workspace (development branch)
+
+The SmartQuote tab now supports independent unpriced quote drafts, multiple equipment
+lines, revision-aware reopening, optional read-only historic quotation browsing,
+identity-only V10 catalogue lookup and an integrity-checked direct *accepted
+snapshot -> Contract Setup* review handover.
+
+**This does not yet replace the SmartQuote pricing engine.** It must not be used
+to issue commercial quotations, calculate approved tariffs or activate Sicon
+contracts. The original SmartQuote database is never overwritten by the
+unified workspace.
+
+Private runtime settings (provide outside source control):
+- `PULSE_SMARTQUOTE_DB` — absolute path to the original SmartQuote V10
+  SQLite database, read-only from Contracts OS.
+- `PULSE_SMARTQUOTE_CATALOG_JSON` — optional absolute path to the approved
+  operational copy of SmartQuote V10 `data/catalog.json`. Product identity
+  only; no automatic price.
+- The existing protected `PULSE_DATA_DIR` for Contracts OS, including the
+  approved maintenance master and its separate runtime database.
+
+See [Founder review and release gates](docs/FOUNDER_REVIEW_UNIFIED_PLATFORM_2026-11-02.md).
+
+A new **V10 source-based pricing preview** uses private operational catalogue,
+configuration and tariff JSON files to calculate non-issuable estimates from
+exact SKU matches. Configure PULSE_SMARTQUOTE_CONFIGS_JSON and
+PULSE_SMARTQUOTE_PRICING_JSON in addition to PULSE_SMARTQUOTE_CATALOG_JSON.
+See [Pricing preview and source parity gates](docs/SMARTQUOTE_V10_PRICING_PREVIEW.md).
+
+Staged maintenance agreements now accept optional contract dates and individual
+equipment cover starts. The preview uses the original V10 inclusive ACT/ACT
+prorating for dated coverage groups. A separate read-only Sage Sales Price
+reference can be surfaced for unmatched catalogue SKUs, but never alters an
+approved Master Price List entry or quotation totals. Missing sources, incomplete
+cover dates, historical estimates and unapproved tariffs remain blocked from
+customer-ready issue.
+
+
+
+## Factual workbook source and provenance (November 2026)
+
+The latest user-provided Maintenance Master was reviewed as a **source file**,
+not silently merged into a running staff database. Its audited source checksum,
+row counts and non-personal quality findings are documented in
+[2026-11-02 Master evidence](docs/MASTER_SOURCE_AUDIT_2026-11-02.md).
+
+A new **Source audit** screen reads the configured private approved_master.xlsx,
+reports its fingerprint, exact cover-type labels, missing information and
+source/database record count differences. The dashboard now distinguishes
+worksheet records from legally verified live maintenance agreements.
+
+The native SmartQuote interface can search existing site labels stored in the
+Contracts OS register. Selecting one records the source record ID, but **never
+invents a legal customer name** or assumes the agreement is current. Editing a
+site clears the source link until the coordinator reselects it.
+
+To prepare a **new** private database from an IT/data-owner-approved Excel
+Master, rather than use fictional demonstration data:
+
+```bash
+python scripts/prepare_factual_master.py \\
+  --source /secure/latest-approved-master.xlsx \\
+  --destination /secure/new-source-backed-snapshot \\
+  --approved-current-master
+```
+
+The destination must not exist and must be outside the GitHub checkout. The
+script refuses to overwrite an existing application database or merge over
+staff edits. It retains duplicated source IDs in their original fields while
+using labelled internal unique keys. The source file remains private; only
+aggregate checks and its checksum may be committed to GitHub.
+
+These features are development-only until full CI, staging, signed commercial
+controls and actual Sage/Sicon reconciliation are complete. No production
+installation or private workbook transfer is implied by the code commits.
+
+## Recurring upload of the working Maintenance Master
+
+During parallel operation, **Excel remains the authoritative source file**.
+Contracts OS now provides a separate administrator-reviewed **Source audit →
+Upload latest working Maintenance Master** flow. It accepts a complete
+independently edited eight-tab workbook, fingerprints and privately stages it,
+then previews exact source-ID matches, safe field updates, conflicting staff
+edits, new sites, duplicate IDs, status moves and absent rows before any write.
+
+Only selected safe existing-record field changes may be applied. Approval
+requires a verified pilot Admin session, an online SQLite recovery backup,
+unchanged record revisions and an auditable original source SHA-256. Uploading
+never replaces the entire Contracts OS database, edits the customer's Excel
+file or automatically deletes/archives unmatched records. New/moved/ambiguous
+records remain a manual review worklist until an approved reconciliation
+workflow can handle them.
+
+See [Recurring working-Master upload procedure](docs/RECURRING_WORKING_MASTER_SYNC.md).
+
+## Deployment: protected server staging (November 2026)
+
+The repo includes [a controlled server rollout runbook](docs/CONTROLLED_SERVER_ROLLOUT_2026-11-03.md)
+and an opt-in `compose.server-staging.yml`. The backend binds to loopback
+only, uses a non-root container and an externally mounted private database.
+`PULSE_DEPLOYMENT_ENV=staging` fails startup on demo/no-auth mode, insecure
+session cookies, a missing HTTPS origin, an inadequate session secret, an
+unapproved data path or disabled local backups. An unverified
+`PULSE_DEPLOYMENT_ENV=production` explicitly refuses startup.
+
+After IT provisions the private source-approved data, administrator account,
+host HTTPS gateway and external backup controls, run
+`python scripts/server_staging_preflight.py` inside the staging container
+to see privacy-safe checks. Even a passing staging preflight is **not**
+a production launch approval: central MFA, permissions, dependency assessment,
+restoration drill, current Master reconciliation, commercial controls and
+staff acceptance are outstanding.
+
+The working Excel Master remains authoritative until a separately signed
+cutover; no customer files have been committed and no server has been accessed.
+
+## SmartQuote V10 Phase 1 — canonical catalogue and source arithmetic (November 2026)
+
+The unified SmartQuote workspace now includes a **read-only source catalogue
+reconciliation** panel. It reports duplicate SKUs, missing original-source
+RRPs, ambiguous legacy mappings, unapproved console/eligibility statuses,
+source file fingerprints and incomplete historical data. It does NOT
+manufacture RRP or publish commercial prices.
+
+Native exact-SKU price previews now execute the **verbatim original V10
+`engine.price_line` function arithmetic** with per-request source data
+isolation, while maintaining unpriced/manager-review protections. Original
+V10 term-staging arithmetic is retained.
+
+IT can privately pin the original catalogue/service/pricing JSON hashes using
+`scripts/pin_smartquote_v10_sources.py` and configure
+`PULSE_SMARTQUOTE_SOURCE_MANIFEST`. Source mismatch fails closed; even a
+correct hash never constitutes commercial tariff approval.
+
+`scripts/check_v10_price_parity.py` now compares the original V10 source
+function against the vendored kernel and checks multiple rate/console groups,
+three maintenance tiers, three discounts and three quantities for each
+sampled source SKU. This **must** run against a complete approved private
+V10 runtime before release; fictional CI fixtures cannot certify real
+commercial prices.
+
+See [Phase 1 evidence and source-pinning instructions](docs/SMARTQUOTE_PHASE1_SOURCE_PARITY_2026-11-03.md).
+**Unpriced drafts, internal price previews and reviewed quote handoff remain
+blocked from issuing live customer documents without separate approvals.**

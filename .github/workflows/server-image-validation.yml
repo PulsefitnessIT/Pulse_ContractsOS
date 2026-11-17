@@ -1,0 +1,26 @@
+name: Server image validation
+on:
+  push:
+    branches: [develop, main, 'feature/**']
+  pull_request:
+    branches: [develop, main, 'feature/**']
+jobs:
+  linux-container-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # Synthetic non-secret placeholders exclusively for Compose syntax validation.
+      PULSE_PUBLIC_ORIGIN: https://contracts.example.invalid
+      PULSE_SESSION_SECRET: only-for-ci-syntax-check-this-is-not-a-deployment-secret
+      PULSE_PRIVATE_DATA_DIR: /tmp/synthetic-contracts-os-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate staging Compose syntax without customer data
+        run: docker compose -f compose.server-staging.yml config --quiet
+      - name: Build immutable server container without customer data
+        run: docker build -f Dockerfile.pilot -t contracts-os:ci .
+      - name: Verify app and code are installed in container
+        run: |
+          docker run --rm --entrypoint python contracts-os:ci -c "import app.deployment_guards, app.pilot_access, app.master_sync, app.action_centre; print('Server code modules import successfully')"

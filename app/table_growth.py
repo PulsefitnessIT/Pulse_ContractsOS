@@ -7,10 +7,11 @@ are copied verbatim by the existing exporter.
 from __future__ import annotations
 import re
 from lxml import etree as ET
-from .excel_io import NS, Q, SHEET_INDEX, splitcell, colname
+from .excel_io import NS, Q, splitcell, colname
 
 TABLE_TO_SHEET = {
     'ContractsRegister': 'Maintenance Database',
+    'MODContractsRegister': 'MOD',
     'ExpiredHistoryRegister': 'Expired',
     'WeeklyValuesRegister': 'Weekly Values',
     'InvoiceRunRegister': 'Invoices',
@@ -92,7 +93,7 @@ def extend_ooxml_tables(src, changes: dict[str, bytes], final_rows: dict[str, in
                 raise ValueError(f'Cannot expand {name} without its original filter')
             filt.set('ref',expand_reference(filt.get('ref'),end))
             changes[part] = ET.tostring(root, encoding='UTF-8', xml_declaration=True)
-        name_part=f'xl/worksheets/sheet{SHEET_INDEX[sheet]}.xml'
+        name_part=src.sheet_parts[sheet]
         if name_part in changes:
             sheet_root=ET.fromstring(changes[name_part])
             dim=sheet_root.find(Q('dimension'))

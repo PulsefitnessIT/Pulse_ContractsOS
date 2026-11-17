@@ -1,0 +1,93 @@
+name: Windows single-PC pilot package
+
+# Packaging is a controlled manual release action, not a build for every push.
+# Automated SOURCE validation continues to run independently.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tested Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install application and Windows packager
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pyinstaller>=6.10,<7" "pytest>=8,<9"
+
+      - name: Compile bundled Python sources
+        shell: pwsh
+        run: python -m compileall -q app scripts
+
+      - name: Build self-contained Windows desktop folder
+        shell: pwsh
+        run: |
+          pyinstaller --paths "." --noconfirm --clean --onedir --windowed --name "Pulse Contracts OS" --add-data "app/static;app/static" --collect-submodules app --hidden-import app.main --hidden-import app.data_readiness --hidden-import app.source_integrity --collect-submodules uvicorn --collect-all pymupdf scripts/windows_local_app.py
+          if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed" }
+
+      - name: Verify actual packaged executable and static assets
+        shell: pwsh
+        run: |
+          $exe = "dist/Pulse Contracts OS/Pulse Contracts OS.exe"
+          if (!(Test-Path $exe)) { throw "Desktop executable missing" }
+          # Windows GUI applications can return to PowerShell before exit;
+          # wait for the real process exit code instead of $LASTEXITCODE.
+          $env:PULSE_BUILD_DIAGNOSTIC_PATH = Join-Path (Get-Location) "package-selftest.log"
+          $verified = Start-Process -FilePath (Resolve-Path $exe).Path -ArgumentList "--self-test" -Wait -PassThru
+          if ($verified.ExitCode -ne 0) {
+            if (Test-Path $env:PULSE_BUILD_DIAGNOSTIC_PATH) { Get-Content $env:PULSE_BUILD_DIAGNOSTIC_PATH }
+            throw "Packaged module/asset self-test failed: $($verified.ExitCode)"
+          }
+          Remove-Item Env:PULSE_BUILD_DIAGNOSTIC_PATH
+          $assets = "dist/Pulse Contracts OS/_internal/app/static/index.html"
+          if (!(Test-Path $assets)) { throw "Pulse web UI was not bundled" }
+
+      - name: Exercise packaged Windows startup against fictional 15-tab Master
+        shell: pwsh
+        run: |
+          python -c "from pathlib import Path; import runpy; runpy.run_path('tests/test_15_tab_master.py')['make_workbook'](Path('fictional_windows_smoke.xlsx'))"
+          if ($LASTEXITCODE -ne 0) { throw "Could not create synthetic startup workbook" }
+          $exe = (Resolve-Path "dist/Pulse Contracts OS/Pulse Contracts OS.exe").Path
+          $fixture = (Resolve-Path "fictional_windows_smoke.xlsx").Path
+          # This uses an isolated temp database and launches real HTTP/SQLite
+          # code: a simple import check previously missed data_readiness.
+          $env:PULSE_BUILD_DIAGNOSTIC_PATH = Join-Path (Get-Location) "package-startup.log"
+          $verified = Start-Process -FilePath $exe -ArgumentList @("--smoke-test", $fixture) -Wait -PassThru
+          if ($verified.ExitCode -ne 0) {
+            if (Test-Path $env:PULSE_BUILD_DIAGNOSTIC_PATH) { Get-Content $env:PULSE_BUILD_DIAGNOSTIC_PATH }
+            throw "Real Windows startup smoke test failed: $($verified.ExitCode)"
+          }
+          Remove-Item Env:PULSE_BUILD_DIAGNOSTIC_PATH
+          Remove-Item "fictional_windows_smoke.xlsx" -Force
+
+      - name: Assemble offline package with first-run instructions
+        shell: pwsh
+        run: |
+          Copy-Item "docs/WINDOWS_SINGLE_PC_INSTALL.md" "dist/Pulse Contracts OS/READ_ME_FIRST.md"
+          $all = Get-ChildItem -Path "dist/Pulse Contracts OS" -File -Recurse
+          $unwanted = $all | Where-Object {
+            $_.Name -match '\.(sqlite3?|db|xlsx?|xlsm|pdf)$' -or
+            $_.FullName -match '\\(data|pilot_data|uploads|backups|invoices)\\'
+          }
+          if ($unwanted) { throw "Company data must not be bundled" }
+          Compress-Archive -Path "dist/Pulse Contracts OS/*" -DestinationPath "dist/Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot.zip" -CompressionLevel Optimal
+
+      - name: Publish downloadable Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot
+          path: dist/Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot.zip
+          retention-days: 14
+          if-no-files-found: error

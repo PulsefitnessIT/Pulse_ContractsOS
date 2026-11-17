@@ -23,14 +23,42 @@ from .invoice_review import analyse_invoice_document, validate_review
 from .import_queue import build_review_queue, queue_csv
 from .excel_quality import inspect_excel,remaining_capacity
 from .invoice_quality import invoice_quality,invoice_quality_csv
-from .pilot_access import PILOT_MODE, SESSION_COOKIE, CSRF_COOKIE, COOKIE_SECURE, configure_users, secret, sign_session, login, actor, pilot_middleware
+from .pilot_access import PILOT_MODE, SESSION_COOKIE, CSRF_COOKIE, COOKIE_SECURE, configure_users, secret, sign_session, login, revoke_session, actor, pilot_middleware
+from .deployment_guards import check_deployment_environment
 from .matching import candidate_matches
 from .local_ocr import available as local_ocr_available, read_local_scanned_pdf, LocalOCRError
 from .v12_features import router as v12_router
 from .v13_history import router as v13_router
+from .quote_intake import router as smartquote_router
+from .quote_workspace import router as quoting_workspace_router
+from .quote_drafts import router as quoting_drafts_router
+from .quote_catalogue import router as quoting_catalogue_router
+from .quote_reconciliation import router as quote_reconciliation_router
+from .native_quote_handover import router as native_quote_handover_router
+from .quote_pricing import router as quote_pricing_router
+from .quote_sage_reference import router as sage_reference_router
+from .quote_price_overrides import router as price_overrides_router
+from .quote_price_book import router as unified_price_book_router
+from .quote_quick_draft import router as quick_draft_router
+from .quote_invoice_match import router as quote_invoice_match_router
+from .master_source_views import router as master_source_views_router
+from .quote_sage_refresh import router as sage_refresh_router
+from .quote_customer_issuance import router as customer_quote_issuance_router
+from .quote_commercial_setup import router as quote_commercial_setup_router
+from .quote_source_setup import router as quote_source_setup_router
+from .quote_release_coverage import router as quote_release_coverage_router
+from .source_integrity import router as source_integrity_router
+from .action_centre import router as action_centre_router
+from .master_sync import router as working_master_sync_router
+from .expiry_transfer import router as expiry_transfer_router
+from .register_layout import current_layout as checked_register_layout
+from .quote_site_lookup import router as source_site_lookup_router
+from .contract_setup import router as contract_setup_router
+from .sicon_bridge import router as sicon_bridge_router
 from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
 
 APP_ROOT=Path(__file__).parent
+DEPLOYMENT_PROFILE=check_deployment_environment()
 # Fail before creating an empty database if the protected shared pilot has not
 # been supplied with its approved private snapshot and Master workbook.
 if PILOT_MODE and (not os.path.isfile(DB) or not os.path.isfile(TEMPLATE)):
@@ -85,15 +113,44 @@ def pilot_me(request:Request):
     return {'pilot':True,'user':session.get('sub'),'role':session.get('role')}
 
 @app.post('/api/pilot/logout')
-def pilot_logout():
+def pilot_logout(request:Request):
+    if PILOT_MODE:
+        # A copied cookie must not remain valid after explicit sign-out.
+        revoke_session(request.cookies.get(SESSION_COOKIE))
     resp=JSONResponse({'ok':True})
     resp.delete_cookie(SESSION_COOKIE,path='/')
     resp.delete_cookie(CSRF_COOKIE,path='/')
+    resp.headers['Cache-Control']='no-store'
     return resp
 
 
 app.include_router(v12_router)
 app.include_router(v13_router)
+app.include_router(smartquote_router)
+app.include_router(quoting_workspace_router)
+app.include_router(quoting_drafts_router)
+app.include_router(quoting_catalogue_router)
+app.include_router(quote_reconciliation_router)
+app.include_router(native_quote_handover_router)
+app.include_router(quote_pricing_router)
+app.include_router(sage_reference_router)
+app.include_router(price_overrides_router)
+app.include_router(unified_price_book_router)
+app.include_router(quick_draft_router)
+app.include_router(quote_invoice_match_router)
+app.include_router(master_source_views_router)
+app.include_router(sage_refresh_router)
+app.include_router(customer_quote_issuance_router)
+app.include_router(quote_commercial_setup_router)
+app.include_router(quote_source_setup_router)
+app.include_router(quote_release_coverage_router)
+app.include_router(source_integrity_router)
+app.include_router(action_centre_router)
+app.include_router(working_master_sync_router)
+app.include_router(expiry_transfer_router)
+app.include_router(source_site_lookup_router)
+app.include_router(contract_setup_router)
+app.include_router(sicon_bridge_router)
 
 @app.get('/api/meta')
 def meta():return {'stats':stats(),'headers':HEADERS,'version':'1.0.0-pilot','release':'V13 Development','environment':'Independent protected pilot' if PILOT_MODE else 'Local demonstration','document_ai_configured':document_ai_configured(),'local_ocr_available':local_ocr_available(),'ocr_mode':os.environ.get('PULSE_OCR_MODE','auto').lower(),'data_readiness':assess_database(DB,TEMPLATE)}
@@ -119,7 +176,9 @@ def missing_amounts_csv():
 
 
 @app.get('/api/contracts')
-def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:str='',sort:str='Customer / site',direction:str='asc',page:int=1,limit:int=40):
+def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:str='',sheet:str='',sort:str='Customer / site',direction:str='asc',page:int=1,limit:int=40):
+    if sheet and sheet not in ('Maintenance Database','MOD','Expired'):
+        raise HTTPException(422,'Unknown contract register')
     if limit>150:limit=150
     con=connect()
     if status=='All':rows=con.execute('SELECT * FROM contracts').fetchall()
@@ -127,6 +186,7 @@ def contracts(q:str='',status:str='Active',region:str='',manager:str='',bucket:s
     con.close()
     values=[]
     for row in rows:
+        if sheet and row['source_sheet']!=sheet:continue
         f=json.loads(row['fields'])
         if q and q.lower() not in (' '.join(str(f.get(k,'')) for k in ['Customer / site','Contract number','Invoice Code','Invoice account','Site account','Site notes','Contract coordinator','Record ID'])).lower():continue
         if region and f.get('Sales region')!=region:continue
@@ -257,6 +317,7 @@ def changes(cid:int):
 
 class ContractUpdate(BaseModel):
     fields:dict
+    source_register:str='Maintenance Database'
     actor:str='Demo coordinator'
     expected_revision:int|None=None
 
@@ -304,28 +365,42 @@ def update_contract(cid:int,payload:ContractUpdate):
 
 @app.post('/api/contracts')
 def create_contract(payload:ContractUpdate):
+    if payload.source_register not in ('Maintenance Database','MOD'):
+        raise HTTPException(422,'Choose a valid source register')
+    if payload.source_register=='MOD':
+        from .data_readiness import CURRENT_WORKSHEETS,workbook_check
+        if workbook_check(TEMPLATE).get('sheet_names')!=CURRENT_WORKSHEETS:
+            raise HTTPException(409,'The approved private Master has no MOD worksheet')
     f={k:payload.fields.get(k,'') for k in HEADERS}
     if not str(f.get('Customer / site','')).strip():raise HTTPException(400,'Customer / site is required')
     con=connect();con.execute('BEGIN IMMEDIATE')
-    row=int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet='Maintenance Database'").fetchone()[0])+1
-    if row>803:con.close();raise HTTPException(409,'The Excel template has no remaining preformatted contract rows. Expand the approved template first.')
+    row=int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet=?",
+        (payload.source_register,)).fetchone()[0])+1
+    if row>=1_048_576:
+        con.close();raise HTTPException(409,'The worksheet has reached Excel row capacity')
     key='NEW-'+uuid.uuid4().hex[:8].upper();f['Record ID']=key;f['Renewal status']=status_for(str(f.get('Expiry date') or ''))
     cur=con.execute('INSERT INTO contracts(row_key,status,source_sheet,source_row,fields,fill,dirty,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-        (key,'Active','Maintenance Database',row,json.dumps(f,ensure_ascii=False),'',1,now(),now()))
+        (key,'Active',payload.source_register,row,json.dumps(f,ensure_ascii=False),'',1,now(),now()))
     cid=cur.lastrowid
     con.execute('INSERT INTO changes(contract_id,actor,action,before_data,after_data,at) VALUES (?,?,?,?,?,?)',(cid,actor(payload.actor),'Created contract',None,json.dumps(f,ensure_ascii=False),now()))
     con.commit();con.close();return {'id':cid,'row_key':key}
 
 @app.post('/api/contracts/{cid}/archive')
 def archive(cid:int,payload:ArchiveRequest):
+    # The maintenance, MOD and Expired column positions must match before
+    # an archived row can be represented safely in a later Excel export.
+    layout=checked_register_layout(TEMPLATE)
     con=connect();con.execute('BEGIN IMMEDIATE')
     r=con.execute('SELECT * FROM contracts WHERE id=?',(cid,)).fetchone()
     if not r or r['status']!='Active':
         con.close();raise HTTPException(404,'Active contract not found')
     concurrency_check(r,payload.expected_revision,con)
-    row=int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet='Expired'").fetchone()[0])+1
-    if row>8495:
-        con.close();raise HTTPException(409,'The Expired Excel template is full; expand it before archiving')
+    row=max(
+        int(con.execute("SELECT coalesce(max(source_row),1) FROM contracts WHERE source_sheet='Expired'").fetchone()[0]),
+        int(layout['template_last_expired_row'])
+    )+1
+    if row>=1_048_576:
+        con.close();raise HTTPException(409,'The Expired worksheet has reached Excel row capacity')
     old=json.loads(r['fields']);f=old.copy();f['Renewal status']='Historical / archived'
     con.execute('UPDATE contracts SET status="Expired",old_sheet=?,old_row=?,source_sheet="Expired",source_row=?,fields=?,revision=revision+1,dirty=1,updated_at=? WHERE id=?',
         (r['source_sheet'],r['source_row'],row,json.dumps(f,ensure_ascii=False),now(),cid))
@@ -477,7 +552,7 @@ def export_excel():
     rows=con.execute('SELECT * FROM contracts').fetchall()
     ledger_rows=con.execute('SELECT * FROM ledger').fetchall()
     updates=defaultdict(list)
-    baseline={'contracts':{},'ledger':{},'created_at':now(),'template':'approved eight-sheet Master'}
+    baseline={'contracts':{},'ledger':{},'created_at':now(),'template':'approved source Master'}
     for r in rows:
         f=json.loads(r['fields'])
         baseline['contracts'][r['row_key']]={'fields':f,'sheet':r['source_sheet'],'revision':r['revision']}
@@ -777,6 +852,20 @@ async def upload_document(file:UploadFile=File(...)):
         pages=sorted(pages,key=lambda p:p['page'])
         if pages:
             proposals,evidence=reference_proposals(pages)
+            # SmartQuote needs true invoice/delivery rows, not every
+            # alphanumeric string or page heading that resembles an SKU.
+            # Original PDFs and sensitive prices remain in the private DB,
+            # never as GitHub test fixtures.
+            from .quote_pulse_documents import parse_pdf as parse_pulse_pdf
+            try:
+                evidence['quote_document']=parse_pulse_pdf(content)
+            except (ValueError, RuntimeError, OSError) as exc:
+                evidence['quote_document']={
+                    'document_type':'unrecognised','format':'',
+                    'lines':[],'source_only':True,
+                    'warnings':['Equipment table reading needs manual review.']
+                }
+                ocr_warnings.append('SmartQuote table extraction could not be completed.')
             evidence['invoice_groups']=invoice_groups(pages)
             evidence['invoice_review']=analyse_invoice_document(pages)
             evidence['invoice_ocr_warnings']=evidence['invoice_groups'].get('possible_ocr_conflicts',[])
@@ -1250,4 +1339,20 @@ def approve_proposal(iid:int,pid:int,options:ApprovalOptions=Body(default=Approv
     return {'ok':True,'contract_id':cid,'action':action}
 
 @app.get('/api/health')
-def health():return {'status':'ok','database':'sqlite','template_present':os.path.isfile(TEMPLATE)}
+def health():
+    """Minimal unauthenticated liveness for loopback-only reverse-proxy checks.
+
+    Never returns contract counts, filesystem paths, secrets or user information.
+    A dead/missing database must not claim a healthy service.
+    """
+    if not os.path.isfile(TEMPLATE):
+        raise HTTPException(503,'Service not ready')
+    try:
+        # A read-only probe avoids accidental empty SQLite creation and never
+        # performs writes during container health monitoring.
+        uri=Path(DB).resolve().as_uri()+'?mode=ro'
+        with sqlite3.connect(uri,uri=True,timeout=3) as connection:
+            connection.execute('SELECT 1 FROM contracts LIMIT 1').fetchone()
+    except (sqlite3.Error,OSError):
+        raise HTTPException(503,'Service not ready')
+    return {'status':'ok'}
