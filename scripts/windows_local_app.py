@@ -78,13 +78,45 @@ def _write_secret(path):
 
 
 def _package_self_test():
-    """Safe: does not create any accounts, databases or quote records."""
-    import fitz  # packaged PDF parser
+    """Verify REAL module imports before touching any company data.
+
+    Previous Windows releases verified only fitz/uvicorn and static files,
+    allowing missing app.data_readiness to slip through packaging checks.
+    This test imports launch-critical modules and verifies the FastAPI
+    entrypoint is discoverable WITHOUT importing app.main: that module
+    intentionally initialises the private database on import.
+    """
+    import importlib
+    import importlib.util
+    import fitz
     import uvicorn
     import lxml
     import tkinter
-    # The top-level app is a Python namespace package (no __init__.py),
-    # so app.__file__ can legitimately be None in a frozen executable.
+    modules = (
+        "app.data_readiness",
+        "app.excel_io",
+        "app.store",
+        "app.source_integrity",
+        "app.pilot_access",
+        "app.deployment_guards",
+        "app.backups",
+        "app.quote_pulse_documents",
+        "app.quote_invoice_match",
+        "app.quote_price_book",
+        "app.quote_quick_draft",
+        "app.quote_quick_pdf",
+        "app.master_source_views",
+    )
+    for name in modules:
+        try:
+            importlib.import_module(name)
+        except Exception as exc:
+            raise RuntimeError(
+                "Windows build is missing or cannot load required module "
+                + name + ": " + str(exc)
+            ) from exc
+    if importlib.util.find_spec("app.main") is None:
+        raise RuntimeError("Windows build is missing its app.main server entrypoint.")
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
     source = base / "app" / "static" / "index.html"
     logo = source.parent / "brand" / "pulse-fitness-reverse.svg"
@@ -305,6 +337,9 @@ def launch():
     from tkinter import messagebox
     if sys.platform != "win32":
         raise RuntimeError("This launcher is only intended for Windows.")
+    # Fail with a useful package error before creating a database, asking for
+    # the workbook, or changing the user's existing company data.
+    _package_self_test()
     data_root = local_data_root()
     folder = forbid_sync_directory(data_root / "data")
     data_root.mkdir(parents=True, exist_ok=True)
