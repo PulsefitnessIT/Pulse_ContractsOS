@@ -7,6 +7,16 @@ It is a **supervised internal pilot**, not an approved public/production
 release. Customer PDF issuance requires separate approved rates, terms
 and sign-off.
 
+## Verified 18 November 2026 — clean one-extraction download
+
+- Download the GitHub Actions artifact named `Pulse_Fitness_SmartQuote_ContractsOS_VERIFIED_Windows_2026_11_18` from the **Windows single-PC pilot package** run for the release branch.
+- Use Windows **Extract All** exactly once. The resulting folder must contain `Pulse Contracts OS.exe`, `_internal\`, `READ_ME_FIRST.md`, `BUILD_INFO.txt`, and `SHA256SUMS.txt`. Do not run the program from Windows Explorer's ZIP preview.
+- The full application folder, not just the EXE, is required. You can move the extracted folder to `C:\\Pulse Fitness\\Contracts OS`.
+- To verify the EXE, run `Get-FileHash '.\\Pulse Contracts OS.exe' -Algorithm SHA256` from PowerShell in the extracted folder and compare with `EXE_SHA256.txt`.
+- **Do not remove `%LOCALAPPDATA%\\Pulse Fitness\\Contracts OS\\data` while replacing a failed older build.** The executable folder and user-data folder are separate.
+- This build is unsigned; ask Pulse IT for approval rather than bypassing Windows or antivirus restrictions.
+- The Windows CI build tests first-run startup using entirely fictional records and rejects customer issuance without commercial approvals. This does not certify a real PC, your real Master, or everyday commercial use.
+
 ## How to install
 
 1. Download the **Windows single-PC pilot package** from the GitHub
