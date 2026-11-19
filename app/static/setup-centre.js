@@ -61,6 +61,7 @@ async function setupRefresh(){
   const result=await api('/api/admin/setup/status');
   if(view!=='setup')return;
   setupLiveStatus=result;
+  if(typeof window.updatePulseSettingsStatus==='function')window.updatePulseSettingsStatus(result);
   const ready=result.ready_count;
   const total=result.required_count;
   const progress=document.getElementById('setupSummary');
