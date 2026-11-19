@@ -1,62 +1,82 @@
-/* Coordinator-first settings menu. Permissions remain enforced by the API. */
+/* Pulse Fitness setup/navigation. Settings is ONE understandable dashboard.
+   No jumps to retired V10 or source-register screens. */
 (function(){
-  let isAdministrator=false;
-  const $menu=id=>document.getElementById(id);
-  function setMenuOpen(open){
-    const panel=$menu('pulseSettingsMenu'),toggle=$menu('pulseSettingsToggle');
-    if(!panel||!toggle)return;
-    panel.hidden=!open;
+  const node=id=>document.getElementById(id);
+  const menu=node('pulseSettingsMenu');
+  const toggle=node('pulseSettingsToggle');
+  let initialized=false;
+  function openSettingsMenu(open){
+    if(!menu||!toggle)return;
+    menu.hidden=!open;
     toggle.setAttribute('aria-expanded',String(open));
   }
-  function setAdvanced(open){
-    document.body.classList.toggle('pulse-advanced-settings',Boolean(isAdministrator&&open));
-    window.pulseAdvancedSettings=Boolean(isAdministrator&&open);
-    const button=$menu('pulseMenuAdvanced');
-    if(button)button.textContent=open?'Hide technical settings':'Pricing & agreement settings';
-  }
-  window.initPulseSettings=function(session){
+  window.pulseSetupFirstLogin=false;
+  window.updatePulseSettingsStatus=function(status){
+    const count=node('pulseMenuSetupCount');
+    if(!count||!status)return;
+    const missing=Math.max(0,Number(status.required_count||0)-Number(status.ready_count||0));
+    count.textContent=missing?' · '+missing+' to check':(status.core_setup_ready?' · Ready':'');
+    const btn=node('pulseMenuAdvanced');
+    if(btn)btn.title=missing?
+      missing+' setup checks still require attention':'View platform settings and approved source status';
+  };
+  window.initPulseSettings=async function(session){
     const isPilot=Boolean(session?.pilot);
-    isAdministrator=isPilot&&session.role==='Admin';
-    const menu=$menu('pulseSettingsMenu'),toggle=$menu('pulseSettingsToggle');
-    if(!menu||!toggle)return;
-    setAdvanced(false);
-    menu.querySelectorAll('[data-admin-menu]').forEach(item=>item.hidden=!isAdministrator);
-    $menu('pulseSettingsIdentity').textContent=isPilot?
-      'Signed in: '+String(session.user||'Staff')+' · '+String(session.role||''):
+    const isAdmin=isPilot&&session.role==='Admin';
+    const identity=node('pulseSettingsIdentity');
+    if(identity)identity.textContent=isPilot?
+      'Signed in as '+String(session.user||'Staff')+' · '+String(session.role||''):
       'Local workspace';
-    $menu('pulseMenuSignOut').hidden=!isPilot;
-    toggle.addEventListener('click',event=>{
-      event.stopPropagation();
-      setMenuOpen(menu.hidden);
-    });
-    document.addEventListener('pointerdown',event=>{
-      if(!event.target.closest('.portal-settings'))setMenuOpen(false);
-    });
-    document.addEventListener('keydown',event=>{
-      if(event.key==='Escape'&&!menu.hidden){setMenuOpen(false);toggle.focus();}
-    });
-    const selected=(id,handler)=>{
-      $menu(id).addEventListener('click',async()=>{
-        setMenuOpen(false);
-        try{await handler();}catch(error){toast(error.message);}
+    if(menu)menu.querySelectorAll('[data-admin-menu]').forEach(item=>item.hidden=!isAdmin);
+    node('pulseMenuSignOut').hidden=!isPilot;
+    if(!initialized&&menu&&toggle){
+      initialized=true;
+      toggle.addEventListener('click',event=>{
+        event.stopPropagation();
+        openSettingsMenu(menu.hidden);
       });
-    };
-    selected('pulseMenuExport',()=>downloadExcel());
-    selected('pulseMenuAdvanced',()=>{
-      if(!isAdministrator)return;
-      const next=!Boolean(window.pulseAdvancedSettings);
-      setAdvanced(next);
-      if(next && view!=='quoting')setView('quoting');
-      if(next && view==='quoting'){
-        const panel=$menu('quoteGoLiveStatusPanel');
-        if(panel)panel.scrollIntoView({behavior:'smooth',block:'start'});
+      document.addEventListener('pointerdown',event=>{
+        if(!event.target.closest('.portal-settings'))openSettingsMenu(false);
+      });
+      document.addEventListener('keydown',event=>{
+        if(event.key==='Escape'&&!menu.hidden){
+          openSettingsMenu(false);toggle.focus();
+        }
+      });
+      node('pulseMenuExport').onclick=()=>{
+        openSettingsMenu(false);
+        downloadExcel();
+      };
+      node('pulseMenuAdvanced').onclick=()=>{
+        openSettingsMenu(false);
+        if(window.pulseAuthRole==='Admin')setView('setup');
+      };
+      node('pulseMenuSignOut').onclick=async()=>{
+        openSettingsMenu(false);
+        try{
+          await api('/api/pilot/logout',{method:'POST'});
+          location.assign('/pilot/login');
+        }catch(error){toast('Sign out failed: '+error.message);}
+      };
+    }
+    if(!isAdmin)return;
+    try{
+      const status=await api('/api/admin/setup/status');
+      window.updatePulseSettingsStatus(status);
+      if(status.first_login_wizard){
+        // Saved on the private device, not in the browser. If the application
+        // crashes, setup can always be resumed from Settings.
+        await api('/api/admin/setup/progress',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action:'start'})
+        });
+        window.pulseSetupFirstLogin=true;
+        setView('setup');
       }
-    });
-    selected('pulseMenuSourceAudit',()=>{if(isAdministrator)setView('source_audit');});
-    selected('pulseMenuMasterSources',()=>{if(isAdministrator)setView('master_sources');});
-    selected('pulseMenuSignOut',async()=>{
-      await api('/api/pilot/logout',{method:'POST'});
-      location.assign('/pilot/login');
-    });
+    }catch(error){
+      // Daily internal work remains accessible; commercial issue is still
+      // enforced at the server, regardless of whether this screen loads.
+      toast('Setup status unavailable: '+error.message);
+    }
   };
 })();

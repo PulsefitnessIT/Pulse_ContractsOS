@@ -16,6 +16,29 @@ and sign-off.
 - **Dates:** UK-formatted dates show as DD/MM/YYYY; Excel serial-date values from source worksheets are displayed as UK dates, while the underlying stored values are preserved.
 - **Data safety:** keep the original agreement and approved terms intact. The new print preview does not fabricate legal customer identity, equipment coverage, price approvals, exclusions or signatures.
 
+## First Administrator sign-in — guided setup (19 November 2026)
+
+After you have selected the approved Maintenance Master and created your local
+Administrator account, sign in. The first Administrator login will automatically
+open the new **Platform setup** wizard. You can return at any time via
+**☰ Settings → Setup & settings**. The old technical data-source screens are no
+longer Settings destinations.
+
+The wizard checks your existing Maintenance Master, lets you activate the
+**Unified Master equipment-price CSV**, record verified Pulse company details,
+approve the current maintenance terms PDF, and check the separate Silver,
+Gold and Platinum service-rate approval. It does not request information
+you have already approved. Progress is saved to the private local database.
+
+If approved maintenance rate policies are not available, the wizard identifies
+that blocker; equipment sales prices cannot replace commercial service rates.
+You may select **Continue with internal drafts** while customer PDF issue
+remains disabled. Only a fully verified setup can be marked complete, and
+customer PDF issue still needs a separate commercial authorisation.
+
+Never delete the existing local data folder to restart onboarding. Only the
+Administrator can perform the setup; coordinators can continue their daily work.
+
 ## How to install
 
 1. Download the **Windows single-PC pilot package** from the GitHub
