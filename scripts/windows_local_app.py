@@ -101,6 +101,7 @@ def _package_self_test():
         "app.deployment_guards",
         "app.backups",
         "app.quote_pulse_documents",
+        "app.contract_agreement_print",
         "app.quote_invoice_match",
         "app.quote_price_book",
         "app.quote_quick_draft",
@@ -120,8 +121,11 @@ def _package_self_test():
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
     source = base / "app" / "static" / "index.html"
     logo = source.parent / "brand" / "pulse-fitness-reverse.svg"
-    if not (source.is_file() and logo.is_file()):
-        raise RuntimeError("Bundled Pulse Fitness UI assets are missing.")
+    coordinator_css=source.parent / "coordinator-ui.css"
+    settings_js=source.parent / "settings-menu.js"
+    action_js=source.parent / "action-centre.js"
+    if not all(x.is_file() for x in (source,logo,coordinator_css,settings_js,action_js)):
+        raise RuntimeError("Bundled Pulse Fitness coordinator UI or required assets are missing.")
     return True
 
 
@@ -522,6 +526,7 @@ def _smoke_test_complete_startup(synthetic_workbook):
             # sqlite3.Connection.__exit__ commits but DOES NOT close.
             # Windows correctly prevents deleting an open SQLite file.
             with closing(connect()) as con:
+                first_contract_id=con.execute("SELECT id FROM contracts ORDER BY id LIMIT 1").fetchone()[0]
                 count = con.execute("SELECT count(*) FROM contracts").fetchone()[0]
                 if count < 3:
                     raise RuntimeError("Real first-run import failed to load contracts.")
@@ -557,6 +562,8 @@ def _smoke_test_complete_startup(synthetic_workbook):
                 ("/pilot/login", b"Pulse Fitness"),
                 ("/static/brand/pulse-fitness-reverse.svg", b"<svg"),
                 ("/static/quoting-workspace.js", b"unified"),
+                ("/static/coordinator-ui.css", b"action-record"),
+                ("/static/settings-menu.js", b"pulseMenuSignOut"),
             ):
                 with urllib.request.urlopen(origin + url_path, timeout=4) as response:
                     data = response.read(1024 * 1024)
@@ -581,6 +588,10 @@ def _smoke_test_complete_startup(synthetic_workbook):
                 if response.status != 200 or not json.loads(
                         response.read()).get("ok"):
                     raise RuntimeError("Packaged local staff login is broken.")
+            with client.open(origin + f"/api/contracts/{first_contract_id}/agreement/preview.pdf", timeout=8) as response:
+                pdf=response.read(1024*1024)
+                if response.status!=200 or not pdf.startswith(b"%PDF") or "pdf" not in response.headers.get("Content-Type",""):
+                    raise RuntimeError("Printable maintenance agreement PDF is not available from customer record.")
             with client.open(origin + "/api/master-sources", timeout=4) as response:
                 details = json.loads(response.read())
                 if response.status != 200 or not details.get("has_15_tab_source"):
