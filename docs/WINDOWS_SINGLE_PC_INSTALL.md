@@ -7,6 +7,15 @@ It is a **supervised internal pilot**, not an approved public/production
 release. Customer PDF issuance requires separate approved rates, terms
 and sign-off.
 
+## Updated coordinator workflow (19 November 2026)
+
+- **Action Centre:** each task has its own responsive record card. Choose progress, optionally expand notes or the next review date, then select **Save update**. No horizontal table scroll is needed.
+- **SmartQuote:** customer, site, contact, cover type, term, discount and contract dates are laid out in clear labelled columns. Existing price data comes from the unified Master Price List.
+- **Settings (top right):** choose **Sign out** at the end of the shift. Administrators also have **Pricing & agreement settings**, **Data quality review** and **Service & Sicon records**; ordinary coordinators do not need the historic technical pages.
+- **Contracts:** **Add contract** always starts a new record in the Maintenance Database. For existing records, choose **Print maintenance agreement** to open a **watermarked internal review copy** with recorded cover details and any linked equipment. It is not a signed legal agreement and MUST NOT be issued as one.
+- **Dates:** UK-formatted dates show as DD/MM/YYYY; Excel serial-date values from source worksheets are displayed as UK dates, while the underlying stored values are preserved.
+- **Data safety:** keep the original agreement and approved terms intact. The new print preview does not fabricate legal customer identity, equipment coverage, price approvals, exclusions or signatures.
+
 ## How to install
 
 1. Download the **Windows single-PC pilot package** from the GitHub
