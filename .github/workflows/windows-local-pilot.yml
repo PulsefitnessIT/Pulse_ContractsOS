@@ -4,6 +4,10 @@ name: Windows single-PC pilot package
 # Automated SOURCE validation continues to run independently.
 on:
   workflow_dispatch:
+  # Isolated one-time build requested by Pulse Fitness on 18 November 2026.
+  # Keep regular development/production packaging manual only.
+  push:
+    branches: ['release/coordinator-ui-verified-20261119']
 
 permissions:
   contents: read
@@ -11,7 +15,7 @@ permissions:
 jobs:
   windows-desktop:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +34,14 @@ jobs:
       - name: Compile bundled Python sources
         shell: pwsh
         run: python -m compileall -q app scripts
+
+      - name: Test SmartQuote pricing, customer PDFs, security and coordinator workflow
+        shell: pwsh
+        run: |
+          python -m pytest -q tests/test_audit_unified_prices.py tests/test_contract_agreement_print.py tests/test_action_centre.py tests/test_audit_unified_prices.py tests/test_quote_price_book.py tests/test_quote_pricing.py tests/test_quote_quick_draft.py tests/test_quote_invoice_match.py tests/test_quote_customer_issuance.py tests/test_quote_commercial_setup.py tests/test_quote_coordinator_journey.py tests/test_quote_drafts.py tests/test_pilot_sessions.py tests/test_windows_local_app.py tests/test_15_tab_master.py tests/test_quote_quick_pdf.py tests/test_quote_source_setup.py tests/test_quote_rrp_priority.py tests/test_quote_release_coverage.py
+          if ($LASTEXITCODE -ne 0) { throw "Critical Windows quote workflow and security regressions failed" }
+          node --test tests/test_smartquote_coordinator_ui.cjs tests/test_coordinator_usability.cjs
+          if ($LASTEXITCODE -ne 0) { throw "Browser coordinator workflow tests failed" }
 
       - name: Build self-contained Windows desktop folder
         shell: pwsh
@@ -70,24 +82,105 @@ jobs:
             throw "Real Windows startup smoke test failed: $($verified.ExitCode)"
           }
           Remove-Item Env:PULSE_BUILD_DIAGNOSTIC_PATH
-          Remove-Item "fictional_windows_smoke.xlsx" -Force
+          Write-Host "Synthetic startup workbook retained only for post-extraction test."
 
-      - name: Assemble offline package with first-run instructions
+      - name: Assemble validated one-extraction Windows folder and file manifest
         shell: pwsh
         run: |
-          Copy-Item "docs/WINDOWS_SINGLE_PC_INSTALL.md" "dist/Pulse Contracts OS/READ_ME_FIRST.md"
-          $all = Get-ChildItem -Path "dist/Pulse Contracts OS" -File -Recurse
+          $folder = "dist/Pulse Contracts OS"
+          Copy-Item "docs/WINDOWS_SINGLE_PC_INSTALL.md" "$folder/READ_ME_FIRST.md"
+          # Vendored PyInstaller dependencies contain legitimate "data" paths;
+          # inspect distributable files without misclassifying bundled libraries.
+          $all = Get-ChildItem -Path $folder -File -Recurse
+          $internal = [IO.Path]::GetFullPath((Join-Path $folder "_internal"))
           $unwanted = $all | Where-Object {
-            $_.Name -match '\.(sqlite3?|db|xlsx?|xlsm|pdf)$' -or
-            $_.FullName -match '\\(data|pilot_data|uploads|backups|invoices)\\'
+            $insideRuntime = $_.FullName.StartsWith(($internal + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)
+            ($_.Name -match '\.(sqlite3?|db|xlsx?|xlsm)$') -or
+            ((-not $insideRuntime) -and ($_.Name -match '\.(pdf|zip)$')) -or
+            ((-not $insideRuntime) -and ($_.FullName -match '\\(pilot_data|uploads|backups|invoices|private_runtime)\\'))
           }
-          if ($unwanted) { throw "Company data must not be bundled" }
-          Compress-Archive -Path "dist/Pulse Contracts OS/*" -DestinationPath "dist/Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot.zip" -CompressionLevel Optimal
+          if (Test-Path (Join-Path $folder "data")) { throw "Unexpected private data folder at package root." }
+          if ($unwanted) {
+            $unwanted | ForEach-Object { Write-Host ("Blocked private data file: " + $_.FullName) }
+            throw "Company data must not be included in the Windows release."
+          }
+          $exe = Join-Path $folder "Pulse Contracts OS.exe"
+          if ((Get-Item $exe).Length -lt 1000000) { throw "Windows EXE is unexpectedly small" }
+          $exeHash = (Get-FileHash -Path $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$folder/EXE_SHA256.txt" -Value "$exeHash  Pulse Contracts OS.exe" -Encoding utf8
+          @(
+            "Pulse Fitness Contracts OS + SmartQuote - Windows verified pilot"
+            "Source commit: $env:GITHUB_SHA"
+            "Build branch: $env:GITHUB_REF_NAME"
+            "Build time (UTC): $([DateTime]::UtcNow.ToString('u'))"
+            "Runtime: Windows runner, Python 3.12, PyInstaller onedir"
+            "Private data: NONE included"
+            "Distribution: ONE extraction only. Keep _internal beside EXE."
+            "Tested: packaged self-test, fictional 15-tab Master, HTTP login, quoting routes"
+            "Commercial quote release: NOT authorised by the automated build"
+          ) | Set-Content -Path "$folder/BUILD_INFO.txt" -Encoding utf8
+          $base = (Resolve-Path $folder).Path
+          $checks = Get-ChildItem $base -File -Recurse | Sort-Object FullName | ForEach-Object {
+            $relative = $_.FullName.Substring($base.Length + 1).Replace('\','/')
+            $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest  $relative"
+          }
+          $checks | Set-Content -Path "$folder/SHA256SUMS.txt" -Encoding utf8
+          Write-Host "Verified folder staged. EXE SHA256: $exeHash"
+
+      - name: Simulate download and extract on a completely clean Windows path
+        shell: pwsh
+        run: |
+          $folder = "dist/Pulse Contracts OS"
+          $archive = Join-Path $env:RUNNER_TEMP "smartquote-release-extraction-test.zip"
+          $extracted = Join-Path $env:RUNNER_TEMP "Pulse Fitness Clean Extraction Test"
+          Compress-Archive -Path "$folder/*" -DestinationPath $archive -CompressionLevel Optimal -Force
+          Expand-Archive -Path $archive -DestinationPath $extracted -Force
+          $manifest = Join-Path $extracted "SHA256SUMS.txt"
+          if (!(Test-Path $manifest)) { throw "Extracted SHA256 manifest is missing" }
+          foreach ($line in Get-Content $manifest) {
+            $parts = $line -split '  ', 2
+            if ($parts.Count -ne 2) { throw "Malformed SHA256 record" }
+            $candidate = Join-Path $extracted ($parts[1].Replace('/', '\'))
+            if (!(Test-Path -LiteralPath $candidate)) { throw "Missing extracted release file: $($parts[1])" }
+            $actual = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $parts[0]) { throw "Corrupt extracted release file: $($parts[1])" }
+          }
+          foreach ($asset in @("_internal/app/static/index.html","_internal/app/static/coordinator-ui.css","_internal/app/static/settings-menu.js","_internal/app/static/action-centre.js","_internal/app/static/quoting-workspace.js")) {
+            if (!(Test-Path (Join-Path $extracted $asset))) { throw "Bundled coordinator UI missing after extraction: $asset" }
+          }
+          $exe = Join-Path $extracted "Pulse Contracts OS.exe"
+          $env:PULSE_BUILD_DIAGNOSTIC_PATH = Join-Path $env:RUNNER_TEMP "smartquote-release-extracted-selftest.log"
+          $self = Start-Process -FilePath $exe -ArgumentList "--self-test" -Wait -PassThru
+          if ($self.ExitCode -ne 0) {
+            if (Test-Path $env:PULSE_BUILD_DIAGNOSTIC_PATH) { Get-Content $env:PULSE_BUILD_DIAGNOSTIC_PATH }
+            throw "Extracted executable self-test failed with exit $($self.ExitCode)"
+          }
+          $fixture = (Resolve-Path "fictional_windows_smoke.xlsx").Path
+          $env:PULSE_BUILD_DIAGNOSTIC_PATH = Join-Path $env:RUNNER_TEMP "smartquote-release-extracted-startup.log"
+          $test = Start-Process -FilePath $exe -ArgumentList @("--smoke-test", $fixture) -Wait -PassThru
+          if ($test.ExitCode -ne 0) {
+            if (Test-Path $env:PULSE_BUILD_DIAGNOSTIC_PATH) { Get-Content $env:PULSE_BUILD_DIAGNOSTIC_PATH }
+            throw "Extracted executable startup/quote smoke test failed with exit $($test.ExitCode)"
+          }
+          Remove-Item Env:PULSE_BUILD_DIAGNOSTIC_PATH
+          Remove-Item "fictional_windows_smoke.xlsx" -Force
+          Write-Host "PASS: all SHA256 hashes, 1-pass extraction, frozen EXE, 15-tab Master, authenticated HTTP and SmartQuote routing."
+          @(
+            "VALIDATED: 2026-11-19 Windows desktop pilot"
+            "EXTRACTION: Passed SHA-256 verification of every staged file"
+            "FROZEN EXE: Passed self-test after a clean extraction to a path containing spaces"
+            "STARTUP: Passed fictional 15-tab import, named sign-in, authenticated SmartQuote routes"
+            "SOURCE TESTS: Pricing, invoices, quotation PDF, sessions, access, coordinator workflow"
+            "LIMIT: Real customer data, commercial approval and target PC antivirus not tested"
+          ) | Set-Content -Path "$folder/VALIDATION_REPORT.txt" -Encoding utf8
 
       - name: Publish downloadable Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot
-          path: dist/Pulse_Fitness_ContractsOS_SmartQuote_Windows_Pilot.zip
-          retention-days: 14
+          name: Pulse_Fitness_SmartQuote_ContractsOS_Coordinator_2026_11_19
+          # GitHub Actions makes ONE zip from this directory. No zip-inside-zip.
+          path: dist/Pulse Contracts OS/
+          retention-days: 30
+          compression-level: 6
           if-no-files-found: error
