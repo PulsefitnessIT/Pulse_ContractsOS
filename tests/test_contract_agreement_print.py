@@ -92,6 +92,6 @@ def test_pdf_route_reads_only_recorded_contract_and_requires_named_staff(monkeyp
 
 def test_excel_serial_dates_are_formatted_without_modifying_values():
     original="45799"
-    assert agreement._uk_date(original)=="21/05/2025"
+    assert agreement._uk_date(original)=="22/05/2025"
     assert original=="45799"
     assert agreement._uk_date("2026-12-31")=="31/12/2026"
