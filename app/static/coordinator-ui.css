@@ -1,0 +1,135 @@
+/* Pulse Fitness — coordinator-first responsive workstation UI (19 November 2026).
+   Safely layered after the brand stylesheet; no customer data or fonts. */
+
+/* Nothing in daily work requires sideways document scrolling. */
+.pulse-pro .portal-module-nav{flex-wrap:wrap;overflow-x:visible;white-space:normal;gap:4px}
+.pulse-pro .portal-module-nav .nav-link{flex:0 1 auto;min-width:0}
+.pulse-pro .portal-wrapper,.pulse-pro .main-inner,.pulse-pro #content{min-width:0}
+.pulse-pro .data-table{max-width:100%}
+
+/* Compact role-aware settings menu anchored to the upper-right corner. */
+.portal-settings{position:relative;flex-shrink:0;z-index:60}
+.portal-settings-toggle{min-height:42px;white-space:nowrap;background:#2d3234;color:#fff;
+ border:1px solid #6e7476;padding:10px 16px;border-radius:9px;font-size:13px;font-weight:750}
+.portal-settings-toggle:hover,.portal-settings-toggle[aria-expanded=true]{background:#393e41;border-color:#19cdff}
+.portal-settings-menu{position:absolute;right:0;top:calc(100% + 9px);width:min(315px,92vw);
+ padding:9px;background:#fff;border:1px solid #d8e2e6;border-radius:12px;
+ box-shadow:0 18px 45px rgba(15,29,38,.20);color:#233840;z-index:70}
+.portal-settings-menu[hidden]{display:none}
+.portal-settings-menu button{display:block;width:100%;text-align:left;border:0;background:#fff;
+ padding:12px 14px;border-radius:8px;color:#213943;font-weight:700;font-size:13px;white-space:normal}
+.portal-settings-menu button:hover,.portal-settings-menu button:focus-visible{background:#e6f8ff}
+.portal-settings-menu button[hidden]{display:none}
+.portal-settings-menu .settings-divider{height:1px;margin:8px 5px;background:#e1e9ec}
+.portal-settings-menu .settings-identity{font-size:11px;color:#677980;padding:9px 14px}
+.pulse-pro .portal-topbar{gap:18px}
+.pulse-pro .top-actions{margin-left:auto}
+
+/* All technical migration panels stay out of the daily coordinator view.
+   The role-authorised Settings control enables them on demand. */
+.pulse-pro .quote-admin-section{display:none!important}
+.pulse-pro.pulse-advanced-settings .quote-admin-section:not([hidden]){display:block!important}
+
+/* Quotation form: every label has its own row, its own field, and sufficient spacing. */
+.pulse-pro #unifiedDraftPanel,.pulse-pro #quoteQuickDraftPanel{min-width:0}
+.pulse-pro #unifiedDraftPanel h4{margin:24px 0 9px;font-size:16px;line-height:1.4}
+.pulse-pro #unifiedDraftPanel h4 small{font-size:12px;color:#718087;font-weight:500}
+.pulse-pro #unifiedDraftPanel>p,.pulse-pro #unifiedDraftPanel form>p{line-height:1.6;max-width:100ch}
+.pulse-pro #unifiedDraftForm{margin:20px 0 27px}
+.pulse-pro #unifiedDraftForm .form-grid,
+.pulse-pro #unifiedEquipmentAdd .form-grid{display:grid;
+ grid-template-columns:repeat(3,minmax(0,1fr));gap:19px 17px;width:100%}
+.pulse-pro #unifiedDraftPanel .form-grid>label,
+.pulse-pro #unifiedDraftPanel .sq-site-search>label,
+.pulse-pro #unifiedDraftPanel .sq-file-input-label,
+.pulse-pro #unifiedDraftPanel #unifiedEquipmentAdd .form-grid>label{
+ display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:0;
+ font-size:12px;font-weight:700;color:#41535b;line-height:1.45}
+.pulse-pro #unifiedDraftPanel .form-grid input,
+.pulse-pro #unifiedDraftPanel .form-grid select,
+.pulse-pro #unifiedDraftPanel .form-grid textarea,
+.pulse-pro #unifiedDraftPanel .sq-site-search input,
+.pulse-pro #unifiedDraftPanel .sq-file-input-label input{
+ display:block;width:100%;min-width:0;min-height:44px;padding:10px 12px;
+ border:1px solid #cbd6d9;border-radius:8px;color:#1e3540;background:#fff;
+ font-size:14px;font-weight:500;box-sizing:border-box}
+.pulse-pro #unifiedDraftPanel .form-grid textarea{min-height:92px;resize:vertical}
+.pulse-pro #unifiedDraftPanel .sq-site-search{display:flex;gap:13px;align-items:flex-end;
+ flex-wrap:wrap;margin:18px 0 14px}
+.pulse-pro #unifiedDraftPanel .sq-site-search label{flex:1 1 320px;max-width:580px}
+.pulse-pro #unifiedDraftPanel .sq-site-search button{flex:0 0 auto;min-height:44px}
+.pulse-pro #unifiedDraftPanel #unifiedInvoiceImport{display:grid;gap:14px;margin:17px 0 22px}
+.pulse-pro #unifiedDraftPanel #unifiedInvoiceImport .sq-file-input-label{max-width:680px}
+.pulse-pro #unifiedDraftPanel input[type=file]{height:auto;padding:10px;background:#fff}
+.pulse-pro #unifiedDraftPanel #unifiedInvoiceDropzone{width:100%;margin:0}
+.pulse-pro #unifiedDraftPanel #unifiedInvoiceImport>button{justify-self:start}
+.pulse-pro #unifiedDraftPanel #unifiedEquipmentAdd{margin:18px 0}
+.pulse-pro #unifiedDraftPanel #unifiedEquipmentAdd>button{margin:14px 6px 0 0}
+.pulse-pro #unifiedDraftPanel .notice{line-height:1.6}
+.pulse-pro #unifiedDraftPanel .sq-section-heading{border-top:1px solid #e4ebef;padding-top:21px}
+
+/* Action Centre: cards replace overflowing editable tables. */
+.pulse-pro .action-toolbar{display:grid;grid-template-columns:minmax(250px,2fr) repeat(3,minmax(145px,1fr));gap:12px}
+.pulse-pro .action-toolbar>*{width:100%;min-width:0}
+.pulse-pro .action-toolbar .search{max-width:none}
+.pulse-pro .action-record-list{display:grid;gap:10px;margin-top:15px}
+.pulse-pro .action-record{padding:16px 19px;min-width:0}
+.pulse-pro .action-record-main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1.4fr) minmax(0,.8fr) minmax(0,1fr);
+ gap:16px;align-items:start;min-width:0}
+.pulse-pro .action-record-main>div{min-width:0}
+.pulse-pro .action-record-customer,.pulse-pro .action-record-task,
+.pulse-pro .action-record-date,.pulse-pro .action-update{display:flex;flex-direction:column;gap:7px;align-items:flex-start}
+.pulse-pro .action-small-label{font-size:10px;font-weight:800;color:#74858b;letter-spacing:.04em;text-transform:uppercase}
+.pulse-pro .action-record strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere;white-space:normal}
+.pulse-pro .action-record-task>span:not(.action-small-label),.pulse-pro .action-subtitle{font-size:11px;line-height:1.5;color:#586b72;overflow-wrap:anywhere}
+.pulse-pro .action-record-date .badge-status{white-space:normal;text-align:left;line-height:1.5}
+.pulse-pro .action-quote{min-height:33px;padding:6px 10px;font-size:11px;white-space:normal;text-align:left;line-height:1.3}
+.pulse-pro .action-update{width:100%}
+.pulse-pro .action-update>label{display:block;width:100%;font-size:11px;color:#52656c;font-weight:750}
+.pulse-pro .action-update select{display:block;width:100%;margin-top:5px;max-width:100%;min-width:0}
+.pulse-pro .action-extra{width:100%}
+.pulse-pro .action-extra summary{font-size:11px;color:#096d92;cursor:pointer;line-height:1.5;font-weight:700}
+.pulse-pro .action-extra-fields{display:grid;grid-template-columns:1fr;gap:11px;padding:12px 0}
+.pulse-pro .action-extra-fields label{width:100%;display:flex;flex-direction:column;gap:6px;font-size:11px;color:#53666c}
+.pulse-pro .action-extra-fields .input{width:100%;min-width:0;box-sizing:border-box}
+.pulse-pro .action-extra-fields textarea.input{height:auto;min-height:85px;resize:vertical;padding:10px 12px}
+.pulse-pro .action-save{width:100%;min-height:37px;justify-content:center;white-space:normal}
+.pulse-pro .action-readonly{color:#55717b;font-size:12px}
+.pulse-pro .action-empty{padding:28px;text-align:center}
+.pulse-pro .action-record.is-complete{border-left:3px solid #a4d8bd}
+
+/* Service evidence: responsive readable records rather than an 8-column table. */
+.pulse-pro .source-row-list{display:grid;gap:12px}
+.pulse-pro .source-row-card{padding:16px;border:1px solid #e0e9ed;border-radius:11px;background:#fbfdfe;min-width:0}
+.pulse-pro .source-row-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pulse-pro .source-row-field{min-width:0;display:flex;flex-direction:column;gap:5px}
+.pulse-pro .source-row-field small{font-size:10px;color:#68808b;font-weight:750}
+.pulse-pro .source-row-field span{font-size:12px;color:#233c48;overflow-wrap:anywhere}
+.pulse-pro .source-row-card>details{margin-top:12px;border-top:1px solid #e5eef2;padding-top:11px}
+.pulse-pro .source-row-card>details summary{cursor:pointer;color:#286781;font-weight:700}
+.pulse-pro .source-row-card dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:7px 14px;font-size:12px;line-height:1.55}
+.pulse-pro .source-row-card dt,.pulse-pro .source-row-card dd{margin:0;overflow-wrap:anywhere}
+.pulse-pro .source-row-card dt{color:#647782;font-weight:750}
+
+/* When workstations are narrower, columns rearrange vertically; never scroll sideways. */
+@media(max-width:1250px){
+ .pulse-pro .action-record-main{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .pulse-pro .action-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .pulse-pro #unifiedDraftForm .form-grid,.pulse-pro #unifiedEquipmentAdd .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:800px){
+ .pulse-pro .portal-settings-toggle{padding:10px 12px}
+ .pulse-pro .action-record-main{grid-template-columns:1fr}
+ .pulse-pro .action-record{padding:16px}
+ .pulse-pro .action-record-date,.pulse-pro .action-update{width:100%}
+ .pulse-pro .source-row-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:610px){
+ .pulse-pro .action-toolbar{grid-template-columns:1fr}
+ .pulse-pro #unifiedDraftForm .form-grid,.pulse-pro #unifiedEquipmentAdd .form-grid{grid-template-columns:1fr}
+ .pulse-pro .source-row-grid{grid-template-columns:1fr}
+ .pulse-pro .portal-brand-product{display:none}
+ .pulse-pro .portal-topbar{padding:12px}
+ .pulse-pro .pulse-brand-logo{width:145px}
+ .pulse-pro .top-actions{gap:5px}
+}
