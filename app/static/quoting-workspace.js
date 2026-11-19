@@ -140,7 +140,7 @@ async function quotingWorkspacePage() {
     '<span><b>2</b> Auto-match exact codes</span>' +
     '<span><b>3</b> Review exceptions</span>' +
     '<span><b>4</b> Price &amp; approve</span></div></section>' +
-    '<section class="panel" id="quoteGoLiveStatusPanel">' +
+    '<section class="panel quote-admin-section" id="quoteGoLiveStatusPanel">' +
     '<div class="section-head"><div><h3>Customer quotation readiness</h3>' +
     '<p>See exactly what is still needed before the first approved customer PDF can be issued.</p></div>' +
     '<button type="button" class="button button-outline" id="quoteGoLiveRefresh">Check readiness</button></div>' +
@@ -150,14 +150,14 @@ async function quotingWorkspacePage() {
     '<div class="notice" id="quoteCoordinatorGuide" role="status" aria-live="polite"></div>' +
     '<p>Start with a customer and equipment, save, then preview the Silver, Gold or Platinum price. '+ 
     'A customer PDF is available only after commercial approval.</p>' +
-    '<form id="unifiedSiteSearch"><label>Find a site already recorded in Contracts OS ' +
+    '<form id="unifiedSiteSearch" class="sq-site-search"><label>Find an existing customer or site ' +
     '<input name="q" minlength="2" maxlength="100" placeholder="Search recorded site name" required></label> ' +
     '<button class="button button-outline" type="submit">Find site</button></form>' +
     '<div id="unifiedSiteResults" aria-live="polite"></div>' +
-    '<p class="fine-print">A recorded site label is not proof of the legal customer or current cover.</p>' +
+    '<p class="fine-print">Confirm the customer and address before quoting.</p>' +
     '<form id="unifiedDraftForm">' +
     '<input type="hidden" name="source_contract_id" value="">' +
-    '<div class="form-grid">' +
+    '<div class="form-grid sq-customer-grid">' +
     '<label>Customer <input name="customer" maxlength="250" required></label>' +
     '<label>Site <input name="site" maxlength="250" required></label>' +
     '<label>Contact <input name="contact" maxlength="250"></label>' +
@@ -167,12 +167,12 @@ async function quotingWorkspacePage() {
     '<label>Contract start <input name="contract_start" type="date"></label>' +
     '<label>Contract end <input name="contract_end" type="date"></label>' +
     '</div></form>' +
-    '<h4>Import a sales invoice or delivery note (optional)</h4>' +
+    '<h4 class="sq-section-heading">Import a sales invoice or delivery note <small>(optional)</small></h4>' +
     '<p>Drag and drop up to 12 sales invoices or delivery notes. Codes matching priced machines in ' +
     'the unified Master are added to your draft automatically. Only unmatched ' +
     'codes need a coordinator to check the machine identity. Quantities and ' +
     'serial numbers remain to be verified before a quote can be issued.</p>' +
-    '<form id="unifiedInvoiceImport"><label>Invoice or delivery-note PDF files ' +
+    '<form id="unifiedInvoiceImport"><label class="sq-file-input-label">Invoice or delivery-note PDF files ' +
     '<input name="files" type="file" accept=".pdf,application/pdf" multiple required></label>' +
     '<div id="unifiedInvoiceDropzone" class="pulse-invoice-drop" role="button" tabindex="0" ' +
     'aria-label="Drop one or more invoice PDFs here or press Enter to choose PDF files">' +
@@ -184,14 +184,14 @@ async function quotingWorkspacePage() {
     '<button class="button button-primary" type="submit">Import &amp; match equipment</button></form>' +
     '<div id="unifiedInvoiceResults" role="status" aria-live="polite"></div>' +
     '<h4>Equipment lines</h4>' +
-    '<form id="unifiedCatalogueSearch"><label>Find equipment in the unified Master (code or model) ' +
+    '<form id="unifiedCatalogueSearch" class="sq-site-search"><label>Find equipment by code or model ' +
     '<input name="q" minlength="2" maxlength="100" required placeholder="Type a machine code or name"></label> ' +
     '<button type="submit" class="button button-outline">Find equipment</button></form>' +
     '<div id="unifiedCatalogueResults" aria-live="polite"></div>' +
     '<div id="unifiedEquipmentTable"></div>' +
     '<div id="unifiedQuantityReview" aria-live="polite"></div>' +
     '<form id="unifiedEquipmentAdd">' +
-    '<div class="form-grid">' +
+    '<div class="form-grid sq-customer-grid">' +
     '<label>Equipment description <input name="description" maxlength="400" required></label>' +
     '<label>Product code <input name="item_code" maxlength="100"></label>' +
     '<label>Serial number (single machine) <input name="serial" maxlength="120"></label>' +
@@ -214,30 +214,30 @@ async function quotingWorkspacePage() {
     'Review the proposed service rates, then calculate or download an ' +
     'internal quotation PDF. Customer issue requires separate approval.</p>' +
     '<div id="quoteQuickDraftHost"></div></section>' +
-    '<section class="panel"><h3>Equipment price source evidence</h3>' +
+    '<section class="panel quote-admin-section"><h3>Equipment price source evidence</h3>' +
     '<p>The unified Master is the active price authority after administrator activation. ' +
     'Historical August Master and Sage source comparisons remain available for audit, ' +
     'but are no longer separate price lists for coordinators to maintain.</p>' +
     '<button type="button" class="button button-outline" id="rrpPriorityStatusLoad">Check source coverage</button>' +
     '<div id="rrpPriorityStatus" aria-live="polite"></div></section>' +
-    '<section class="panel" id="quoteV10SourcePanel" hidden>' +
-    '<h3>Original V10 &amp; August Price Source Setup</h3>' +
+    '<section class="panel quote-admin-section" id="quoteV10SourcePanel" hidden>' +
+    '<h3>Historical tariff migration (administrator)</h3>' +
     '<div id="quoteV10SourceHost"></div></section>' +
-    '<section class="panel" id="quoteCommercialSetupPanel" hidden>' +
+    '<section class="panel quote-admin-section" id="quoteCommercialSetupPanel" hidden>' +
     '<h3>Customer Quotation — Commercial Setup</h3>' +
     '<div id="quoteCommercialSetupHost"></div></section>' +
-    '<section class="panel" id="quoteUnifiedBookPanel" hidden>' +
+    '<section class="panel quote-admin-section" id="quoteUnifiedBookPanel" hidden>' +
     '<h3>Unified Master Price List</h3>' +
     '<p>One exact-code price source for Pulse Fitness. The initial combined list ' +
     'contains Sage items and preferred Master List Prices. Later imports update only ' +
     'matching product codes, with permanent version history.</p>' +
     '<div id="quoteUnifiedBookHost"></div></section>' +
-    '<section class="panel" id="quoteSageRefreshPanel" hidden>' +
+    '<section class="panel quote-admin-section" id="quoteSageRefreshPanel" hidden>' +
     '<h3>Sage Price List Refresh</h3>' +
     '<p>Upload a complete Sage Sales Price export, review price changes and activate ' +
     'a new dated snapshot. No existing quotations or Sage records will be changed.</p>' +
     '<div id="quoteSageRefreshHost"></div></section>' +
-    '<section class="panel" id="quoteAdminPricePanel" hidden>' +
+    '<section class="panel quote-admin-section" id="quoteAdminPricePanel" hidden>' +
     '<h3>Administrator price corrections</h3>' +
     '<p>Edit the effective equipment price for an exact item code. ' +
     'All changes require a reason, keep their history and never update Sage or the original master directly. ' +
@@ -246,12 +246,12 @@ async function quotingWorkspacePage() {
     '<input name="sku" required maxlength="100" placeholder="Enter item code"></label> ' +
     '<button class="button button-outline" type="submit">Load price</button></form>' +
     '<div id="quotePriceEditorDetail" aria-live="polite"></div></section>' +
-    '<section class="panel"><h3>Equipment Master Price List &amp; Catalogue — source reconciliation</h3>' +
+    '<section class="panel quote-admin-section"><h3>Technical catalogue reconciliation</h3>' +
     '<p>Check current SKU duplicates, missing source RRPs, console/configuration issues and legacy mappings before quoting.</p>' +
     '<button type="button" class="button button-outline" id="quoteSourceAuditLoad">Review source catalogue</button>' +
     '<div id="quoteSourceAudit" aria-live="polite"></div></section>' +
     '<section class="panel"><h3>Quotation drafts</h3><div id="unifiedDraftList">Loading saved drafts…</div></section>' +
-    '<section class="panel"><h3>Existing SmartQuote quotations</h3>' +
+    '<section class="panel quote-admin-section"><h3>Historical SmartQuote quotations</h3>' +
     '<div id="unifiedLegacyList">Checking the original SmartQuote source…</div>' +
     '<div id="unifiedLegacyDetail" aria-live="polite"></div></section>';
   document.querySelector('#quoteGoLiveRefresh').addEventListener('click', loadQuoteGoLiveStatus);
@@ -292,7 +292,7 @@ async function quotingWorkspacePage() {
       form.elements.site.value=String(selected.site_label||'');
       form.elements.source_contract_id.value=String(selected.contract_id);
       document.querySelector('#unifiedSiteResults').textContent=
-        'Source site selected from a renewal task. Confirm the legal customer, equipment, cover and price independently.';
+        'Site selected from a renewal task. Confirm customer, equipment, cover and pricing.';
       form.elements.customer.focus();
     }
   }

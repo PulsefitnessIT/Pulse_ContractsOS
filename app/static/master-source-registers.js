@@ -91,21 +91,27 @@ async function loadMasterSourceRows(){
     const show=(record.rows||[]).flatMap(r=>Object.keys(r.fields||{}));
     const headers=choose.filter(h=>show.includes(h)).slice(0,6);
     if(!headers.length)headers.push(...[...new Set(show)].slice(0,6));
-    host.innerHTML='<p class="fine-print">'+esc(record.total)+' rows matching · '+
-      esc(record.sheet)+' · source evidence only. Never assume VERIFY means booked, '+
-      'completed or owed service.</p>'+
-      '<div class="scroll-table"><table class="data-table">'+
-      '<thead><tr><th>Excel row</th>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+
-      '<th>Original fields</th></tr></thead><tbody>'+
-      record.rows.map(item=>'<tr><td>'+esc(item.source_row)+'</td>'+
-        headers.map(h=>'<td>'+esc(String(item.fields[h]??''))+'</td>').join('')+
-        '<td><details><summary>All source fields</summary>'+
-        '<dl>'+Object.entries(item.fields).filter(([k,v])=>
-          String(v??'').trim()).map(([k,v])=>
-          '<dt><strong>'+esc(k)+'</strong></dt><dd>'+esc(String(v))+'</dd>'
-        ).join('')+'</dl></details></td></tr>'
-      ).join('')+'</tbody></table></div>'+
-      '<div class="actions-row"><button class="button button-outline" id="sourcePrevious" '+
+    const display=(field,value)=>{
+      // Excel may preserve date cells as serial numbers (e.g. 45799).
+      // Convert ONLY labels that denote a date; preserve source record values.
+      if(/date|expiry|service due|last service/i.test(field))
+        return formatDate(value);
+      return String(value??'');
+    };
+    host.innerHTML='<p class="fine-print">'+esc(record.total)+' matching records · '+
+      esc(record.sheet)+'. Check dates and service activity before relying on them.</p>'+
+      '<div class="source-row-list">'+
+      record.rows.map(item=>
+        '<article class="source-row-card">'+
+        '<div class="source-row-grid">'+
+          headers.map(h=>'<div class="source-row-field"><small>'+esc(h)+'</small>'+
+            '<span>'+esc(display(h,item.fields[h]))+'</span></div>').join('')+
+        '</div><details><summary>More details · record '+esc(item.source_row)+'</summary>'+
+          '<dl>'+Object.entries(item.fields).filter(([k,v])=>String(v??'').trim()).map(([k,v])=>
+            '<dt>'+esc(k)+'</dt><dd>'+esc(display(k,v))+'</dd>'
+          ).join('')+'</dl></details></article>'
+      ).join('')+
+      '</div><div class="actions-row"><button class="button button-outline" id="sourcePrevious" '+
       (masterSourcePageOffset===0?'disabled':'')+'>Previous 50</button>'+
       '<button class="button button-outline" id="sourceNext" '+
       (masterSourcePageOffset+record.rows.length>=record.total?'disabled':'')+

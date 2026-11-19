@@ -54,6 +54,7 @@ from .expiry_transfer import router as expiry_transfer_router
 from .register_layout import current_layout as checked_register_layout
 from .quote_site_lookup import router as source_site_lookup_router
 from .contract_setup import router as contract_setup_router
+from .contract_agreement_print import router as contract_agreement_print_router
 from .sicon_bridge import router as sicon_bridge_router
 from .data_readiness import assess_database, missing_amount_review_rows, safe_excel_csv_cell
 
@@ -150,6 +151,7 @@ app.include_router(working_master_sync_router)
 app.include_router(expiry_transfer_router)
 app.include_router(source_site_lookup_router)
 app.include_router(contract_setup_router)
+app.include_router(contract_agreement_print_router)
 app.include_router(sicon_bridge_router)
 
 @app.get('/api/meta')
