@@ -149,6 +149,10 @@ async function setupRenderSelected(){
       '<div class="setup-info"><strong>One equipment price list</strong>'+
       '<p>Upload a CSV of the Unified Master equipment prices. Matching product codes are updated; '+
       'other existing codes remain in place. This is separate from the Silver, Gold and Platinum maintenance rates.</p></div>'+
+      '<p class="setup-explainer">Your CSV needs at least <strong>SKU</strong> and '+
+      '<strong>Price GBP</strong> columns. Optional columns include Description, '+
+      'Product Group and Price Status (use HOLD for unresolved prices).</p>'+
+      '<button type="button" class="button button-outline" id="setupPriceTemplate">Download blank CSV template</button>'+
       '<form id="setupPriceUpload" class="setup-form">'+
         '<label>Select Unified Master price CSV <input type="file" name="file" accept=".csv,text/csv" required></label>'+
         '<button class="button button-primary" type="submit">Review prices before importing</button></form>'+
@@ -236,6 +240,14 @@ async function setupRenderSelected(){
   }
   if(setupSelectedPage==='prices'){
     document.getElementById('setupPriceUpload').onsubmit=setupPreviewPrices;
+    document.getElementById('setupPriceTemplate').onclick=()=>{
+      const sample='SKU,Price GBP,Description,Product Group,Price Status\r\n';
+      const blob=new Blob([sample],{type:'text/csv;charset=utf-8'});
+      const url=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=url;link.download='Pulse_Unified_Master_Blank_Template.csv';
+      document.body.appendChild(link);link.click();link.remove();
+      URL.revokeObjectURL(url);
+    };
   }
   if(setupSelectedPage==='company'){
     document.getElementById('setupCompanyForm').onsubmit=setupSaveCompany;
