@@ -13,8 +13,8 @@ test('UK dates convert ISO and Excel serials without touching other numbers',()=
   assert.ok(begin>=0&&end>begin);
   const ctx={Date,Number,String};
   vm.runInNewContext(source.slice(begin,end),ctx);
-  assert.equal(ctx.formatDate('45799'),'21/05/2025');
-  assert.equal(ctx.formatDate(45799),'21/05/2025');
+  assert.equal(ctx.formatDate('45799'),'22/05/2025');
+  assert.equal(ctx.formatDate(45799),'22/05/2025');
   assert.equal(ctx.formatDate('2026-11-19'),'19/11/2026');
   assert.equal(ctx.formatDate('31/12/2026'),'31/12/2026');
   assert.equal(ctx.formatDate('100'),'100');
