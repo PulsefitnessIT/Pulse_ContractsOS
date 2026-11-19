@@ -102,6 +102,7 @@ def _package_self_test():
         "app.backups",
         "app.quote_pulse_documents",
         "app.contract_agreement_print",
+        "app.setup_wizard",
         "app.quote_invoice_match",
         "app.quote_price_book",
         "app.quote_quick_draft",
@@ -124,7 +125,11 @@ def _package_self_test():
     coordinator_css=source.parent / "coordinator-ui.css"
     settings_js=source.parent / "settings-menu.js"
     action_js=source.parent / "action-centre.js"
-    if not all(x.is_file() for x in (source,logo,coordinator_css,settings_js,action_js)):
+    setup_js=source.parent / "setup-centre.js"
+    setup_css=source.parent / "setup-centre.css"
+    if not all(x.is_file() for x in (
+            source,logo,coordinator_css,settings_js,action_js,
+            setup_js,setup_css)):
         raise RuntimeError("Bundled Pulse Fitness coordinator UI or required assets are missing.")
     return True
 
@@ -551,6 +556,8 @@ def _smoke_test_complete_startup(synthetic_workbook):
             from app.pilot_access import provision_user
             smoke_password = "FictionalOnlyForBuildSmoke_" + secrets.token_urlsafe(16)
             provision_user("build-smoke", smoke_password, "Coordinator")
+            admin_password = "SyntheticAdminBuild_" + secrets.token_urlsafe(16)
+            provision_user("build-admin", admin_password, "Admin")
             worker = threading.Thread(
                 target=_start_loopback_server,
                 args=(sock, state), daemon=True,
@@ -564,6 +571,8 @@ def _smoke_test_complete_startup(synthetic_workbook):
                 ("/static/quoting-workspace.js", b"unified"),
                 ("/static/coordinator-ui.css", b"action-record"),
                 ("/static/settings-menu.js", b"pulseMenuSignOut"),
+                ("/static/setup-centre.js", b"setupCentrePage"),
+                ("/static/setup-centre.css", b"setup-layout"),
             ):
                 with urllib.request.urlopen(origin + url_path, timeout=4) as response:
                     data = response.read(1024 * 1024)
@@ -592,6 +601,66 @@ def _smoke_test_complete_startup(synthetic_workbook):
                 pdf=response.read(1024*1024)
                 if response.status!=200 or not pdf.startswith(b"%PDF") or "pdf" not in response.headers.get("Content-Type",""):
                     raise RuntimeError("Printable maintenance agreement PDF is not available from customer record.")
+            # A coordinator cannot inspect or change administrator setup.
+            try:
+                client.open(origin + "/api/admin/setup/status", timeout=5)
+                raise RuntimeError("Coordinator unexpectedly accessed administrator setup.")
+            except urllib.error.HTTPError as exc:
+                if exc.code != 403:
+                    raise RuntimeError("Administrator setup did not deny Coordinator.") from exc
+
+            # Open a separate named Admin session and exercise first-login
+            # onboarding over the real packaged server and private SQLite.
+            admin_jar = http.cookiejar.CookieJar()
+            administrator = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(admin_jar))
+            admin_login = urllib.request.Request(
+                origin + "/api/pilot/login",
+                data=json.dumps({"username": "build-admin",
+                                 "password": admin_password}).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Origin": origin},
+                method="POST")
+            with administrator.open(admin_login, timeout=5) as response:
+                if response.status != 200:
+                    raise RuntimeError("Packaged Administrator login failed.")
+            with administrator.open(origin + "/api/admin/setup/status", timeout=10) as response:
+                setup = json.loads(response.read())
+                if (not setup.get("first_login_wizard")
+                        or setup.get("ready_count") != 1
+                        or setup.get("core_setup_ready")
+                        or setup.get("customer_quote_ready")):
+                    raise RuntimeError("First-login setup did not detect missing approvals.")
+            csrf = next((cookie.value for cookie in admin_jar
+                         if cookie.name == "pulse_contracts_csrf"), None)
+            if not csrf:
+                raise RuntimeError("Administrator session missing CSRF cookie.")
+            start = urllib.request.Request(
+                origin + "/api/admin/setup/progress",
+                data=b'{"action":"start"}',
+                headers={"Content-Type": "application/json", "Origin": origin,
+                         "X-Pulse-CSRF": csrf},
+                method="POST")
+            with administrator.open(start, timeout=10) as response:
+                state = json.loads(response.read())
+                if response.status != 200 or state.get("first_login_wizard"):
+                    raise RuntimeError("Wizard first-login progress was not saved.")
+            with administrator.open(origin + "/api/admin/setup/status", timeout=10) as response:
+                state = json.loads(response.read())
+                if not state.get("wizard_started") or state.get("wizard_completed"):
+                    raise RuntimeError("Wizard progress did not survive a fresh read.")
+            finish = urllib.request.Request(
+                origin + "/api/admin/setup/progress",
+                data=b'{"action":"finish"}',
+                headers={"Content-Type": "application/json", "Origin": origin,
+                         "X-Pulse-CSRF": csrf},
+                method="POST")
+            try:
+                administrator.open(finish, timeout=10)
+                raise RuntimeError("Wizard incorrectly marked missing commercial approvals complete.")
+            except urllib.error.HTTPError as exc:
+                if exc.code != 409:
+                    raise RuntimeError("Missing setup was not fail-closed.") from exc
+
             with client.open(origin + "/api/master-sources", timeout=4) as response:
                 details = json.loads(response.read())
                 if response.status != 200 or not details.get("has_15_tab_source"):
