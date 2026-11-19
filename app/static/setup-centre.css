@@ -1,0 +1,93 @@
+/* Pulse Fitness Setup Centre: simple, guided, responsive admin configuration.
+   Deliberately separate from coordinator quote and legacy source layouts. */
+.pulse-pro .setup-centre{max-width:1470px;margin:0 auto}
+.pulse-pro .setup-centre .page-heading{margin-bottom:22px}
+.pulse-pro .setup-intro{padding:17px 20px;background:#eaf9ff;color:#245667;
+ border:1px solid #c7e9f5;border-left:4px solid #19cdff;border-radius:12px;
+ line-height:1.6;margin-bottom:18px}
+.pulse-pro .setup-intro[hidden]{display:none}
+.pulse-pro .setup-summary-card{display:flex;align-items:center;justify-content:space-between;gap:24px;
+ background:#1b1c1d;border:1px solid #393e41;color:#fff;border-radius:15px;padding:23px 26px;
+ margin-bottom:20px;min-width:0}
+.pulse-pro .setup-summary-card h2{font-size:22px;color:#fff;margin:0 0 8px;font-weight:780}
+.pulse-pro .setup-summary-card p:not(.setup-kicker){font-size:13px;color:#d0dfe5;margin:0;line-height:1.5}
+.pulse-pro .setup-kicker{font-size:10px;letter-spacing:.14em;font-weight:850;
+ color:#0c809c;text-transform:uppercase;margin:0 0 9px}
+.pulse-pro .setup-summary-card .setup-kicker{color:#19cdff}
+.pulse-pro .setup-meter{width:180px;max-width:35%;height:12px;background:#525a5d;
+ border-radius:12px;overflow:hidden;flex-shrink:0}
+.pulse-pro .setup-meter div{height:100%;background:#19cdff;border-radius:12px;transition:width .2s}
+.pulse-pro .setup-layout{display:grid;grid-template-columns:minmax(230px,300px) minmax(0,1fr);gap:18px;align-items:start}
+.pulse-pro .setup-steps{background:#fff;border:1px solid #e0e4e5;
+ border-radius:14px;box-shadow:var(--cardShadow);padding:9px;display:flex;flex-direction:column;gap:5px;min-width:0}
+.pulse-pro .setup-step{display:flex;gap:11px;align-items:center;width:100%;padding:14px 12px;
+ border:0;border-radius:10px;background:transparent;text-align:left;color:#263b44;
+ min-width:0;cursor:pointer;transition:background .12s}
+.pulse-pro .setup-step:hover{background:#f1f9fc}
+.pulse-pro .setup-step.is-selected{background:#e8f8ff;box-shadow:inset 3px 0 0 #19cdff}
+.pulse-pro .setup-step-number{background:#e5edf1;color:#2b5a6b;border-radius:50%;
+ min-width:30px;height:30px;display:grid;place-items:center;font-weight:800;font-size:12px}
+.pulse-pro .setup-step.is-selected .setup-step-number{background:#19cdff;color:#112d39}
+.pulse-pro .setup-step>span:nth-child(2){min-width:0;flex:1}
+.pulse-pro .setup-step strong{display:block;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.pulse-pro .setup-step small{display:block;font-size:11px;line-height:1.45;color:#74838a;margin-top:3px}
+.pulse-pro .setup-step-status{font-size:10px;font-weight:750;color:#637d87}
+.pulse-pro .setup-body{min-width:0;padding:26px 30px}
+.pulse-pro .setup-section-top{margin-bottom:21px}
+.pulse-pro .setup-section-top h2{font-size:23px;margin:0 0 8px;line-height:1.25}
+.pulse-pro .setup-section-top p{font-size:13px;margin:0;color:#657680;line-height:1.5}
+.pulse-pro .setup-pill{display:inline-flex;border-radius:99px;padding:5px 11px;font-weight:800;
+ font-size:11px;line-height:1.4;align-self:start}
+.pulse-pro .setup-pill.is-ready{background:#e1f4e9;color:#17623e}
+.pulse-pro .setup-pill.is-pending{background:#fff2d9;color:#815c14}
+.pulse-pro .setup-explainer{font-size:14px;color:#536a74;line-height:1.55;margin:13px 0 19px}
+.pulse-pro .setup-info{background:#f1f9fb;border:1px solid #d9eaef;border-radius:10px;
+ padding:16px 18px;font-size:13px;line-height:1.65;color:#39535c;margin:17px 0}
+.pulse-pro .setup-info strong{color:#1b363f}
+.pulse-pro .setup-info p{margin:6px 0}
+.pulse-pro .setup-warning{background:#fff8ec;border-left:4px solid #d6a541;
+ padding:15px 18px;border-radius:8px;color:#735720;line-height:1.6;font-size:12px;margin:17px 0}
+.pulse-pro .setup-warning ul{padding-left:19px;margin-bottom:0}
+.pulse-pro .setup-actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.pulse-pro .setup-form{display:grid;gap:16px;margin:20px 0}
+.pulse-pro .setup-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.pulse-pro .setup-form label,.pulse-pro .setup-form-grid label{display:flex;flex-direction:column;
+ gap:7px;font-size:12px;color:#435861;font-weight:750;line-height:1.4;min-width:0}
+.pulse-pro .setup-form input:not([type=checkbox]){width:100%;max-width:100%;min-width:0;
+ min-height:43px;border:1px solid #c8d7dd;border-radius:8px;padding:10px 12px;
+ background:#fff;color:#233943;font-size:13px;box-sizing:border-box}
+.pulse-pro .setup-form input[type=file]{height:auto;min-height:42px}
+.pulse-pro .setup-form label.setup-check{display:flex;flex-direction:row;align-items:flex-start;
+ gap:10px;font-weight:650;line-height:1.6}
+.pulse-pro .setup-form .setup-check input{margin-top:4px;flex-shrink:0}
+.pulse-pro .setup-form>button{justify-self:start;white-space:normal;text-align:center}
+.pulse-pro .setup-approval-disclosure{border:1px solid #dbe7eb;background:#fff;
+ border-radius:10px;padding:15px 18px;margin:15px 0}
+.pulse-pro .setup-approval-disclosure summary{cursor:pointer;font-weight:750;color:#295364;font-size:13px}
+.pulse-pro .setup-navigation{display:flex;justify-content:space-between;align-items:center;
+ gap:10px;margin-top:27px;padding-top:19px;border-top:1px solid #e3eaec}
+.pulse-pro .setup-message{font-size:12px;color:#a53324;min-height:13px;margin:8px 0 0}
+.pulse-pro .setup-checklist{display:grid;gap:9px;margin:10px 0 22px}
+.pulse-pro .setup-check-row{display:flex;align-items:flex-start;gap:14px;
+ border:1px solid #e1eaed;border-radius:10px;padding:13px 15px;min-width:0}
+.pulse-pro .setup-check-row span:last-child{min-width:0}
+.pulse-pro .setup-check-row strong{display:block;font-size:12px;margin-bottom:4px}
+.pulse-pro .setup-check-row small{font-size:11px;color:#657a82;line-height:1.5;display:block}
+.pulse-pro .setup-rate-list{display:grid;gap:8px;margin:15px 0}
+.pulse-pro .setup-rate-list>div{display:flex;justify-content:space-between;gap:15px;
+ align-items:center;background:#fafcfd;border:1px solid #e6eef0;border-radius:8px;padding:12px}
+.pulse-pro .setup-rate-list strong,.pulse-pro .setup-rate-list span{font-size:12px;overflow-wrap:anywhere}
+.pulse-pro .setup-menu-count{font-size:10px;color:#748c98;margin-left:5px}
+@media(max-width:1030px){
+ .pulse-pro .setup-layout{grid-template-columns:minmax(0,1fr)}
+ .pulse-pro .setup-steps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:600px){
+ .pulse-pro .setup-summary-card{flex-direction:column;align-items:stretch;padding:20px}
+ .pulse-pro .setup-summary-card .setup-meter{max-width:100%;width:100%}
+ .pulse-pro .setup-steps{grid-template-columns:1fr}
+ .pulse-pro .setup-body{padding:20px 16px}
+ .pulse-pro .setup-form-grid{grid-template-columns:1fr}
+ .pulse-pro .setup-rate-list>div{flex-direction:column;align-items:start}
+ .pulse-pro .setup-navigation{flex-wrap:wrap}
+}
