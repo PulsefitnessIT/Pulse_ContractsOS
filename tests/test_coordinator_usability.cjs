@@ -33,7 +33,7 @@ test('coordinator screens are not covered by technical source and V10 panels',()
   }
   const css=get('coordinator-ui.css');
   assert.ok(css.includes('.quote-admin-section{display:none!important}'));
-  assert.ok(css.includes('body')); // no separate frontend runtime required
+  assert.ok(css.includes('.pulse-pro.pulse-advanced-settings .quote-admin-section:not([hidden])'));
 });
 test('responsive action centre has no editable horizontal table',()=>{
   const js=get('action-centre.js');
